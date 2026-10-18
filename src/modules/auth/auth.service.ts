@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../../db/client.js';
