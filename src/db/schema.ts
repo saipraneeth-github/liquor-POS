@@ -121,3 +121,63 @@ export const priceAudit = pgTable('price_audit', {
   newMrp:    numeric('new_mrp', { precision: 12, scale: 2 }).notNull(),
   changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow(),
 });
+
+// ─── DAILY CLOSING ──────────────────────────────────────────────────────────
+
+export const closingStatusEnum = pgEnum('closing_status', ['OPEN', 'CLOSED']);
+
+export const dailyClosings = pgTable('daily_closings', {
+  id:                   uuid('id').primaryKey().defaultRandom(),
+  branchId:             uuid('branch_id').notNull().references(() => branches.id),
+  closedById:           uuid('closed_by_id').notNull().references(() => users.id),
+  closingDate:          timestamp('closing_date', { withTimezone: true }).defaultNow(),
+  openingCash:          numeric('opening_cash', { precision: 12, scale: 2 }).notNull(),
+  cashSales:            numeric('cash_sales', { precision: 12, scale: 2 }).notNull(),
+  cardSales:            numeric('card_sales', { precision: 12, scale: 2 }).notNull(),
+  upiSales:             numeric('upi_sales', { precision: 12, scale: 2 }).notNull(),
+  grossSales:           numeric('gross_sales', { precision: 12, scale: 2 }).notNull(),
+  totalTax:             numeric('total_tax', { precision: 12, scale: 2 }).notNull(),
+  cashWithdrawals:      numeric('cash_withdrawals', { precision: 12, scale: 2 }).notNull().default('0'),
+  expectedCashInDrawer: numeric('expected_cash_in_drawer', { precision: 12, scale: 2 }).notNull(),
+  actualCashCounted:    numeric('actual_cash_counted', { precision: 12, scale: 2 }).notNull(),
+  cashDiscrepancy:      numeric('cash_discrepancy', { precision: 12, scale: 2 }).notNull(),
+  isBalanced:           boolean('is_balanced').notNull(),
+  totalBillsCount:      integer('total_bills_count').notNull(),
+  paidBillsCount:       integer('paid_bills_count').notNull(),
+  voidedBillsCount:     integer('voided_bills_count').notNull(),
+  notes:                text('notes'),
+  status:               closingStatusEnum('status').notNull().default('CLOSED'),
+  createdAt:            timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// ─── SUPPLIER INVOICES (PURCHASE ENTRY) ──────────────────────────────────────
+
+export const invoiceStatusEnum = pgEnum('invoice_status', ['DRAFT', 'REVIEWED', 'APPROVED', 'REJECTED']);
+
+export const supplierInvoices = pgTable('supplier_invoices', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  branchId:      uuid('branch_id').notNull().references(() => branches.id),
+  createdById:   uuid('created_by_id').notNull().references(() => users.id),
+  approvedById:  uuid('approved_by_id').references(() => users.id),
+  supplierName:  text('supplier_name').notNull(),
+  invoiceNumber: text('invoice_number').notNull(),
+  invoiceDate:   timestamp('invoice_date', { withTimezone: true }),
+  totalAmount:   numeric('total_amount', { precision: 12, scale: 2 }).notNull(),
+  status:        invoiceStatusEnum('status').notNull().default('DRAFT'),
+  notes:         text('notes'),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow(),
+  approvedAt:    timestamp('approved_at', { withTimezone: true }),
+});
+
+export const supplierInvoiceItems = pgTable('supplier_invoice_items', {
+  id:             uuid('id').primaryKey().defaultRandom(),
+  invoiceId:      uuid('invoice_id').notNull().references(() => supplierInvoices.id, { onDelete: 'cascade' }),
+  productId:      uuid('product_id').references(() => products.id), // null if new/unmatched
+  rawDescription: text('raw_description').notNull(),
+  quantity:       integer('quantity').notNull(),
+  costPrice:      numeric('cost_price', { precision: 12, scale: 2 }).notNull(),
+  mrp:            numeric('mrp', { precision: 12, scale: 2 }).notNull(),
+  taxRate:        numeric('tax_rate', { precision: 5, scale: 2 }).notNull().default('18.00'),
+  lineCostTotal:  numeric('line_cost_total', { precision: 12, scale: 2 }).notNull(),
+});
+

@@ -27,7 +27,7 @@ export type CreateBillInput = z.infer<typeof CreateBillSchema>;
 
 // ─── BILL NUMBER GENERATOR ───────────────────────────────────────────────────
 
-async function generateBillNumber(branchId: string, tx: typeof db): Promise<string> {
+async function generateBillNumber(branchId: string, tx: any): Promise<string> {
   // Count existing bills in this branch this year
   const [branch] = await tx
     .select({ code: branches.code })

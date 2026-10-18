@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Liquor Counter — UI Preview</title>
+<script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+<style>
+  body { background: var(--background); color: var(--foreground); font-family: inherit; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); }
+  .btn-primary { background: var(--primary); color: var(--primary-foreground); border-radius: 8px; padding: 8px 18px; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-sec { background: var(--secondary); color: var(--secondary-foreground); border-radius: 8px; padding: 8px 18px; font-weight: 600; cursor: pointer; border: none; }
+  .input { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; color: var(--foreground); width: 100%; outline: none; font-size: 14px; }
+  .input:focus { border-color: var(--primary); }
+  .badge { display: inline-block; border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+  .badge-green { background: #16a34a22; color: #16a34a; }
+  .badge-red { background: #dc262622; color: #dc2626; }
+  .badge-blue { background: #2563eb22; color: #2563eb; }
+  .badge-yellow { background: #d9770622; color: #d97706; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; cursor: pointer; color: var(--muted-foreground); font-size: 14px; font-weight: 500; transition: all 0.15s; }
+  .nav-item:hover, .nav-item.active { background: var(--accent); color: var(--foreground); }
+  .page { display: none; }
+  .page.active { display: flex; flex-direction: column; flex: 1; overflow: auto; }
+  .pos-product { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; transition: all 0.15s; text-align: center; }
+  .pos-product:hover { border-color: var(--primary); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .pos-product:active { transform: scale(0.97); }
+  .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .table th { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .table td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .table tr:last-child td { border-bottom: none; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .tag { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; background: var(--accent); color: var(--foreground); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ LOGIN PAGE ═══════════════════════════════ -->
+<div id="loginPage" style="display:flex; align-items:center; justify-content:center; min-height:100vh; background: var(--background);">
+  <div style="width:100%; max-width:400px; padding:16px;">
+    <div class="card" style="padding:40px;">
+      <div style="text-align:center; margin-bottom:32px;">
+        <div style="font-size:40px; margin-bottom:8px;">🍾</div>
+        <div style="font-size:24px; font-weight:700; color:var(--foreground);">Liquor Counter</div>
+        <div style="font-size:13px; color:var(--muted-foreground); margin-top:4px;">POS & Inventory Management</div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="font-size:13px; font-weight:600; color:var(--foreground); display:block; margin-bottom:6px;">Email</label>
+        <input id="loginEmail" class="input" type="email" placeholder="owner@liquorstore.com" value="owner@liquorstore.com" />
+      </div>
+      <div style="margin-bottom:24px;">
+        <label style="font-size:13px; font-weight:600; color:var(--foreground); display:block; margin-bottom:6px;">Password</label>
+        <input id="loginPass" class="input" type="password" placeholder="••••••••" value="password" />
+      </div>
+      <button class="btn-primary" style="width:100%; padding:12px;" onclick="doLogin()">Sign In</button>
+
+      <div style="margin-top:20px; display:flex; flex-direction:column; gap:8px;">
+        <div style="font-size:12px; color:var(--muted-foreground); text-align:center; margin-bottom:4px;">Demo accounts</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <button onclick="loginAs('owner')" style="background:var(--accent); border:1px solid var(--border); border-radius:8px; padding:8px; cursor:pointer; font-size:12px; color:var(--foreground);">👑 Owner</button>
+          <button onclick="loginAs('manager')" style="background:var(--accent); border:1px solid var(--border); border-radius:8px; padding:8px; cursor:pointer; font-size:12px; color:var(--foreground);">🛠 Manager</button>
+          <button onclick="loginAs('cashier')" style="background:var(--accent); border:1px solid var(--border); border-radius:8px; padding:8px; cursor:pointer; font-size:12px; color:var(--foreground);">💰 Cashier</button>
+          <button onclick="loginAs('steward')" style="background:var(--accent); border:1px solid var(--border); border-radius:8px; padding:8px; cursor:pointer; font-size:12px; color:var(--foreground);">🍽 Steward</button>
+        </div>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:12px; font-size:12px; color:var(--muted-foreground);">Branch: Malabar Wines & Spirits, Mumbai</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ MAIN APP ═══════════════════════════════ -->
+<div id="mainApp" style="display:none; height:100vh; flex-direction:row;">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar" style="width:220px; min-width:220px; padding:16px; display:flex; flex-direction:column; overflow:auto;">
+    <div style="display:flex; align-items:center; gap:10px; padding:8px 4px; margin-bottom:20px;">
+      <div style="font-size:24px;">🍾</div>
+      <div>
+        <div style="font-weight:700; font-size:14px; color:var(--foreground);">Liquor Counter</div>
+        <div style="font-size:11px; color:var(--muted-foreground)" id="branchName">MH Branch 1</div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
+      <div class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
+        <span>📊</span> Dashboard
+      </div>
+      <div class="nav-item" id="nav-pos" onclick="showPage('pos')">
+        <span>🛒</span> POS Billing
+      </div>
+      <div class="nav-item" id="nav-products" onclick="showPage('products')">
+        <span>🍷</span> Products
+      </div>
+      <div class="nav-item" id="nav-stock" onclick="showPage('stock')">
+        <span>📦</span> Inventory
+      </div>
+      <div class="nav-item" id="nav-bills" onclick="showPage('bills')">
+        <span>🧾</span> Bills
+      </div>
+      <div class="nav-item" id="nav-closing" onclick="showPage('closing')">
+        <span>🔒</span> Day Closing
+      </div>
+    </div>
+
+    <div style="padding:12px; background:var(--accent); border-radius:10px; margin-top:auto;">
+      <div id="userDisplay" style="font-size:13px; font-weight:600; color:var(--foreground);">👑 Owner</div>
+      <div style="font-size:11px; color:var(--muted-foreground); margin-top:2px;" id="emailDisplay">owner@store.com</div>
+      <button onclick="logout()" style="margin-top:8px; font-size:12px; color:var(--muted-foreground); background:none; border:none; cursor:pointer; padding:0;">Sign out →</button>
+    </div>
+  </div>
+
+  <!-- CONTENT AREA -->
+  <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+
+    <!-- ─── DASHBOARD PAGE ─── -->
+    <div class="page active" id="page-dashboard" style="padding:24px; gap:20px; overflow:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <div>
+          <div style="font-size:22px; font-weight:700;">Good morning! 👋</div>
+          <div style="font-size:13px; color:var(--muted-foreground);">Sunday, 18 October 2026 · Malabar Wines & Spirits</div>
+        </div>
+        <button class="btn-primary" onclick="showPage('pos')">+ New Bill</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px;">
+        <div class="stat-card">
+          <div style="font-size:12px; color:var(--muted-foreground); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Today's Sales</div>
+          <div style="font-size:28px; font-weight:700; color:var(--foreground); margin-top:6px;">₹48,250</div>
+          <div style="font-size:12px; color:#16a34a; margin-top:4px;">↑ 12% vs yesterday</div>
+        </div>
+        <div class="stat-card">
+          <div style="font-size:12px; color:var(--muted-foreground); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Bills Today</div>
+          <div style="font-size:28px; font-weight:700; color:var(--foreground); margin-top:6px;">87</div>
+          <div style="font-size:12px; color:#16a34a; margin-top:4px;">↑ 5 more than yesterday</div>
+        </div>
+        <div class="stat-card">
+          <div style="font-size:12px; color:var(--muted-foreground); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Low Stock Items</div>
+          <div style="font-size:28px; font-weight:700; color:#d97706; margin-top:6px;">6</div>
+          <div style="font-size:12px; color:#d97706; margin-top:4px;">⚠ Action needed</div>
+        </div>
+        <div class="stat-card">
+          <div style="font-size:12px; color:var(--muted-foreground); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Month Revenue</div>
+          <div style="font-size:28px; font-weight:700; color:var(--foreground); margin-top:6px;">₹9.2L</div>
+          <div style="font-size:12px; color:#16a34a; margin-top:4px;">↑ 8% vs last month</div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1.4fr 1fr; gap:16px;">
+        <!-- Top Products -->
+        <div class="card" style="padding:20px;">
+          <div style="font-weight:700; margin-bottom:16px;">🏆 Top Selling Brands Today</div>
+          <table class="table">
+            <thead><tr><th>Brand</th><th>Category</th><th>Qty</th><th>Revenue</th></tr></thead>
+            <tbody>
+              <tr><td><b>Royal Stag</b></td><td><span class="tag">Whisky</span></td><td>42</td><td>₹8,400</td></tr>
+              <tr><td><b>Kingfisher Strong</b></td><td><span class="tag">Beer</span></td><td>120</td><td>₹6,000</td></tr>
+              <tr><td><b>Old Monk</b></td><td><span class="tag">Rum</span></td><td>31</td><td>₹5,270</td></tr>
+              <tr><td><b>Sula Brut</b></td><td><span class="tag">Wine</span></td><td>14</td><td>₹8,400</td></tr>
+              <tr><td><b>Bombay Sapphire</b></td><td><span class="tag">Gin</span></td><td>9</td><td>₹7,650</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Alerts -->
+        <div class="card" style="padding:20px; display:flex; flex-direction:column; gap:12px;">
+          <div style="font-weight:700;">⚡ Alerts</div>
+          <div style="background:#fef9c322; border:1px solid #d9770644; border-radius:8px; padding:12px;">
+            <div style="font-size:13px; font-weight:600; color:#d97706;">⚠ Low Stock</div>
+            <div style="font-size:13px; margin-top:4px; color:var(--foreground);">Johnnie Walker Red — only 3 bottles left</div>
+          </div>
+          <div style="background:#fef9c322; border:1px solid #d9770644; border-radius:8px; padding:12px;">
+            <div style="font-size:13px; font-weight:600; color:#d97706;">⚠ Low Stock</div>
+            <div style="font-size:13px; margin-top:4px; color:var(--foreground);">Heineken 650ml — only 5 cans left</div>
+          </div>
+          <div style="background:#dcfce722; border:1px solid #16a34a44; border-radius:8px; padding:12px;">
+            <div style="font-size:13px; font-weight:600; color:#16a34a;">💰 Scheme Alert</div>
+            <div style="font-size:13px; margin-top:4px; color:var(--foreground);">Pernod scheme target: 92% achieved! ₹8,000 incentive unlockable.</div>
+          </div>
+          <div style="background:#eff6ff22; border:1px solid #2563eb44; border-radius:8px; padding:12px;">
+            <div style="font-size:13px; font-weight:600; color:#2563eb;">📦 Purchase Order</div>
+            <div style="font-size:13px; margin-top:4px; color:var(--foreground);">Auto-indent ready for 8 SKUs based on sales velocity.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── POS PAGE ─── -->
+    <div class="page" id="page-pos" style="flex-direction:row; overflow:hidden;">
+      <!-- Product Grid -->
+      <div style="flex:1.6; display:flex; flex-direction:column; overflow:hidden;">
+        <div style="padding:16px 16px 12px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center;">
+          <input class="input" style="max-width:280px;" placeholder="🔍 Scan barcode or search..." oninput="filterProducts(this.value)" id="posSearch"/>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="tag" onclick="filterCat('All')" id="cat-All" style="cursor:pointer; padding:6px 12px; background:var(--primary); color:var(--primary-foreground);">All</button>
+            <button class="tag" onclick="filterCat('Whisky')" id="cat-Whisky" style="cursor:pointer; padding:6px 12px;">Whisky</button>
+            <button class="tag" onclick="filterCat('Beer')" id="cat-Beer" style="cursor:pointer; padding:6px 12px;">Beer</button>
+            <button class="tag" onclick="filterCat('Rum')" id="cat-Rum" style="cursor:pointer; padding:6px 12px;">Rum</button>
+            <button class="tag" onclick="filterCat('Wine')" id="cat-Wine" style="cursor:pointer; padding:6px 12px;">Wine</button>
+            <button class="tag" onclick="filterCat('Gin')" id="cat-Gin" style="cursor:pointer; padding:6px 12px;">Gin</button>
+          </div>
+        </div>
+        <div id="productGrid" style="padding:16px; display:grid; grid-template-columns:repeat(4,1fr); gap:12px; overflow:auto; align-content:start;"></div>
+      </div>
+
+      <!-- Bill Panel -->
+      <div style="width:320px; border-left:1px solid var(--border); display:flex; flex-direction:column;">
+        <div style="padding:16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:700; font-size:15px;">🧾 Bill #MH1-2026-000088</div>
+            <div style="font-size:12px; color:var(--muted-foreground);">Cashier: Ravi Kumar</div>
+          </div>
+          <button onclick="clearCart()" style="background:none; border:none; cursor:pointer; color:var(--muted-foreground); font-size:12px;">Clear ✕</button>
+        </div>
+
+        <div id="cartItems" style="flex:1; overflow:auto; padding:12px; display:flex; flex-direction:column; gap:8px;">
+          <div style="color:var(--muted-foreground); font-size:13px; text-align:center; margin-top:40px;">Add products to start billing</div>
+        </div>
+
+        <div style="padding:16px; border-top:1px solid var(--border);">
+          <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--muted-foreground);">
+              <span>Subtotal</span><span id="subtotal">₹0.00</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--muted-foreground);">
+              <span>GST (18%)</span><span id="taxAmount">₹0.00</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--muted-foreground);">
+              <span>Discount</span>
+              <input id="discountInput" style="background:none; border:none; border-bottom:1px solid var(--border); width:70px; text-align:right; color:var(--foreground); font-size:13px; outline:none; padding:0;" value="₹0.00" onfocus="this.value=''" onblur="applyDiscount(this.value)" />
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:18px; font-weight:700; padding-top:8px; border-top:1px solid var(--border);">
+              <span>Total</span><span id="totalAmount">₹0.00</span>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px;">
+            <button onclick="setPayment('CASH')" id="pay-CASH" class="btn-sec" style="font-size:13px; padding:10px 6px;">💵 Cash</button>
+            <button onclick="setPayment('CARD')" id="pay-CARD" class="btn-sec" style="font-size:13px; padding:10px 6px;">💳 Card</button>
+            <button onclick="setPayment('UPI')" id="pay-UPI" class="btn-sec" style="font-size:13px; padding:10px 6px;">📱 UPI</button>
+          </div>
+
+          <button class="btn-primary" style="width:100%; padding:14px; font-size:16px;" onclick="checkout()">
+            Checkout & Print
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── PRODUCTS PAGE ─── -->
+    <div class="page" id="page-products" style="padding:24px; gap:16px; overflow:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:20px; font-weight:700;">🍷 Product Catalog</div>
+          <div style="font-size:13px; color:var(--muted-foreground);">Manage products, barcodes, and MRP</div>
+        </div>
+        <button class="btn-primary" onclick="showModal('addProductModal')">+ Add Product</button>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <input class="input" style="max-width:300px;" placeholder="Search by name, brand, or barcode..." />
+        <select class="input" style="max-width:160px; cursor:pointer;">
+          <option>All Categories</option>
+          <option>Whisky</option><option>Beer</option><option>Rum</option>
+          <option>Wine</option><option>Gin</option><option>Vodka</option>
+        </select>
+      </div>
+
+      <div class="card" style="overflow:hidden;">
+        <table class="table">
+          <thead><tr><th>Product</th><th>Brand</th><th>Category</th><th>Volume</th><th>Barcode</th><th>MRP</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>Royal Stag</b></td><td>Seagram's</td><td><span class="tag">Whisky</span></td><td>750ml</td><td>8901234567890</td>
+              <td><b>₹200.00</b></td><td><span class="badge badge-green">Active</span></td>
+              <td><button class="btn-sec" style="font-size:12px; padding:4px 10px;" onclick="showMrpModal('Royal Stag','200.00')">Edit MRP</button></td>
+            </tr>
+            <tr>
+              <td><b>Kingfisher Strong</b></td><td>United Breweries</td><td><span class="tag">Beer</span></td><td>650ml</td><td>8901234567891</td>
+              <td><b>₹70.00</b></td><td><span class="badge badge-green">Active</span></td>
+              <td><button class="btn-sec" style="font-size:12px; padding:4px 10px;" onclick="showMrpModal('Kingfisher Strong','70.00')">Edit MRP</button></td>
+            </tr>
+            <tr>
+              <td><b>Old Monk Dark Rum</b></td><td>Mohan Meakin</td><td><span class="tag">Rum</span></td><td>750ml</td><td>8901234567892</td>
+              <td><b>₹170.00</b></td><td><span class="badge badge-green">Active</span></td>
+              <td><button class="btn-sec" style="font-size:12px; padding:4px 10px;" onclick="showMrpModal('Old Monk','170.00')">Edit MRP</button></td>
+            </tr>
+            <tr>
+              <td><b>Sula Brut</b></td><td>Sula Vineyards</td><td><span class="tag">Wine</span></td><td>750ml</td><td>8901234567893</td>
+              <td><b>₹600.00</b></td><td><span class="badge badge-green">Active</span></td>
+              <td><button class="btn-sec" style="font-size:12px; padding:4px 10px;" onclick="showMrpModal('Sula Brut','600.00')">Edit MRP</button></td>
+            </tr>
+            <tr>
+              <td><b>Johnnie Walker Red</b></td><td>Diageo</td><td><span class="tag">Whisky</span></td><td>750ml</td><td>8901234567894</td>
+              <td><b>₹2,500.00</b></td><td><span class="badge badge-green">Active</span></td>
+              <td><button class="btn-sec" style="font-size:12px; padding:4px 10px;" onclick="showMrpModal('JW Red','2500.00')">Edit MRP</button></td>
+            </tr>
+            <tr>
+              <td><b>Bombay Sapphire</b></td><td>Bacardi</td><td><span class="tag">Gin</span></td><td>750ml</td><td>8901234567895</td>
+              <td><b>₹850.00</b></td><td><span class="badge badge-red">Inactive</span></td>
+              <td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">Activate</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─── STOCK PAGE ─── -->
+    <div class="page" id="page-stock" style="padding:24px; gap:16px; overflow:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:20px; font-weight:700;">📦 Inventory Management</div>
+          <div style="font-size:13px; color:var(--muted-foreground);">Real-time stock levels, alerts, and adjustments</div>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn-sec">📄 Upload Invoice</button>
+          <button class="btn-primary">+ Manual Entry</button>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
+        <div class="stat-card"><div style="font-size:12px; color:var(--muted-foreground); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Total SKUs</div><div style="font-size:28px; font-weight:700; margin-top:6px;">184</div></div>
+        <div class="stat-card"><div style="font-size:12px; color:#d97706; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">⚠ Low Stock</div><div style="font-size:28px; font-weight:700; color:#d97706; margin-top:6px;">6</div></div>
+        <div class="stat-card"><div style="font-size:12px; color:#dc2626; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">🚫 Out of Stock</div><div style="font-size:28px; font-weight:700; color:#dc2626; margin-top:6px;">2</div></div>
+      </div>
+
+      <div class="card" style="overflow:hidden;">
+        <div style="padding:16px; border-bottom:1px solid var(--border); font-weight:700;">Current Stock Levels</div>
+        <table class="table">
+          <thead><tr><th>Product</th><th>Category</th><th>In Stock</th><th>Reorder Level</th><th>Status</th><th>Last Updated</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>Royal Stag 750ml</b></td><td><span class="tag">Whisky</span></td><td><b style="color:#16a34a;">48</b></td><td>10</td>
+              <td><span class="badge badge-green">OK</span></td><td style="color:var(--muted-foreground);">Today 11:23 AM</td>
+            </tr>
+            <tr>
+              <td><b>Kingfisher Strong 650ml</b></td><td><span class="tag">Beer</span></td><td><b style="color:#16a34a;">142</b></td><td>20</td>
+              <td><span class="badge badge-green">OK</span></td><td style="color:var(--muted-foreground);">Today 10:45 AM</td>
+            </tr>
+            <tr>
+              <td><b>Johnnie Walker Red 750ml</b></td><td><span class="tag">Whisky</span></td><td><b style="color:#d97706;">3</b></td><td>5</td>
+              <td><span class="badge badge-yellow">Low Stock</span></td><td style="color:var(--muted-foreground);">Today 09:11 AM</td>
+            </tr>
+            <tr>
+              <td><b>Heineken 650ml</b></td><td><span class="tag">Beer</span></td><td><b style="color:#d97706;">5</b></td><td>15</td>
+              <td><span class="badge badge-yellow">Low Stock</span></td><td style="color:var(--muted-foreground);">Yesterday 06:30 PM</td>
+            </tr>
+            <tr>
+              <td><b>Bombay Sapphire 750ml</b></td><td><span class="tag">Gin</span></td><td><b style="color:#dc2626;">0</b></td><td>3</td>
+              <td><span class="badge badge-red">Out of Stock</span></td><td style="color:var(--muted-foreground);">Oct 16</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─── BILLS PAGE ─── -->
+    <div class="page" id="page-bills" style="padding:24px; gap:16px; overflow:auto;">
+      <div style="font-size:20px; font-weight:700;">🧾 Bill History</div>
+      <div style="display:flex; gap:10px;">
+        <input class="input" style="max-width:240px;" placeholder="Search bill number..." />
+        <input class="input" type="date" style="max-width:160px;" value="2026-10-18" />
+        <select class="input" style="max-width:140px; cursor:pointer;"><option>All Status</option><option>PAID</option><option>VOIDED</option></select>
+      </div>
+      <div class="card" style="overflow:hidden;">
+        <table class="table">
+          <thead><tr><th>Bill No.</th><th>Cashier</th><th>Items</th><th>Subtotal</th><th>GST</th><th>Total</th><th>Payment</th><th>Status</th><th>Time</th><th>Actions</th></tr></thead>
+          <tbody>
+            <tr><td><b>MH1-2026-000087</b></td><td>Ravi K.</td><td>4</td><td>₹840</td><td>₹128.47</td><td><b>₹840.00</b></td><td><span class="badge badge-green">CASH</span></td><td><span class="badge badge-green">PAID</span></td><td>12:31 PM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
+            <tr><td><b>MH1-2026-000086</b></td><td>Ravi K.</td><td>2</td><td>₹1,200</td><td>₹183.05</td><td><b>₹1,200.00</b></td><td><span class="badge badge-blue">UPI</span></td><td><span class="badge badge-green">PAID</span></td><td>12:18 PM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
+            <tr><td><b>MH1-2026-000085</b></td><td>Meena S.</td><td>6</td><td>₹570</td><td>₹87.12</td><td><b>₹570.00</b></td><td><span class="badge badge-green">CASH</span></td><td><span class="badge badge-green">PAID</span></td><td>11:54 AM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
+            <tr><td><b>MH1-2026-000084</b></td><td>Ravi K.</td><td>3</td><td>₹2,500</td><td>₹381.36</td><td><b>₹2,500.00</b></td><td><span class="badge" style="background:#7c3aed22;color:#7c3aed;">CARD</span></td><td><span class="badge badge-red">VOIDED</span></td><td>11:40 AM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ─── DAY CLOSING PAGE ─── -->
+    <div class="page" id="page-closing" style="padding:24px; gap:20px; overflow:auto;">
+      <div style="font-size:20px; font-weight:700;">🔒 Daily Closing — 18 Oct 2026</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+        <div class="card" style="padding:24px;">
+          <div style="font-weight:700; margin-bottom:16px;">💰 Cash Reconciliation</div>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Opening Cash</span><b>₹5,000.00</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Cash Sales</span><b style="color:#16a34a;">+₹31,500.00</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Card Sales</span><b style="color:#16a34a;">+₹9,750.00</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">UPI Sales</span><b style="color:#16a34a;">+₹7,000.00</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; border-top:1px solid var(--border); padding-top:12px;"><span style="color:var(--muted-foreground);">Expected Cash</span><b>₹36,500.00</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;"><span style="color:var(--muted-foreground);">Actual Cash</span>
+              <input class="input" style="width:120px; text-align:right;" value="36500" /></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Difference</span><b style="color:#16a34a;">₹0.00 ✓</b></div>
+          </div>
+        </div>
+        <div class="card" style="padding:24px;">
+          <div style="font-weight:700; margin-bottom:16px;">📊 Day Summary</div>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Total Bills</span><b>87</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Voided Bills</span><b style="color:#dc2626;">1</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Gross Sales</span><b>₹48,250.00</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Total GST Collected</span><b>₹7,364.41</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Discounts Given</span><b style="color:#dc2626;">-₹0.00</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; border-top:1px solid var(--border); padding-top:12px;"><span>Net Sales</span><b style="color:#16a34a;">₹48,250.00</b></div>
+          </div>
+          <button class="btn-primary" style="width:100%; margin-top:20px; padding:12px;" onclick="alert('✅ Day closed successfully! Report saved.')">Close Day & Save Report</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── MODALS ─── -->
+<div id="mrpModal" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; inset:0; background:#00000055; z-index:100; align-items:center; justify-content:center;">
+  <div class="card" style="padding:28px; width:100%; max-width:360px; margin:16px;">
+    <div style="font-weight:700; font-size:16px; margin-bottom:4px;">Update MRP — <span id="mrpProductName"></span></div>
+    <div style="font-size:13px; color:var(--muted-foreground); margin-bottom:20px;">Current: ₹<span id="mrpCurrent"></span> · Change requires manager role</div>
+    <label style="font-size:13px; font-weight:600; display:block; margin-bottom:6px;">New MRP (₹)</label>
+    <input class="input" id="newMrpInput" placeholder="0.00" style="margin-bottom:16px;" />
+    <div style="font-size:12px; color:var(--muted-foreground); margin-bottom:20px;">⚠ This change will be recorded in the price audit log with your credentials.</div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn-primary" style="flex:1;" onclick="saveMrp()">Save & Audit</button>
+      <button class="btn-sec" onclick="document.getElementById('mrpModal').style.display='none'">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="checkoutModal" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; inset:0; background:#00000055; z-index:100; align-items:center; justify-content:center;">
+  <div class="card" style="padding:28px; width:100%; max-width:380px; margin:16px; text-align:center;">
+    <div style="font-size:48px; margin-bottom:12px;">✅</div>
+    <div style="font-weight:700; font-size:18px;">Bill Saved!</div>
+    <div id="checkoutSummary" style="font-size:14px; color:var(--muted-foreground); margin-top:8px; margin-bottom:20px;"></div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn-primary" style="flex:1;" onclick="newBill()">New Bill</button>
+      <button class="btn-sec" onclick="document.getElementById('checkoutModal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── DATA ────────────────────────────────────────────────────────────────────
+
+const PRODUCTS = [
+  { id:'p1', name:'Royal Stag', brand:'Seagram\'s', category:'Whisky', volume:'750ml', mrp:200, barcode:'8901234567890' },
+  { id:'p2', name:'Royal Stag', brand:'Seagram\'s', category:'Whisky', volume:'180ml', mrp:60, barcode:'8901234567899' },
+  { id:'p3', name:'Kingfisher Strong', brand:'UB', category:'Beer', volume:'650ml', mrp:70, barcode:'8901234567891' },
+  { id:'p4', name:'Kingfisher Strong', brand:'UB', category:'Beer', volume:'330ml', mrp:45, barcode:'8901234567898' },
+  { id:'p5', name:'Old Monk Rum', brand:'Mohan Meakin', category:'Rum', volume:'750ml', mrp:170, barcode:'8901234567892' },
+  { id:'p6', name:'Sula Brut', brand:'Sula', category:'Wine', volume:'750ml', mrp:600, barcode:'8901234567893' },
+  { id:'p7', name:'JW Red Label', brand:'Diageo', category:'Whisky', volume:'750ml', mrp:2500, barcode:'8901234567894' },
+  { id:'p8', name:'Bombay Sapphire', brand:'Bacardi', category:'Gin', volume:'750ml', mrp:850, barcode:'8901234567895' },
+  { id:'p9', name:'Bacardi White', brand:'Bacardi', category:'Rum', volume:'750ml', mrp:650, barcode:'8901234567896' },
+  { id:'p10', name:'Heineken', brand:'Heineken', category:'Beer', volume:'650ml', mrp:90, barcode:'8901234567897' },
+  { id:'p11', name:'Officer\'s Choice', brand:'Allied Blenders', category:'Whisky', volume:'750ml', mrp:160, barcode:'8901234567880' },
+  { id:'p12', name:'McDowell\'s No.1', brand:'Diageo', category:'Whisky', volume:'750ml', mrp:175, barcode:'8901234567881' },
+];
+
+let cart = [];
+let selectedPayment = 'CASH';
+let currentUser = { name: 'Owner', email: 'owner@store.com', role: 'owner' };
+let filterCatVal = 'All';
+
+const EMOJIS = { Whisky:'🥃', Beer:'🍺', Rum:'🥃', Wine:'🍷', Gin:'🍸' };
+
+// ─── AUTH ─────────────────────────────────────────────────────────────────────
+
+function loginAs(role) {
+  const map = {
+    owner: { name:'Owner (All Branches)', email:'owner@store.com' },
+    manager: { name:'Manager', email:'manager@store.com' },
+    cashier: { name:'Ravi Kumar (Cashier)', email:'cashier@store.com' },
+    steward: { name:'Steward', email:'steward@store.com' },
+  };
+  currentUser = { ...map[role], role };
+  doLogin();
+}
+
+function doLogin() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'flex';
+  document.getElementById('userDisplay').textContent =
+    { owner:'👑', manager:'🛠', cashier:'💰', steward:'🍽' }[currentUser.role] + ' ' + currentUser.name;
+  document.getElementById('emailDisplay').textContent = currentUser.email;
+  renderProducts();
+}
+
+function logout() {
+  document.getElementById('mainApp').style.display = 'none';
+  document.getElementById('loginPage').style.display = 'flex';
+}
+
+// ─── NAVIGATION ───────────────────────────────────────────────────────────────
+
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('nav-' + page).classList.add('active');
+}
+
+// ─── POS ─────────────────────────────────────────────────────────────────────
+
+function filterCat(cat) {
+  filterCatVal = cat;
+  document.querySelectorAll('[id^="cat-"]').forEach(b => {
+    b.style.background = 'var(--accent)';
+    b.style.color = 'var(--foreground)';
+  });
+  const el = document.getElementById('cat-' + cat);
+  if (el) { el.style.background = 'var(--primary)'; el.style.color = 'var(--primary-foreground)'; }
+  renderProducts();
+}
+
+function filterProducts(val) {
+  renderProducts(val);
+}
+
+function renderProducts(search = '') {
+  const grid = document.getElementById('productGrid');
+  let filtered = PRODUCTS;
+  if (filterCatVal !== 'All') filtered = filtered.filter(p => p.category === filterCatVal);
+  if (search) filtered = filtered.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.brand.toLowerCase().includes(search.toLowerCase()) ||
+    p.barcode.includes(search));
+  grid.innerHTML = filtered.map(p => `
+    <div class="pos-product" onclick="addToCart('${p.id}')">
+      <div style="font-size:28px; margin-bottom:6px;">${EMOJIS[p.category]||'🍾'}</div>
+      <div style="font-size:13px; font-weight:700; color:var(--foreground); line-height:1.3;">${p.name}</div>
+      <div style="font-size:11px; color:var(--muted-foreground);">${p.brand} · ${p.volume}</div>
+      <div style="font-size:16px; font-weight:700; color:var(--primary); margin-top:6px;">₹${p.mrp}</div>
+    </div>
+  `).join('');
+}
+
+function addToCart(id) {
+  const product = PRODUCTS.find(p => p.id === id);
+  if (!product) return;
+  const existing = cart.find(c => c.id === id);
+  if (existing) { existing.qty++; }
+  else { cart.push({ ...product, qty: 1 }); }
+  renderCart();
+}
+
+function removeFromCart(id) {
+  cart = cart.filter(c => c.id !== id);
+  renderCart();
+}
+
+function changeQty(id, delta) {
+  const item = cart.find(c => c.id === id);
+  if (!item) return;
+  item.qty += delta;
+  if (item.qty <= 0) cart = cart.filter(c => c.id !== id);
+  renderCart();
+}
+
+function renderCart() {
+  const el = document.getElementById('cartItems');
+  if (cart.length === 0) {
+    el.innerHTML = '<div style="color:var(--muted-foreground); font-size:13px; text-align:center; margin-top:40px;">Add products to start billing</div>';
+    updateTotals(0, 0, 0);
+    return;
+  }
+  el.innerHTML = cart.map(item => `
+    <div style="background:var(--accent); border-radius:8px; padding:10px 12px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div style="flex:1;">
+          <div style="font-size:13px; font-weight:600;">${item.name} <span style="font-size:11px; color:var(--muted-foreground);">${item.volume}</span></div>
+          <div style="font-size:12px; color:var(--muted-foreground);">₹${item.mrp} × ${item.qty} = <b>₹${(item.mrp * item.qty).toFixed(2)}</b></div>
+        </div>
+        <button onclick="removeFromCart('${item.id}')" style="background:none; border:none; cursor:pointer; color:var(--muted-foreground); font-size:16px; padding:0 4px;">✕</button>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+        <button onclick="changeQty('${item.id}',-1)" style="background:var(--card); border:1px solid var(--border); border-radius:6px; width:28px; height:28px; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; color:var(--foreground);">−</button>
+        <span style="font-weight:700; min-width:24px; text-align:center;">${item.qty}</span>
+        <button onclick="changeQty('${item.id}',1)" style="background:var(--card); border:1px solid var(--border); border-radius:6px; width:28px; height:28px; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; color:var(--foreground);">+</button>
+      </div>
+    </div>
+  `).join('');
+  const subtotal = cart.reduce((s, i) => s + i.mrp * i.qty, 0);
+  const tax = subtotal - subtotal / 1.18;
+  updateTotals(subtotal, tax, 0);
+}
+
+function updateTotals(subtotal, tax, discount) {
+  document.getElementById('subtotal').textContent = '₹' + subtotal.toFixed(2);
+  document.getElementById('taxAmount').textContent = '₹' + tax.toFixed(2);
+  document.getElementById('totalAmount').textContent = '₹' + (subtotal - discount).toFixed(2);
+}
+
+function applyDiscount(val) {
+  const d = parseFloat(val.replace(/[^0-9.]/g,'')) || 0;
+  const subtotal = cart.reduce((s, i) => s + i.mrp * i.qty, 0);
+  const tax = subtotal - subtotal / 1.18;
+  document.getElementById('discountInput').value = '₹' + d.toFixed(2);
+  updateTotals(subtotal, tax, d);
+}
+
+function setPayment(mode) {
+  selectedPayment = mode;
+  ['CASH','CARD','UPI'].forEach(m => {
+    const b = document.getElementById('pay-' + m);
+    b.style.background = m === mode ? 'var(--primary)' : 'var(--secondary)';
+    b.style.color = m === mode ? 'var(--primary-foreground)' : 'var(--secondary-foreground)';
+  });
+}
+
+function checkout() {
+  if (cart.length === 0) { alert('Add at least one product to the bill.'); return; }
+  const total = cart.reduce((s, i) => s + i.mrp * i.qty, 0);
+  document.getElementById('checkoutSummary').innerHTML =
+    `<b>₹${total.toFixed(2)}</b> collected via <b>${selectedPayment}</b><br>
+     ${cart.reduce((s,i)=>s+i.qty,0)} items · Stock updated · Receipt ready`;
+  document.getElementById('checkoutModal').style.display = 'flex';
+}
+
+function newBill() {
+  cart = [];
+  renderCart();
+  document.getElementById('checkoutModal').style.display = 'none';
+  document.getElementById('discountInput').value = '₹0.00';
+  setPayment('CASH');
+}
+
+function clearCart() {
+  cart = [];
+  renderCart();
+}
+
+// ─── MODALS ───────────────────────────────────────────────────────────────────
+
+function showModal(id) { document.getElementById(id).style.display = 'flex'; }
+
+function showMrpModal(name, current) {
+  document.getElementById('mrpProductName').textContent = name;
+  document.getElementById('mrpCurrent').textContent = current;
+  document.getElementById('newMrpInput').value = current;
+  document.getElementById('mrpModal').style.display = 'flex';
+}
+
+function saveMrp() {
+  const val = document.getElementById('newMrpInput').value;
+  if (!val || isNaN(parseFloat(val))) { alert('Enter a valid MRP.'); return; }
+  document.getElementById('mrpModal').style.display = 'none';
+  alert(`✅ MRP updated to ₹${parseFloat(val).toFixed(2)}. Audit log entry created.`);
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+
+setPayment('CASH');
+</script>
+</body>
+</html>

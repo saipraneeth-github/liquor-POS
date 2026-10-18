@@ -5,6 +5,8 @@ import fastifyHelmet from '@fastify/helmet';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { productRoutes } from './modules/products/product.routes.js';
 import { billingRoutes } from './modules/billing/billing.routes.js';
+import { closingRoutes } from './modules/closing/closing.routes.js';
+import { inventoryRoutes } from './modules/inventory/inventory.routes.js';
 
 export function buildApp() {
   const fastify = Fastify({
@@ -22,9 +24,11 @@ export function buildApp() {
 
   // ─── ROUTES ───────────────────────────────────────────────────────────────
 
-  fastify.register(authRoutes,    { prefix: '/api/v1' });
-  fastify.register(productRoutes, { prefix: '/api/v1' });
-  fastify.register(billingRoutes, { prefix: '/api/v1' });
+  fastify.register(authRoutes,      { prefix: '/api/v1' });
+  fastify.register(productRoutes,   { prefix: '/api/v1' });
+  fastify.register(billingRoutes,   { prefix: '/api/v1' });
+  fastify.register(closingRoutes,   { prefix: '/api/v1' });
+  fastify.register(inventoryRoutes, { prefix: '/api/v1' });
 
   // ─── HEALTH ───────────────────────────────────────────────────────────────
 
