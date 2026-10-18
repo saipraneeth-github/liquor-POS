@@ -1,6 +1,6 @@
 # AI Project
 
-This project is configured with the **Everything Claude Code (ECC) Developer Suite** adapted natively for **Google Antigravity 2.0**.
+This project is configured with the **Everything Claude Code (ECC) Developer Suite** and **REA (Reverse Engineer Anything)** natively adapted for **Google Antigravity 2.0**.
 
 ## 🛠 Project Environment & Architecture
 
@@ -11,7 +11,18 @@ This project is configured with the **Everything Claude Code (ECC) Developer Sui
   - **71 Agents** in [`.agents/agents/`](.agents/agents) (Specialized for architecture, code review, TDD, security, debugging, etc.)
   - **122 Rules** in [`.agents/rules/`](.agents/rules) (TypeScript, testing, coding standards, orchestration, and database conventions)
   - **97 Workflows** in [`.agents/workflows/`](.agents/workflows) (Slash commands runnable directly in Antigravity)
-  - **132 Skills** in [`.agents/skills/`](.agents/skills) (TDD, strategic compaction, quality gates, living docs, unified memory, etc.)
+  - **137 Skills** in [`.agents/skills/`](.agents/skills) (TDD, quality gates, unified memory, plus REA reverse engineering skills)
+  - **REA MCP Server**: Configured in [`C:\Users\yarra\.gemini\config\mcp_config.json`](file:///C:/Users/yarra/.gemini/config/mcp_config.json)
+
+---
+
+## 🔬 REA: Reverse Engineer Anything
+
+REA provides binary, application, and runtime investigation capabilities directly inside Antigravity:
+- **Inspect Applications**: Analyze native executables, Electron/JavaScript apps, .NET assemblies, and Android packages.
+- **Understand Features**: Extract how an existing feature is built, decompile source, and inspect API and network traces.
+- **Workflow Skill**: Trigger `reverse-engineer-anything` skill to investigate any binary or packaged artifact.
+- **REA MCP Server**: Connected via `npx -y rea-agents@6.5.0 mcp`.
 
 ---
 
