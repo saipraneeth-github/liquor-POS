@@ -181,3 +181,90 @@ export const supplierInvoiceItems = pgTable('supplier_invoice_items', {
   lineCostTotal:  numeric('line_cost_total', { precision: 12, scale: 2 }).notNull(),
 });
 
+// ─── PHASE 3: TABLE MANAGEMENT ───────────────────────────────────────────────
+
+export const tableStatusEnum = pgEnum('table_status', ['FREE', 'OCCUPIED', 'RESERVED']);
+
+export const tables = pgTable('tables', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  branchId:  uuid('branch_id').notNull().references(() => branches.id),
+  name:      text('name').notNull(),           // e.g., "T-1", "Bar Seat 3"
+  capacity:  integer('capacity').notNull().default(4),
+  status:    tableStatusEnum('status').notNull().default('FREE'),
+  section:   text('section'),                  // e.g., "Indoor", "Outdoor", "Bar"
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+export const tableSessions = pgTable('table_sessions', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  tableId:    uuid('table_id').notNull().references(() => tables.id),
+  branchId:   uuid('branch_id').notNull().references(() => branches.id),
+  stewardId:  uuid('steward_id').references(() => users.id),
+  billId:     uuid('bill_id').references(() => bills.id),  // set on final checkout
+  openedAt:   timestamp('opened_at', { withTimezone: true }).defaultNow(),
+  closedAt:   timestamp('closed_at', { withTimezone: true }),
+  guestCount: integer('guest_count'),
+  notes:      text('notes'),
+});
+
+// ─── PHASE 3: KOT (KITCHEN ORDER TICKET) ─────────────────────────────────────
+
+export const kotStatusEnum    = pgEnum('kot_status',      ['PENDING', 'PREPARING', 'SERVED', 'CANCELLED']);
+export const kotItemStatusEnum = pgEnum('kot_item_status', ['PENDING', 'PREPARING', 'SERVED', 'CANCELLED']);
+export const kotDestEnum      = pgEnum('kot_destination',  ['KITCHEN', 'BAR']);
+
+export const kotOrders = pgTable('kot_orders', {
+  id:             uuid('id').primaryKey().defaultRandom(),
+  tableSessionId: uuid('table_session_id').notNull().references(() => tableSessions.id),
+  branchId:       uuid('branch_id').notNull().references(() => branches.id),
+  createdById:    uuid('created_by_id').notNull().references(() => users.id),
+  destination:    kotDestEnum('destination').notNull().default('KITCHEN'),
+  status:         kotStatusEnum('status').notNull().default('PENDING'),
+  notes:          text('notes'),
+  createdAt:      timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt:      timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+export const kotItems = pgTable('kot_items', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  kotOrderId:  uuid('kot_order_id').notNull().references(() => kotOrders.id, { onDelete: 'cascade' }),
+  productId:   uuid('product_id').notNull().references(() => products.id),
+  quantity:    integer('quantity').notNull(),
+  unitPrice:   numeric('unit_price', { precision: 12, scale: 2 }).notNull(),   // MRP at order time
+  taxRate:     numeric('tax_rate', { precision: 5, scale: 2 }).notNull(),
+  status:      kotItemStatusEnum('status').notNull().default('PENDING'),
+  notes:       text('notes'),                                                   // e.g., "No ice"
+});
+
+// ─── PHASE 3: SUPPLIER SCHEME TRACKING ───────────────────────────────────────
+
+export const schemeTargetTypeEnum = pgEnum('scheme_target_type', ['QTY', 'VALUE']);
+export const schemeStatusEnum     = pgEnum('scheme_status',      ['ACTIVE', 'COMPLETED', 'EXPIRED', 'CANCELLED']);
+
+export const schemes = pgTable('schemes', {
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  branchId:           uuid('branch_id').notNull().references(() => branches.id),
+  supplierName:       text('supplier_name').notNull(),
+  schemeName:         text('scheme_name').notNull(),
+  targetType:         schemeTargetTypeEnum('target_type').notNull(),
+  targetValue:        numeric('target_value', { precision: 12, scale: 2 }).notNull(),
+  currentValue:       numeric('current_value', { precision: 12, scale: 2 }).notNull().default('0'),
+  rewardDescription:  text('reward_description').notNull(),
+  startDate:          timestamp('start_date', { withTimezone: true }).notNull(),
+  endDate:            timestamp('end_date', { withTimezone: true }).notNull(),
+  alertThresholdPct:  numeric('alert_threshold_pct', { precision: 5, scale: 2 }).notNull().default('80.00'),
+  status:             schemeStatusEnum('status').notNull().default('ACTIVE'),
+  notes:              text('notes'),
+  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+export const schemePurchases = pgTable('scheme_purchases', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  schemeId:    uuid('scheme_id').notNull().references(() => schemes.id),
+  referenceId: uuid('reference_id'),   // supplier_invoice_id
+  qty:         numeric('qty',   { precision: 12, scale: 2 }).notNull().default('0'),
+  value:       numeric('value', { precision: 12, scale: 2 }).notNull().default('0'),
+  recordedAt:  timestamp('recorded_at', { withTimezone: true }).defaultNow(),
+  notes:       text('notes'),
+});
+

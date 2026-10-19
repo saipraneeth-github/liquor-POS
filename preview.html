@@ -1,30 +1,66 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Liquor Counter — UI Preview</title>
 <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
 <style>
-  body { background: var(--background); color: var(--foreground); font-family: inherit; }
+  /* ── Theme Variables (local override for standalone preview) ─────────────── */
+  :root {
+    --background: #ffffff;
+    --foreground: #0f172a;
+    --card: #f8fafc;
+    --card-foreground: #0f172a;
+    --border: #e2e8f0;
+    --primary: #6d28d9;
+    --primary-foreground: #ffffff;
+    --secondary: #f1f5f9;
+    --secondary-foreground: #334155;
+    --muted-foreground: #64748b;
+    --accent: #f1f5f9;
+    --sidebar: #f8fafc;
+  }
+  [data-theme="dark"] {
+    --background: #0f0f13;
+    --foreground: #f0f0f6;
+    --card: #1a1a24;
+    --card-foreground: #f0f0f6;
+    --border: #2a2a38;
+    --primary: #7c3aed;
+    --primary-foreground: #ffffff;
+    --secondary: #1e1e2c;
+    --secondary-foreground: #c0c0d0;
+    --muted-foreground: #8888a8;
+    --accent: #20202e;
+    --sidebar: #12121a;
+  }
+
+  /* ── Base ────────────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--background); color: var(--foreground); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
   .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); }
   .btn-primary { background: var(--primary); color: var(--primary-foreground); border-radius: 8px; padding: 8px 18px; font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s; }
   .btn-primary:hover { opacity: 0.88; }
-  .btn-sec { background: var(--secondary); color: var(--secondary-foreground); border-radius: 8px; padding: 8px 18px; font-weight: 600; cursor: pointer; border: none; }
+  .btn-sec { background: var(--secondary); color: var(--secondary-foreground); border-radius: 8px; padding: 8px 18px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); }
+  .btn-sec:hover { opacity: 0.85; }
+  .btn-ghost { background: none; border: none; cursor: pointer; color: var(--muted-foreground); transition: color 0.15s; }
+  .btn-ghost:hover { color: var(--foreground); }
   .input { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; color: var(--foreground); width: 100%; outline: none; font-size: 14px; }
-  .input:focus { border-color: var(--primary); }
+  .input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 15%, transparent); }
   .badge { display: inline-block; border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
   .badge-green { background: #16a34a22; color: #16a34a; }
   .badge-red { background: #dc262622; color: #dc2626; }
   .badge-blue { background: #2563eb22; color: #2563eb; }
   .badge-yellow { background: #d9770622; color: #d97706; }
+  .badge-purple { background: #7c3aed22; color: #7c3aed; }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; cursor: pointer; color: var(--muted-foreground); font-size: 14px; font-weight: 500; transition: all 0.15s; }
   .nav-item:hover, .nav-item.active { background: var(--accent); color: var(--foreground); }
   .page { display: none; }
   .page.active { display: flex; flex-direction: column; flex: 1; overflow: auto; }
   .pos-product { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; transition: all 0.15s; text-align: center; }
-  .pos-product:hover { border-color: var(--primary); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .pos-product:hover { border-color: var(--primary); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
   .pos-product:active { transform: scale(0.97); }
   .table { width: 100%; border-collapse: collapse; font-size: 14px; }
   .table th { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -32,18 +68,37 @@
   .table tr:last-child td { border-bottom: none; }
   .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
   .tag { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; background: var(--accent); color: var(--foreground); }
+  .table-tile { border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.18s; border: 2px solid transparent; min-height: 90px; display: flex; flex-direction: column; justify-content: space-between; }
+  .table-tile:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
+  .table-FREE { background: color-mix(in srgb, #16a34a 10%, var(--card)); border-color: #16a34a44; }
+  .table-OCCUPIED { background: color-mix(in srgb, #dc2626 10%, var(--card)); border-color: #dc262644; }
+  .table-RESERVED { background: color-mix(in srgb, #d97706 10%, var(--card)); border-color: #d9770644; }
+  .kot-item { background: var(--accent); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .progress-bar { background: var(--border); border-radius: 99px; height: 8px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; }
+
+  /* ── Dark mode toggle button ─────────────────────────────────────────────── */
+  #themeToggle {
+    width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--accent); cursor: pointer; display: flex; align-items: center;
+    justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0;
+  }
+  #themeToggle:hover { background: var(--secondary); }
 </style>
 </head>
 <body>
 
 <!-- ═══════════════════════════════ LOGIN PAGE ═══════════════════════════════ -->
-<div id="loginPage" style="display:flex; align-items:center; justify-content:center; min-height:100vh; background: var(--background);">
+<div id="loginPage" style="display:flex; align-items:center; justify-content:center; min-height:100vh; background: var(--background); position:relative;">
+  <!-- Theme toggle on login page -->
+  <button id="loginThemeBtn" onclick="toggleTheme()" style="position:absolute; top:20px; right:20px; width:40px; height:40px; border-radius:8px; border:1px solid var(--border); background:var(--accent); cursor:pointer; font-size:18px;" title="Toggle dark/light mode">🌙</button>
+
   <div style="width:100%; max-width:400px; padding:16px;">
     <div class="card" style="padding:40px;">
       <div style="text-align:center; margin-bottom:32px;">
         <div style="font-size:40px; margin-bottom:8px;">🍾</div>
         <div style="font-size:24px; font-weight:700; color:var(--foreground);">Liquor Counter</div>
-        <div style="font-size:13px; color:var(--muted-foreground); margin-top:4px;">POS & Inventory Management</div>
+        <div style="font-size:13px; color:var(--muted-foreground); margin-top:4px;">POS &amp; Inventory Management</div>
       </div>
 
       <div style="margin-bottom:16px;">
@@ -66,7 +121,7 @@
         </div>
       </div>
     </div>
-    <div style="text-align:center; margin-top:12px; font-size:12px; color:var(--muted-foreground);">Branch: Malabar Wines & Spirits, Mumbai</div>
+    <div style="text-align:center; margin-top:12px; font-size:12px; color:var(--muted-foreground);">Branch: Malabar Wines &amp; Spirits, Mumbai</div>
   </div>
 </div>
 
@@ -84,27 +139,22 @@
     </div>
 
     <div style="display:flex; flex-direction:column; gap:2px; flex:1;">
-      <div class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
-        <span>📊</span> Dashboard
-      </div>
-      <div class="nav-item" id="nav-pos" onclick="showPage('pos')">
-        <span>🛒</span> POS Billing
-      </div>
-      <div class="nav-item" id="nav-products" onclick="showPage('products')">
-        <span>🍷</span> Products
-      </div>
-      <div class="nav-item" id="nav-stock" onclick="showPage('stock')">
-        <span>📦</span> Inventory
-      </div>
-      <div class="nav-item" id="nav-bills" onclick="showPage('bills')">
-        <span>🧾</span> Bills
-      </div>
-      <div class="nav-item" id="nav-closing" onclick="showPage('closing')">
-        <span>🔒</span> Day Closing
-      </div>
+      <div class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')"><span>📊</span> Dashboard</div>
+      <div class="nav-item" id="nav-pos" onclick="showPage('pos')"><span>🛒</span> POS Billing</div>
+      <div class="nav-item" id="nav-tables" onclick="showPage('tables')"><span>🪑</span> Tables &amp; KOT</div>
+      <div class="nav-item" id="nav-products" onclick="showPage('products')"><span>🍷</span> Products</div>
+      <div class="nav-item" id="nav-stock" onclick="showPage('stock')"><span>📦</span> Inventory</div>
+      <div class="nav-item" id="nav-schemes" onclick="showPage('schemes')"><span>🎯</span> Schemes</div>
+      <div class="nav-item" id="nav-bills" onclick="showPage('bills')"><span>🧾</span> Bills</div>
+      <div class="nav-item" id="nav-closing" onclick="showPage('closing')"><span>🔒</span> Day Closing</div>
     </div>
 
-    <div style="padding:12px; background:var(--accent); border-radius:10px; margin-top:auto;">
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+      <button id="themeToggle" onclick="toggleTheme()" title="Toggle dark/light mode">🌙</button>
+      <span style="font-size:11px; color:var(--muted-foreground);">Toggle theme</span>
+    </div>
+
+    <div style="padding:12px; background:var(--accent); border-radius:10px;">
       <div id="userDisplay" style="font-size:13px; font-weight:600; color:var(--foreground);">👑 Owner</div>
       <div style="font-size:11px; color:var(--muted-foreground); margin-top:2px;" id="emailDisplay">owner@store.com</div>
       <button onclick="logout()" style="margin-top:8px; font-size:12px; color:var(--muted-foreground); background:none; border:none; cursor:pointer; padding:0;">Sign out →</button>
@@ -119,7 +169,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
         <div>
           <div style="font-size:22px; font-weight:700;">Good morning! 👋</div>
-          <div style="font-size:13px; color:var(--muted-foreground);">Sunday, 18 October 2026 · Malabar Wines & Spirits</div>
+          <div style="font-size:13px; color:var(--muted-foreground);">Sunday, 19 October 2026 · Malabar Wines &amp; Spirits</div>
         </div>
         <button class="btn-primary" onclick="showPage('pos')">+ New Bill</button>
       </div>
@@ -136,9 +186,9 @@
           <div style="font-size:12px; color:#16a34a; margin-top:4px;">↑ 5 more than yesterday</div>
         </div>
         <div class="stat-card">
-          <div style="font-size:12px; color:var(--muted-foreground); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Low Stock Items</div>
-          <div style="font-size:28px; font-weight:700; color:#d97706; margin-top:6px;">6</div>
-          <div style="font-size:12px; color:#d97706; margin-top:4px;">⚠ Action needed</div>
+          <div style="font-size:12px; color:var(--muted-foreground); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Tables Occupied</div>
+          <div style="font-size:28px; font-weight:700; color:#d97706; margin-top:6px;">4 / 12</div>
+          <div style="font-size:12px; color:var(--muted-foreground); margin-top:4px;">🪑 4 free, 4 reserved</div>
         </div>
         <div class="stat-card">
           <div style="font-size:12px; color:var(--muted-foreground); font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Month Revenue</div>
@@ -178,8 +228,8 @@
             <div style="font-size:13px; margin-top:4px; color:var(--foreground);">Pernod scheme target: 92% achieved! ₹8,000 incentive unlockable.</div>
           </div>
           <div style="background:#eff6ff22; border:1px solid #2563eb44; border-radius:8px; padding:12px;">
-            <div style="font-size:13px; font-weight:600; color:#2563eb;">📦 Purchase Order</div>
-            <div style="font-size:13px; margin-top:4px; color:var(--foreground);">Auto-indent ready for 8 SKUs based on sales velocity.</div>
+            <div style="font-size:13px; font-weight:600; color:#2563eb;">📦 Auto-Indent Ready</div>
+            <div style="font-size:13px; margin-top:4px; color:var(--foreground);">Reorder suggestions ready for 8 SKUs based on sales velocity.</div>
           </div>
         </div>
       </div>
@@ -189,7 +239,7 @@
     <div class="page" id="page-pos" style="flex-direction:row; overflow:hidden;">
       <!-- Product Grid -->
       <div style="flex:1.6; display:flex; flex-direction:column; overflow:hidden;">
-        <div style="padding:16px 16px 12px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center;">
+        <div style="padding:16px 16px 12px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
           <input class="input" style="max-width:280px;" placeholder="🔍 Scan barcode or search..." oninput="filterProducts(this.value)" id="posSearch"/>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
             <button class="tag" onclick="filterCat('All')" id="cat-All" style="cursor:pointer; padding:6px 12px; background:var(--primary); color:var(--primary-foreground);">All</button>
@@ -241,8 +291,128 @@
           </div>
 
           <button class="btn-primary" style="width:100%; padding:14px; font-size:16px;" onclick="checkout()">
-            Checkout & Print
+            Checkout &amp; Print
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── TABLES & KOT PAGE ─── -->
+    <div class="page" id="page-tables" style="padding:24px; gap:20px; overflow:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:20px; font-weight:700;">🪑 Table Management &amp; KOT</div>
+          <div style="font-size:13px; color:var(--muted-foreground);">Assign stewards, create KOTs, and manage table sessions</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <div style="display:flex; gap:6px; align-items:center; font-size:12px;">
+            <span style="width:12px;height:12px;border-radius:3px;background:#16a34a;display:inline-block;"></span> Free
+            <span style="width:12px;height:12px;border-radius:3px;background:#dc2626;display:inline-block; margin-left:6px;"></span> Occupied
+            <span style="width:12px;height:12px;border-radius:3px;background:#d97706;display:inline-block; margin-left:6px;"></span> Reserved
+          </div>
+          <button class="btn-primary" onclick="alert('Open Table modal — assign steward, guest count')">+ Open Table</button>
+        </div>
+      </div>
+
+      <!-- Table Grid -->
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px;" id="tableGrid"></div>
+
+      <!-- KOT Section -->
+      <div style="display:grid; grid-template-columns:1.2fr 1fr; gap:16px;">
+        <!-- Active KOTs -->
+        <div class="card" style="padding:20px;">
+          <div style="font-weight:700; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+            📋 Active KOT Orders
+            <button class="btn-primary" style="font-size:12px; padding:6px 14px;" onclick="showModal('kotModal')">+ New KOT</button>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <!-- KOT 1 -->
+            <div style="border:1px solid var(--border); border-radius:10px; overflow:hidden;">
+              <div style="padding:10px 14px; background:var(--accent); display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <span style="font-weight:700; font-size:13px;">KOT #047</span>
+                  <span style="margin-left:8px;" class="badge badge-yellow">PREPARING</span>
+                </div>
+                <div style="font-size:12px; color:var(--muted-foreground);">T-3 · Steward: Arjun</div>
+              </div>
+              <div style="padding:10px 14px; display:flex; flex-direction:column; gap:6px;">
+                <div class="kot-item">
+                  <div style="font-size:13px;"><b>Royal Stag 750ml</b> × 2</div>
+                  <span class="badge badge-yellow">PREPARING</span>
+                </div>
+                <div class="kot-item">
+                  <div style="font-size:13px;"><b>Peanuts (Bar Snack)</b> × 1</div>
+                  <span class="badge badge-green">SERVED</span>
+                </div>
+              </div>
+              <div style="padding:8px 14px; border-top:1px solid var(--border); display:flex; gap:8px;">
+                <button class="btn-sec" style="font-size:12px; padding:6px 12px;" onclick="alert('Mark all as SERVED')">Mark Served</button>
+                <button class="btn-primary" style="font-size:12px; padding:6px 12px;" onclick="showModal('checkoutModal')">Checkout</button>
+              </div>
+            </div>
+
+            <!-- KOT 2 -->
+            <div style="border:1px solid var(--border); border-radius:10px; overflow:hidden;">
+              <div style="padding:10px 14px; background:var(--accent); display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <span style="font-weight:700; font-size:13px;">KOT #048</span>
+                  <span style="margin-left:8px;" class="badge badge-blue">PENDING</span>
+                </div>
+                <div style="font-size:12px; color:var(--muted-foreground);">T-7 · Steward: Priya</div>
+              </div>
+              <div style="padding:10px 14px; display:flex; flex-direction:column; gap:6px;">
+                <div class="kot-item">
+                  <div style="font-size:13px;"><b>Kingfisher Strong 650ml</b> × 4</div>
+                  <span class="badge badge-blue">PENDING</span>
+                </div>
+                <div class="kot-item">
+                  <div style="font-size:13px;"><b>Sula Brut 750ml</b> × 1</div>
+                  <span class="badge badge-blue">PENDING</span>
+                </div>
+              </div>
+              <div style="padding:8px 14px; border-top:1px solid var(--border); display:flex; gap:8px;">
+                <button class="btn-primary" style="font-size:12px; padding:6px 12px;" onclick="alert('Start preparation → PREPARING')">Start Preparing</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Table Session Summary -->
+        <div class="card" style="padding:20px;">
+          <div style="font-weight:700; margin-bottom:16px;">📌 Table T-3 Session</div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+              <span style="color:var(--muted-foreground);">Opened At</span>
+              <b>7:32 PM</b>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+              <span style="color:var(--muted-foreground);">Steward</span>
+              <b>Arjun Kumar</b>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+              <span style="color:var(--muted-foreground);">Guest Count</span>
+              <b>4 guests</b>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+              <span style="color:var(--muted-foreground);">KOT Orders</span>
+              <b>2 KOTs</b>
+            </div>
+            <div style="border-top:1px solid var(--border); padding-top:10px;">
+              <div style="font-size:12px; color:var(--muted-foreground); margin-bottom:8px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;">Consolidated Bill</div>
+              <div style="display:flex; flex-direction:column; gap:6px; font-size:13px;">
+                <div style="display:flex; justify-content:space-between;"><span>Royal Stag 750ml × 2</span><span>₹400.00</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>Kingfisher Strong × 4</span><span>₹280.00</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>Sula Brut × 1</span><span>₹600.00</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>Peanuts × 1</span><span>₹50.00</span></div>
+                <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border); padding-top:8px;"><span style="color:var(--muted-foreground);">GST (incl.)</span><span>₹201.53</span></div>
+                <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700;"><span>Total</span><span style="color:var(--primary);">₹1,330.00</span></div>
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:4px;">
+              <button class="btn-primary" style="flex:1; padding:10px; font-size:13px;" onclick="alert('Generate consolidated bill → POS checkout')">Generate Bill</button>
+              <button class="btn-sec" style="padding:10px; font-size:13px;" onclick="alert('Close table session')">Close Table</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -354,12 +524,154 @@
       </div>
     </div>
 
+    <!-- ─── SCHEMES PAGE ─── -->
+    <div class="page" id="page-schemes" style="padding:24px; gap:20px; overflow:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:20px; font-weight:700;">🎯 Supplier Scheme Tracking</div>
+          <div style="font-size:13px; color:var(--muted-foreground);">Track targets, incentives, and scheme progress</div>
+        </div>
+        <button class="btn-primary" onclick="alert('Add Scheme modal — supplier, target, slab rewards')">+ Add Scheme</button>
+      </div>
+
+      <!-- Alert Banner -->
+      <div style="background:#dcfce722; border:1px solid #16a34a55; border-radius:10px; padding:14px 18px; display:flex; align-items:center; gap:12px;">
+        <div style="font-size:20px;">🔔</div>
+        <div>
+          <div style="font-weight:700; color:#16a34a; font-size:14px;">1 Scheme Ready to Claim!</div>
+          <div style="font-size:13px; color:var(--foreground); margin-top:2px;">Pernod Ricard — October scheme has crossed 90% of target. Contact your distributor to claim ₹8,000 cashback.</div>
+        </div>
+        <button class="btn-primary" style="margin-left:auto; white-space:nowrap; font-size:13px;" onclick="alert('Contact distributor')">Claim Now</button>
+      </div>
+
+      <!-- Scheme Cards -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+
+        <!-- Scheme 1 — Near target -->
+        <div class="card" style="padding:20px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+            <div>
+              <div style="font-weight:700; font-size:15px;">Pernod Ricard — Oct Scheme</div>
+              <div style="font-size:12px; color:var(--muted-foreground); margin-top:2px;">United Spirits · Value target</div>
+            </div>
+            <span class="badge badge-green">ACTIVE</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+            <span style="color:var(--muted-foreground);">Progress</span>
+            <b>₹92,000 / ₹1,00,000</b>
+          </div>
+          <div class="progress-bar" style="margin-bottom:12px;">
+            <div class="progress-fill" style="width:92%; background:#16a34a;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted-foreground); margin-bottom:12px;">
+            <span>Ends: 31 Oct 2026</span>
+            <b style="color:#16a34a;">92% — Alert triggered ✅</b>
+          </div>
+          <div style="background:var(--accent); border-radius:8px; padding:10px; font-size:12px;">
+            <div style="font-weight:600; margin-bottom:4px;">🏆 Eligible Reward:</div>
+            <div>₹8,000 cashback + 2 free cases of Royal Stag 180ml</div>
+          </div>
+        </div>
+
+        <!-- Scheme 2 — Mid progress -->
+        <div class="card" style="padding:20px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+            <div>
+              <div style="font-weight:700; font-size:15px;">United Breweries — Q3</div>
+              <div style="font-size:12px; color:var(--muted-foreground); margin-top:2px;">United Breweries · Qty target (cases)</div>
+            </div>
+            <span class="badge badge-green">ACTIVE</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+            <span style="color:var(--muted-foreground);">Progress</span>
+            <b>145 / 200 cases</b>
+          </div>
+          <div class="progress-bar" style="margin-bottom:12px;">
+            <div class="progress-fill" style="width:72.5%; background:#d97706;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted-foreground); margin-bottom:12px;">
+            <span>Ends: 31 Dec 2026</span>
+            <b style="color:#d97706;">72.5% — 55 cases remaining</b>
+          </div>
+          <div style="background:var(--accent); border-radius:8px; padding:10px; font-size:12px;">
+            <div style="font-weight:600; margin-bottom:4px;">🏆 On completion:</div>
+            <div>3% volume discount on next order + 10 free cases</div>
+          </div>
+        </div>
+
+        <!-- Scheme 3 — Low progress -->
+        <div class="card" style="padding:20px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+            <div>
+              <div style="font-weight:700; font-size:15px;">Diageo Festive Boost</div>
+              <div style="font-size:12px; color:var(--muted-foreground); margin-top:2px;">Diageo India · Value target</div>
+            </div>
+            <span class="badge badge-green">ACTIVE</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+            <span style="color:var(--muted-foreground);">Progress</span>
+            <b>₹45,000 / ₹2,00,000</b>
+          </div>
+          <div class="progress-bar" style="margin-bottom:12px;">
+            <div class="progress-fill" style="width:22.5%; background:#2563eb;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted-foreground); margin-bottom:12px;">
+            <span>Ends: 30 Nov 2026</span>
+            <b style="color:var(--muted-foreground);">22.5%</b>
+          </div>
+          <div style="background:var(--accent); border-radius:8px; padding:10px; font-size:12px;">
+            <div style="font-weight:600; margin-bottom:4px;">Slab Rewards:</div>
+            <div>₹1L → 1.5% | ₹1.5L → 2.5% | ₹2L → 4% cashback</div>
+          </div>
+        </div>
+
+        <!-- Scheme 4 — Completed -->
+        <div class="card" style="padding:20px; opacity:0.7;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+            <div>
+              <div style="font-weight:700; font-size:15px;">Bacardi Sep Scheme</div>
+              <div style="font-size:12px; color:var(--muted-foreground); margin-top:2px;">Bacardi India · Value target</div>
+            </div>
+            <span class="badge badge-purple">COMPLETED</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+            <span style="color:var(--muted-foreground);">Final</span>
+            <b>₹75,000 / ₹50,000</b>
+          </div>
+          <div class="progress-bar" style="margin-bottom:12px;">
+            <div class="progress-fill" style="width:100%; background:#7c3aed;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted-foreground); margin-bottom:12px;">
+            <span>Ended: 30 Sep 2026</span>
+            <b style="color:#7c3aed;">150% achieved 🎉</b>
+          </div>
+          <div style="background:var(--accent); border-radius:8px; padding:10px; font-size:12px;">
+            <div style="font-weight:600; margin-bottom:4px;">✅ Claimed:</div>
+            <div>₹5,000 cashback — received on 5 Oct 2026</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scheme Purchases Table -->
+      <div class="card" style="overflow:hidden;">
+        <div style="padding:16px; border-bottom:1px solid var(--border); font-weight:700;">📜 Recent Purchase Entries</div>
+        <table class="table">
+          <thead><tr><th>Date</th><th>Scheme</th><th>Invoice Ref</th><th>Qty</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Oct 18</td><td>Pernod Ricard — Oct</td><td>INV-2026-0892</td><td>—</td><td>₹18,500</td></tr>
+            <tr><td>Oct 15</td><td>United Breweries — Q3</td><td>INV-2026-0881</td><td>22 cases</td><td>₹15,400</td></tr>
+            <tr><td>Oct 12</td><td>Pernod Ricard — Oct</td><td>INV-2026-0870</td><td>—</td><td>₹24,000</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- ─── BILLS PAGE ─── -->
     <div class="page" id="page-bills" style="padding:24px; gap:16px; overflow:auto;">
       <div style="font-size:20px; font-weight:700;">🧾 Bill History</div>
       <div style="display:flex; gap:10px;">
         <input class="input" style="max-width:240px;" placeholder="Search bill number..." />
-        <input class="input" type="date" style="max-width:160px;" value="2026-10-18" />
+        <input class="input" type="date" style="max-width:160px;" value="2026-10-19" />
         <select class="input" style="max-width:140px; cursor:pointer;"><option>All Status</option><option>PAID</option><option>VOIDED</option></select>
       </div>
       <div class="card" style="overflow:hidden;">
@@ -369,7 +681,7 @@
             <tr><td><b>MH1-2026-000087</b></td><td>Ravi K.</td><td>4</td><td>₹840</td><td>₹128.47</td><td><b>₹840.00</b></td><td><span class="badge badge-green">CASH</span></td><td><span class="badge badge-green">PAID</span></td><td>12:31 PM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
             <tr><td><b>MH1-2026-000086</b></td><td>Ravi K.</td><td>2</td><td>₹1,200</td><td>₹183.05</td><td><b>₹1,200.00</b></td><td><span class="badge badge-blue">UPI</span></td><td><span class="badge badge-green">PAID</span></td><td>12:18 PM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
             <tr><td><b>MH1-2026-000085</b></td><td>Meena S.</td><td>6</td><td>₹570</td><td>₹87.12</td><td><b>₹570.00</b></td><td><span class="badge badge-green">CASH</span></td><td><span class="badge badge-green">PAID</span></td><td>11:54 AM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
-            <tr><td><b>MH1-2026-000084</b></td><td>Ravi K.</td><td>3</td><td>₹2,500</td><td>₹381.36</td><td><b>₹2,500.00</b></td><td><span class="badge" style="background:#7c3aed22;color:#7c3aed;">CARD</span></td><td><span class="badge badge-red">VOIDED</span></td><td>11:40 AM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
+            <tr><td><b>MH1-2026-000084</b></td><td>Ravi K.</td><td>3</td><td>₹2,500</td><td>₹381.36</td><td><b>₹2,500.00</b></td><td><span class="badge badge-purple">CARD</span></td><td><span class="badge badge-red">VOIDED</span></td><td>11:40 AM</td><td><button class="btn-sec" style="font-size:12px; padding:4px 10px;">View</button></td></tr>
           </tbody>
         </table>
       </div>
@@ -377,7 +689,7 @@
 
     <!-- ─── DAY CLOSING PAGE ─── -->
     <div class="page" id="page-closing" style="padding:24px; gap:20px; overflow:auto;">
-      <div style="font-size:20px; font-weight:700;">🔒 Daily Closing — 18 Oct 2026</div>
+      <div style="font-size:20px; font-weight:700;">🔒 Daily Closing — 19 Oct 2026</div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
         <div class="card" style="padding:24px;">
           <div style="font-weight:700; margin-bottom:16px;">💰 Cash Reconciliation</div>
@@ -402,10 +714,11 @@
             <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Discounts Given</span><b style="color:#dc2626;">-₹0.00</b></div>
             <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; border-top:1px solid var(--border); padding-top:12px;"><span>Net Sales</span><b style="color:#16a34a;">₹48,250.00</b></div>
           </div>
-          <button class="btn-primary" style="width:100%; margin-top:20px; padding:12px;" onclick="alert('✅ Day closed successfully! Report saved.')">Close Day & Save Report</button>
+          <button class="btn-primary" style="width:100%; margin-top:20px; padding:12px;" onclick="alert('✅ Day closed! Report saved.')">Close Day &amp; Save Report</button>
         </div>
       </div>
     </div>
+
   </div>
 </div>
 
@@ -418,7 +731,7 @@
     <input class="input" id="newMrpInput" placeholder="0.00" style="margin-bottom:16px;" />
     <div style="font-size:12px; color:var(--muted-foreground); margin-bottom:20px;">⚠ This change will be recorded in the price audit log with your credentials.</div>
     <div style="display:flex; gap:10px;">
-      <button class="btn-primary" style="flex:1;" onclick="saveMrp()">Save & Audit</button>
+      <button class="btn-primary" style="flex:1;" onclick="saveMrp()">Save &amp; Audit</button>
       <button class="btn-sec" onclick="document.getElementById('mrpModal').style.display='none'">Cancel</button>
     </div>
   </div>
@@ -436,8 +749,75 @@
   </div>
 </div>
 
+<div id="kotModal" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; inset:0; background:#00000055; z-index:100; align-items:center; justify-content:center;">
+  <div class="card" style="padding:28px; width:100%; max-width:460px; margin:16px;">
+    <div style="font-weight:700; font-size:16px; margin-bottom:16px;">📋 Create New KOT</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+      <div>
+        <label style="font-size:12px; font-weight:600; color:var(--muted-foreground); display:block; margin-bottom:4px;">TABLE</label>
+        <select class="input">
+          <option>T-1 (Free)</option><option>T-2 (Free)</option><option selected>T-3 (Occupied)</option>
+          <option>T-7 (Occupied)</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px; font-weight:600; color:var(--muted-foreground); display:block; margin-bottom:4px;">DESTINATION</label>
+        <select class="input">
+          <option>🍳 KITCHEN</option><option>🍸 BAR</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:12px; font-weight:600; color:var(--muted-foreground); display:block; margin-bottom:4px;">STEWARD</label>
+      <select class="input">
+        <option>Arjun Kumar</option><option>Priya Singh</option><option>Rahul Sharma</option>
+      </select>
+    </div>
+    <div style="background:var(--accent); border-radius:8px; padding:12px; margin-bottom:16px;">
+      <div style="font-size:12px; font-weight:600; color:var(--muted-foreground); margin-bottom:8px;">ITEMS</div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <select class="input" style="flex:1;"><option>Royal Stag 750ml</option><option>Kingfisher Strong</option><option>Sula Brut</option></select>
+          <input class="input" type="number" min="1" value="2" style="width:70px; text-align:center;" />
+          <button style="background:none; border:none; cursor:pointer; color:#dc2626; font-size:16px;">✕</button>
+        </div>
+      </div>
+      <button class="btn-sec" style="margin-top:8px; font-size:12px; width:100%;" onclick="alert('Add another item row')">+ Add Item</button>
+    </div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn-primary" style="flex:1;" onclick="alert('KOT #049 created! Printing to BAR...'); document.getElementById('kotModal').style.display='none'">Create &amp; Print KOT</button>
+      <button class="btn-sec" onclick="document.getElementById('kotModal').style.display='none'">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
-// ─── DATA ────────────────────────────────────────────────────────────────────
+// ─── THEME ───────────────────────────────────────────────────────────────────
+
+const THEME_KEY = 'lc_theme';
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const icon = theme === 'dark' ? '🌙' : '☀️';
+  const label = theme === 'dark' ? 'Toggle theme' : 'Toggle theme';
+  document.getElementById('themeToggle').textContent = icon;
+  const loginBtn = document.getElementById('loginThemeBtn');
+  if (loginBtn) loginBtn.textContent = icon;
+  localStorage.setItem(THEME_KEY, theme);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
+// Apply stored theme on load
+(function() {
+  const stored = localStorage.getItem(THEME_KEY) || 'dark';
+  applyTheme(stored);
+})();
+
+// ─── DATA ─────────────────────────────────────────────────────────────────────
 
 const PRODUCTS = [
   { id:'p1', name:'Royal Stag', brand:'Seagram\'s', category:'Whisky', volume:'750ml', mrp:200, barcode:'8901234567890' },
@@ -454,11 +834,25 @@ const PRODUCTS = [
   { id:'p12', name:'McDowell\'s No.1', brand:'Diageo', category:'Whisky', volume:'750ml', mrp:175, barcode:'8901234567881' },
 ];
 
+const TABLE_DATA = [
+  { id:'t1', name:'T-1', section:'Indoor', capacity:4, status:'OCCUPIED', steward:'Arjun', time:'7:32 PM' },
+  { id:'t2', name:'T-2', section:'Indoor', capacity:4, status:'FREE', steward:null, time:null },
+  { id:'t3', name:'T-3', section:'Indoor', capacity:6, status:'FREE', steward:null, time:null },
+  { id:'t4', name:'T-4', section:'Indoor', capacity:4, status:'RESERVED', steward:null, time:'8:00 PM' },
+  { id:'t5', name:'T-5', section:'Outdoor', capacity:8, status:'FREE', steward:null, time:null },
+  { id:'t6', name:'T-6', section:'Outdoor', capacity:4, status:'OCCUPIED', steward:'Priya', time:'8:10 PM' },
+  { id:'t7', name:'T-7', section:'Outdoor', capacity:4, status:'RESERVED', steward:null, time:'8:30 PM' },
+  { id:'t8', name:'T-8', section:'Outdoor', capacity:2, status:'FREE', steward:null, time:null },
+  { id:'t9', name:'Bar-1', section:'Bar', capacity:2, status:'OCCUPIED', steward:'Rahul', time:'6:45 PM' },
+  { id:'t10', name:'Bar-2', section:'Bar', capacity:2, status:'FREE', steward:null, time:null },
+  { id:'t11', name:'Bar-3', section:'Bar', capacity:2, status:'OCCUPIED', steward:'Rahul', time:'7:55 PM' },
+  { id:'t12', name:'Bar-4', section:'Bar', capacity:2, status:'RESERVED', steward:null, time:'9:00 PM' },
+];
+
 let cart = [];
 let selectedPayment = 'CASH';
 let currentUser = { name: 'Owner', email: 'owner@store.com', role: 'owner' };
 let filterCatVal = 'All';
-
 const EMOJIS = { Whisky:'🥃', Beer:'🍺', Rum:'🥃', Wine:'🍷', Gin:'🍸' };
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
@@ -481,6 +875,7 @@ function doLogin() {
     { owner:'👑', manager:'🛠', cashier:'💰', steward:'🍽' }[currentUser.role] + ' ' + currentUser.name;
   document.getElementById('emailDisplay').textContent = currentUser.email;
   renderProducts();
+  renderTables();
 }
 
 function logout() {
@@ -497,6 +892,29 @@ function showPage(page) {
   document.getElementById('nav-' + page).classList.add('active');
 }
 
+// ─── TABLES ───────────────────────────────────────────────────────────────────
+
+function renderTables() {
+  const grid = document.getElementById('tableGrid');
+  if (!grid) return;
+  grid.innerHTML = TABLE_DATA.map(t => {
+    const colors = { FREE: '#16a34a', OCCUPIED: '#dc2626', RESERVED: '#d97706' };
+    const icons = { FREE: '✅', OCCUPIED: '🪑', RESERVED: '🔖' };
+    return `
+      <div class="table-tile table-${t.status}" onclick="alert('${t.name}: ${t.status}${t.steward ? ' · Steward: ' + t.steward : ''}')">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div style="font-weight:700; font-size:15px; color:var(--foreground);">${t.name}</div>
+          <span style="font-size:11px; font-weight:600; color:${colors[t.status]}; background:${colors[t.status]}22; padding:2px 8px; border-radius:99px;">${t.status}</span>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--muted-foreground);">${t.section} · ${t.capacity} seats</div>
+          ${t.steward ? `<div style="font-size:11px; color:var(--muted-foreground); margin-top:2px;">🍽 ${t.steward} · since ${t.time}</div>` : t.time ? `<div style="font-size:11px; color:#d97706; margin-top:2px;">⏰ Reserved ${t.time}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 // ─── POS ─────────────────────────────────────────────────────────────────────
 
 function filterCat(cat) {
@@ -510,9 +928,7 @@ function filterCat(cat) {
   renderProducts();
 }
 
-function filterProducts(val) {
-  renderProducts(val);
-}
+function filterProducts(val) { renderProducts(val); }
 
 function renderProducts(search = '') {
   const grid = document.getElementById('productGrid');
@@ -602,6 +1018,7 @@ function setPayment(mode) {
     const b = document.getElementById('pay-' + m);
     b.style.background = m === mode ? 'var(--primary)' : 'var(--secondary)';
     b.style.color = m === mode ? 'var(--primary-foreground)' : 'var(--secondary-foreground)';
+    b.style.borderColor = m === mode ? 'var(--primary)' : 'var(--border)';
   });
 }
 
@@ -645,7 +1062,7 @@ function saveMrp() {
   alert(`✅ MRP updated to ₹${parseFloat(val).toFixed(2)}. Audit log entry created.`);
 }
 
-// ─── INIT ────────────────────────────────────────────────────────────────────
+// ─── INIT ─────────────────────────────────────────────────────────────────────
 
 setPayment('CASH');
 </script>
