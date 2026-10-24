@@ -689,32 +689,42 @@
 
     <!-- ─── DAY CLOSING PAGE ─── -->
     <div class="page" id="page-closing" style="padding:24px; gap:20px; overflow:auto;">
-      <div style="font-size:20px; font-weight:700;">🔒 Daily Closing — 19 Oct 2026</div>
+      <div style="font-size:20px; font-weight:700;">🔒 Daily Closing — Live Accounting</div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
         <div class="card" style="padding:24px;">
           <div style="font-weight:700; margin-bottom:16px;">💰 Cash Reconciliation</div>
           <div style="display:flex; flex-direction:column; gap:12px;">
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Opening Cash</span><b>₹5,000.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Cash Sales</span><b style="color:#16a34a;">+₹31,500.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Card Sales</span><b style="color:#16a34a;">+₹9,750.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">UPI Sales</span><b style="color:#16a34a;">+₹7,000.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px; border-top:1px solid var(--border); padding-top:12px;"><span style="color:var(--muted-foreground);">Expected Cash</span><b>₹36,500.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;"><span style="color:var(--muted-foreground);">Actual Cash</span>
-              <input class="input" style="width:120px; text-align:right;" value="36500" /></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Difference</span><b style="color:#16a34a;">₹0.00 ✓</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;">
+              <span style="color:var(--muted-foreground);">Opening Cash</span>
+              <input id="closingOpeningCash" class="input" style="width:130px; text-align:right;" value="5000.00" oninput="calculateClosingDiff()" />
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;">
+              <span style="color:var(--muted-foreground);">Actual Cash Counted</span>
+              <input id="closingActualCash" class="input" style="width:130px; text-align:right;" value="5000.00" oninput="calculateClosingDiff()" />
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;">
+              <span style="color:var(--muted-foreground);">Cash Withdrawals</span>
+              <input id="closingWithdrawals" class="input" style="width:130px; text-align:right;" value="0.00" oninput="calculateClosingDiff()" />
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; border-top:1px solid var(--border); padding-top:12px;">
+              <span style="color:var(--muted-foreground);">Drawer Discrepancy</span>
+              <b id="closingDiff" style="color:#16a34a;">₹0.00 (Balanced)</b>
+            </div>
           </div>
         </div>
         <div class="card" style="padding:24px;">
-          <div style="font-weight:700; margin-bottom:16px;">📊 Day Summary</div>
+          <div style="font-weight:700; margin-bottom:16px;">📊 Post Daily Closing to Postgres</div>
           <div style="display:flex; flex-direction:column; gap:12px;">
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Total Bills</span><b>87</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Voided Bills</span><b style="color:#dc2626;">1</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Gross Sales</span><b>₹48,250.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Total GST Collected</span><b>₹7,364.41</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Discounts Given</span><b style="color:#dc2626;">-₹0.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; border-top:1px solid var(--border); padding-top:12px;"><span>Net Sales</span><b style="color:#16a34a;">₹48,250.00</b></div>
+            <div style="font-size:13px; color:var(--muted-foreground);">
+              Aggregates all bills since last closing, calculates discrepancy, and marks the day closed in the database.
+            </div>
+            <div style="margin-top:8px;">
+              <label style="font-size:12px; color:var(--muted-foreground); display:block; margin-bottom:4px;">Closing Notes (optional)</label>
+              <input id="closingNotes" class="input" placeholder="e.g. End of day verified" value="End of day verified" />
+            </div>
+            <div id="closingStatusMsg" style="font-size:12px; margin-top:8px;"></div>
           </div>
-          <button class="btn-primary" style="width:100%; margin-top:20px; padding:12px;" onclick="alert('✅ Day closed! Report saved.')">Close Day &amp; Save Report</button>
+          <button id="btnSubmitClosing" class="btn-primary" style="width:100%; margin-top:20px; padding:12px;" onclick="submitDayClosing()">Close Day &amp; Save Report</button>
         </div>
       </div>
     </div>
@@ -971,19 +981,132 @@ function renderTables() {
   grid.innerHTML = TABLE_DATA.map(t => {
     const colors = { FREE: '#16a34a', OCCUPIED: '#dc2626', RESERVED: '#d97706' };
     const icons = { FREE: '✅', OCCUPIED: '🪑', RESERVED: '🔖' };
+    const isOccupied = t.status === 'OCCUPIED';
     return `
-      <div class="table-tile table-${t.status}" onclick="alert('${t.name}: ${t.status}${t.steward ? ' · Steward: ' + t.steward : ''}')">
+      <div class="table-tile table-${t.status}" onclick="toggleTableStatus('${t.id}')">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
           <div style="font-weight:700; font-size:15px; color:var(--foreground);">${t.name}</div>
           <span style="font-size:11px; font-weight:600; color:${colors[t.status]}; background:${colors[t.status]}22; padding:2px 8px; border-radius:99px;">${t.status}</span>
         </div>
         <div>
-          <div style="font-size:11px; color:var(--muted-foreground);">${t.section} · ${t.capacity} seats</div>
-          ${t.steward ? `<div style="font-size:11px; color:var(--muted-foreground); margin-top:2px;">🍽 ${t.steward} · since ${t.time}</div>` : t.time ? `<div style="font-size:11px; color:#d97706; margin-top:2px;">⏰ Reserved ${t.time}</div>` : ''}
+          <div style="font-size:11px; color:var(--muted-foreground);">${t.section || 'General'} · ${t.capacity || 4} seats</div>
+          <div style="font-size:11px; color:var(--primary); margin-top:4px; font-weight:600;">
+            ${isOccupied ? 'Click to Close Table' : 'Click to Open / Occupy'}
+          </div>
         </div>
       </div>
     `;
   }).join('');
+}
+
+async function toggleTableStatus(tableId) {
+  const table = TABLE_DATA.find(t => t.id === tableId);
+  if (!table) return;
+
+  const endpoint = table.status === 'OCCUPIED'
+    ? `/api/v1/tables/${tableId}/close`
+    : `/api/v1/tables/${tableId}/open`;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_TOKEN,
+      },
+      body: JSON.stringify({ branchId: currentBranchId }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Table update failed: ' + (data.error || 'Check authorization'));
+      return;
+    }
+
+    // Refresh live tables
+    await loadLiveTables();
+  } catch (err) {
+    console.error('Table status error:', err);
+    // Optimistic fallback
+    table.status = table.status === 'OCCUPIED' ? 'FREE' : 'OCCUPIED';
+    renderTables();
+  }
+}
+
+function calculateClosingDiff() {
+  const opening = parseFloat(document.getElementById('closingOpeningCash')?.value || '0');
+  const actual = parseFloat(document.getElementById('closingActualCash')?.value || '0');
+  const withdrawals = parseFloat(document.getElementById('closingWithdrawals')?.value || '0');
+  const diffEl = document.getElementById('closingDiff');
+  if (!diffEl) return;
+
+  const diff = actual - opening + withdrawals;
+  if (Math.abs(diff) < 0.01) {
+    diffEl.style.color = '#16a34a';
+    diffEl.textContent = '₹0.00 (Balanced)';
+  } else if (diff > 0) {
+    diffEl.style.color = '#16a34a';
+    diffEl.textContent = `+₹${diff.toFixed(2)} (Cash Surplus)`;
+  } else {
+    diffEl.style.color = '#dc2626';
+    diffEl.textContent = `-₹${Math.abs(diff).toFixed(2)} (Cash Shortage)`;
+  }
+}
+
+async function submitDayClosing() {
+  const openingCash = document.getElementById('closingOpeningCash').value.trim();
+  const actualCashCounted = document.getElementById('closingActualCash').value.trim();
+  const cashWithdrawals = document.getElementById('closingWithdrawals').value.trim();
+  const notes = document.getElementById('closingNotes').value.trim();
+  const statusMsg = document.getElementById('closingStatusMsg');
+  const submitBtn = document.getElementById('btnSubmitClosing');
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Closing Day in Postgres...';
+  }
+
+  try {
+    const res = await fetch('/api/v1/closing', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_TOKEN,
+      },
+      body: JSON.stringify({
+        branchId: currentBranchId,
+        openingCash,
+        actualCashCounted,
+        cashWithdrawals,
+        notes,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Day closing failed: ' + (data.error || 'Server rejected submission. Ensure role is Manager/Owner.'));
+      if (statusMsg) {
+        statusMsg.style.color = '#dc2626';
+        statusMsg.textContent = 'Failed: ' + (data.error || 'Error occurred');
+      }
+      return;
+    }
+
+    if (statusMsg) {
+      statusMsg.style.color = '#16a34a';
+      statusMsg.innerHTML = `✅ <b>Day Closed & Locked</b> (Audit ID: ${data.id.slice(0, 8)}...)<br>Gross: ₹${data.grossSales} · Net: ₹${data.actualCashCounted}`;
+    }
+    alert('✅ Day Closed successfully! Audit record saved in Postgres.');
+
+  } catch (err) {
+    console.error('Day closing error:', err);
+    alert('Could not submit closing to backend API.');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Close Day & Save Report';
+    }
+  }
 }
 
 // ─── POS ─────────────────────────────────────────────────────────────────────
