@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquor Counter - Phase 1 Scaffold</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f4f4f5; padding: 20px; }
+    .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    h1 { color: #18181b; }
+    button { background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e4e4e7; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Multi-Tenant Syndicate Directory (Phase 1)</h1>
+    <p>This is a temporary scaffold frontend connecting to the Fastify Backend API.</p>
+
+    <div style="margin-bottom: 16px;">
+      <input type="text" id="synName" placeholder="Syndicate Name" />
+      <input type="text" id="synGst" placeholder="GSTIN" />
+      <button onclick="createSyndicate()">Create Syndicate</button>
+    </div>
+
+    <button onclick="loadSyndicates()">Refresh List</button>
+
+    <table id="syndicatesTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>GSTIN</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    async function loadSyndicates() {
+      const res = await fetch('/api/syndicates');
+      const data = await res.json();
+
+      const tbody = document.querySelector('#syndicatesTable tbody');
+      tbody.innerHTML = '';
+
+      data.forEach(syn => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${syn.id.substring(0, 8)}...</td>
+            <td>${syn.name}</td>
+            <td>${syn.gstin || '-'}</td>
+            <td>${syn.isActive ? 'Active' : 'Inactive'}</td>
+          </tr>
+        `;
+      });
+    }
+
+    async function createSyndicate() {
+      const name = document.getElementById('synName').value;
+      const gstin = document.getElementById('synGst').value;
+
+      if(!name) return alert('Name required');
+
+      await fetch('/api/syndicates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, gstin })
+      });
+
+      document.getElementById('synName').value = '';
+      document.getElementById('synGst').value = '';
+      loadSyndicates();
+    }
+
+    // Initial load
+    loadSyndicates();
+  </script>
+</body>
+</html>
