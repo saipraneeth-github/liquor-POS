@@ -45,7 +45,7 @@ export function buildApp() {
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
-const PORT = Number(process.env.PORT ?? 3001);
+const PORT = Number(process.env.PORT ?? 3000);
 
 const app = buildApp();
 app.listen({ port: PORT, host: '0.0.0.0' }, (err) => {
