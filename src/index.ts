@@ -12,6 +12,7 @@ import { inventoryRoutes } from './modules/inventory/inventory.routes.js';
 import { tableRoutes } from './modules/tables/table.routes.js';
 import { kotRoutes } from './modules/kot/kot.routes.js';
 import { schemeRoutes } from './modules/schemes/scheme.routes.js';
+import { syndicateRoutes } from './modules/syndicates/syndicate.routes.js';
 
 export function buildApp() {
   const fastify = Fastify({
@@ -73,6 +74,7 @@ export function buildApp() {
   fastify.register(tableRoutes,     { prefix: '/api/v1' });
   fastify.register(kotRoutes,       { prefix: '/api/v1' });
   fastify.register(schemeRoutes,    { prefix: '/api/v1' });
+  fastify.register(syndicateRoutes, { prefix: '/api/v1' });
 
   // ─── HEALTH ───────────────────────────────────────────────────────────────
 

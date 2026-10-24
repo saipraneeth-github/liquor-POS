@@ -43,7 +43,7 @@
 
   <script>
     async function loadSyndicates() {
-      const res = await fetch('/api/syndicates');
+      const res = await fetch('/api/v1/syndicates');
       const data = await res.json();
 
       const tbody = document.querySelector('#syndicatesTable tbody');
@@ -67,7 +67,7 @@
 
       if(!name) return alert('Name required');
 
-      await fetch('/api/syndicates', {
+      await fetch('/api/v1/syndicates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, gstin })
