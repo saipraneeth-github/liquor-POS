@@ -59,3 +59,4 @@ test.describe('End-to-End Operational Lifecycle Tests', () => {
     await expect(statusMsg).toContainText('Day Closed & Locked', { timeout: 10000 });
   });
 });
+
