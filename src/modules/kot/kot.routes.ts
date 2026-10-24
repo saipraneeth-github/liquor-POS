@@ -7,26 +7,28 @@
  * GET  /api/v1/kot/session/:sessionId/bill          — consolidated bill summary
  */
 
-import { FastifyInstance } from 'fastify';
-import { requireRole, assertBranchAccess } from '../../middleware/auth.guard';
+import type { FastifyInstance } from 'fastify';
+import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import {
   createKotOrder,
   updateKotItemStatus,
   getKotOrdersForSession,
   getConsolidatedBill,
-} from './kot.service';
-import { type KotItemStatus } from './kot.engine';
+  type CreateKotInput,
+} from './kot.service.js';
+import { type KotItemStatus, type ConsolidatedLineItem } from './kot.engine.js';
 
 export async function kotRoutes(app: FastifyInstance) {
   // Create KOT
-  app.post<{ Body: Parameters<typeof createKotOrder>[0] }>(
+  app.post<{ Body: Omit<CreateKotInput, 'createdById'> }>(
     '/kot',
     { preHandler: [requireRole('steward')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.body.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.body.branchId, reply)) return;
       const order = await createKotOrder({
         ...req.body,
-        createdById: req.user!.userId,
+        createdById: user.sub,
       });
       return reply.status(201).send({ kotOrder: order });
     }
@@ -40,7 +42,8 @@ export async function kotRoutes(app: FastifyInstance) {
     '/kot/:kotOrderId/items/:itemId',
     { preHandler: [requireRole('steward')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.body.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.body.branchId, reply)) return;
       const item = await updateKotItemStatus(
         req.params.kotOrderId,
         req.params.itemId,
@@ -56,7 +59,8 @@ export async function kotRoutes(app: FastifyInstance) {
     '/kot/session/:sessionId',
     { preHandler: [requireRole('steward')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.query.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.query.branchId, reply)) return;
       const orders = await getKotOrdersForSession(req.params.sessionId, req.query.branchId);
       return reply.send({ kotOrders: orders });
     }
@@ -67,13 +71,14 @@ export async function kotRoutes(app: FastifyInstance) {
     '/kot/session/:sessionId/bill',
     { preHandler: [requireRole('cashier')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.query.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.query.branchId, reply)) return;
       const summary = await getConsolidatedBill(req.params.sessionId, req.query.branchId);
       return reply.send({
         grandTotal:   summary.grandTotal.toFixed(2),
         totalTaxable: summary.totalTaxable.toFixed(2),
         totalTax:     summary.totalTax.toFixed(2),
-        lineItems: summary.lineItems.map((l) => ({
+        lineItems: summary.lineItems.map((l: ConsolidatedLineItem) => ({
           ...l,
           unitPrice:    l.unitPrice.toFixed(2),
           lineTotal:    l.lineTotal.toFixed(2),

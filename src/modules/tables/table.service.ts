@@ -3,14 +3,14 @@
  * Enforces branch isolation and state machine via table.engine.ts.
  */
 
-import { db } from '../../db/client';
-import { tables, tableSessions } from '../../db/schema';
+import { db } from '../../db/client.js';
+import { tables, tableSessions } from '../../db/schema.js';
 import { eq, and, isNull } from 'drizzle-orm';
 import {
   transitionTableStatus,
   validateStewardAssignment,
   type TableStatus,
-} from './table.engine';
+} from './table.engine.js';
 
 export interface OpenTableInput {
   tableId: string;

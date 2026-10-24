@@ -7,15 +7,15 @@
  * POST /api/v1/schemes/:schemeId/purchase — record a purchase against a scheme
  */
 
-import { FastifyInstance } from 'fastify';
-import { requireRole, assertBranchAccess } from '../../middleware/auth.guard';
+import type { FastifyInstance } from 'fastify';
+import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import {
   getSchemesForBranch,
   getSchemeAlerts,
   createScheme,
   recordSchemePurchase,
   type CreateSchemeInput,
-} from './scheme.service';
+} from './scheme.service.js';
 
 export async function schemeRoutes(app: FastifyInstance) {
   // List schemes
@@ -23,7 +23,8 @@ export async function schemeRoutes(app: FastifyInstance) {
     '/schemes/:branchId',
     { preHandler: [requireRole('manager')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.params.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.params.branchId, reply)) return;
       const list = await getSchemesForBranch(req.params.branchId);
       return reply.send({ schemes: list });
     }
@@ -34,7 +35,8 @@ export async function schemeRoutes(app: FastifyInstance) {
     '/schemes/:branchId',
     { preHandler: [requireRole('manager')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.params.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.params.branchId, reply)) return;
       const scheme = await createScheme({ ...req.body, branchId: req.params.branchId });
       return reply.status(201).send({ scheme });
     }
@@ -45,7 +47,8 @@ export async function schemeRoutes(app: FastifyInstance) {
     '/schemes/:branchId/alerts',
     { preHandler: [requireRole('manager')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.params.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.params.branchId, reply)) return;
       const alerts = await getSchemeAlerts(req.params.branchId);
       return reply.send({ alerts });
     }

@@ -103,11 +103,11 @@
 
       <div style="margin-bottom:16px;">
         <label style="font-size:13px; font-weight:600; color:var(--foreground); display:block; margin-bottom:6px;">Email</label>
-        <input id="loginEmail" class="input" type="email" placeholder="owner@liquorstore.com" value="owner@liquorstore.com" />
+        <input id="loginEmail" class="input" type="email" placeholder="owner@liquor.com" value="cashier@liquor.com" />
       </div>
       <div style="margin-bottom:24px;">
         <label style="font-size:13px; font-weight:600; color:var(--foreground); display:block; margin-bottom:6px;">Password</label>
-        <input id="loginPass" class="input" type="password" placeholder="••••••••" value="password" />
+        <input id="loginPass" class="input" type="password" placeholder="••••••••" value="Password@123" />
       </div>
       <button class="btn-primary" style="width:100%; padding:12px;" onclick="doLogin()">Sign In</button>
 
@@ -689,32 +689,42 @@
 
     <!-- ─── DAY CLOSING PAGE ─── -->
     <div class="page" id="page-closing" style="padding:24px; gap:20px; overflow:auto;">
-      <div style="font-size:20px; font-weight:700;">🔒 Daily Closing — 19 Oct 2026</div>
+      <div style="font-size:20px; font-weight:700;">🔒 Daily Closing — Live Accounting</div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
         <div class="card" style="padding:24px;">
           <div style="font-weight:700; margin-bottom:16px;">💰 Cash Reconciliation</div>
           <div style="display:flex; flex-direction:column; gap:12px;">
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Opening Cash</span><b>₹5,000.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Cash Sales</span><b style="color:#16a34a;">+₹31,500.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Card Sales</span><b style="color:#16a34a;">+₹9,750.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">UPI Sales</span><b style="color:#16a34a;">+₹7,000.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px; border-top:1px solid var(--border); padding-top:12px;"><span style="color:var(--muted-foreground);">Expected Cash</span><b>₹36,500.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;"><span style="color:var(--muted-foreground);">Actual Cash</span>
-              <input class="input" style="width:120px; text-align:right;" value="36500" /></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Difference</span><b style="color:#16a34a;">₹0.00 ✓</b></div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;">
+              <span style="color:var(--muted-foreground);">Opening Cash</span>
+              <input id="closingOpeningCash" class="input" style="width:130px; text-align:right;" value="5000.00" oninput="calculateClosingDiff()" />
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;">
+              <span style="color:var(--muted-foreground);">Actual Cash Counted</span>
+              <input id="closingActualCash" class="input" style="width:130px; text-align:right;" value="5000.00" oninput="calculateClosingDiff()" />
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; align-items:center;">
+              <span style="color:var(--muted-foreground);">Cash Withdrawals</span>
+              <input id="closingWithdrawals" class="input" style="width:130px; text-align:right;" value="0.00" oninput="calculateClosingDiff()" />
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:14px; border-top:1px solid var(--border); padding-top:12px;">
+              <span style="color:var(--muted-foreground);">Drawer Discrepancy</span>
+              <b id="closingDiff" style="color:#16a34a;">₹0.00 (Balanced)</b>
+            </div>
           </div>
         </div>
         <div class="card" style="padding:24px;">
-          <div style="font-weight:700; margin-bottom:16px;">📊 Day Summary</div>
+          <div style="font-weight:700; margin-bottom:16px;">📊 Post Daily Closing to Postgres</div>
           <div style="display:flex; flex-direction:column; gap:12px;">
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Total Bills</span><b>87</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Voided Bills</span><b style="color:#dc2626;">1</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Gross Sales</span><b>₹48,250.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Total GST Collected</span><b>₹7,364.41</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:var(--muted-foreground);">Discounts Given</span><b style="color:#dc2626;">-₹0.00</b></div>
-            <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:700; border-top:1px solid var(--border); padding-top:12px;"><span>Net Sales</span><b style="color:#16a34a;">₹48,250.00</b></div>
+            <div style="font-size:13px; color:var(--muted-foreground);">
+              Aggregates all bills since last closing, calculates discrepancy, and marks the day closed in the database.
+            </div>
+            <div style="margin-top:8px;">
+              <label style="font-size:12px; color:var(--muted-foreground); display:block; margin-bottom:4px;">Closing Notes (optional)</label>
+              <input id="closingNotes" class="input" placeholder="e.g. End of day verified" value="End of day verified" />
+            </div>
+            <div id="closingStatusMsg" style="font-size:12px; margin-top:8px;"></div>
           </div>
-          <button class="btn-primary" style="width:100%; margin-top:20px; padding:12px;" onclick="alert('✅ Day closed! Report saved.')">Close Day &amp; Save Report</button>
+          <button id="btnSubmitClosing" class="btn-primary" style="width:100%; margin-top:20px; padding:12px;" onclick="submitDayClosing()">Close Day &amp; Save Report</button>
         </div>
       </div>
     </div>
@@ -817,68 +827,139 @@ function toggleTheme() {
   applyTheme(stored);
 })();
 
-// ─── DATA ─────────────────────────────────────────────────────────────────────
+// ─── DATA & LIVE API STATE ───────────────────────────────────────────────────
 
-const PRODUCTS = [
-  { id:'p1', name:'Royal Stag', brand:'Seagram\'s', category:'Whisky', volume:'750ml', mrp:200, barcode:'8901234567890' },
-  { id:'p2', name:'Royal Stag', brand:'Seagram\'s', category:'Whisky', volume:'180ml', mrp:60, barcode:'8901234567899' },
-  { id:'p3', name:'Kingfisher Strong', brand:'UB', category:'Beer', volume:'650ml', mrp:70, barcode:'8901234567891' },
-  { id:'p4', name:'Kingfisher Strong', brand:'UB', category:'Beer', volume:'330ml', mrp:45, barcode:'8901234567898' },
-  { id:'p5', name:'Old Monk Rum', brand:'Mohan Meakin', category:'Rum', volume:'750ml', mrp:170, barcode:'8901234567892' },
-  { id:'p6', name:'Sula Brut', brand:'Sula', category:'Wine', volume:'750ml', mrp:600, barcode:'8901234567893' },
-  { id:'p7', name:'JW Red Label', brand:'Diageo', category:'Whisky', volume:'750ml', mrp:2500, barcode:'8901234567894' },
-  { id:'p8', name:'Bombay Sapphire', brand:'Bacardi', category:'Gin', volume:'750ml', mrp:850, barcode:'8901234567895' },
-  { id:'p9', name:'Bacardi White', brand:'Bacardi', category:'Rum', volume:'750ml', mrp:650, barcode:'8901234567896' },
-  { id:'p10', name:'Heineken', brand:'Heineken', category:'Beer', volume:'650ml', mrp:90, barcode:'8901234567897' },
-  { id:'p11', name:'Officer\'s Choice', brand:'Allied Blenders', category:'Whisky', volume:'750ml', mrp:160, barcode:'8901234567880' },
-  { id:'p12', name:'McDowell\'s No.1', brand:'Diageo', category:'Whisky', volume:'750ml', mrp:175, barcode:'8901234567881' },
-];
-
-const TABLE_DATA = [
-  { id:'t1', name:'T-1', section:'Indoor', capacity:4, status:'OCCUPIED', steward:'Arjun', time:'7:32 PM' },
-  { id:'t2', name:'T-2', section:'Indoor', capacity:4, status:'FREE', steward:null, time:null },
-  { id:'t3', name:'T-3', section:'Indoor', capacity:6, status:'FREE', steward:null, time:null },
-  { id:'t4', name:'T-4', section:'Indoor', capacity:4, status:'RESERVED', steward:null, time:'8:00 PM' },
-  { id:'t5', name:'T-5', section:'Outdoor', capacity:8, status:'FREE', steward:null, time:null },
-  { id:'t6', name:'T-6', section:'Outdoor', capacity:4, status:'OCCUPIED', steward:'Priya', time:'8:10 PM' },
-  { id:'t7', name:'T-7', section:'Outdoor', capacity:4, status:'RESERVED', steward:null, time:'8:30 PM' },
-  { id:'t8', name:'T-8', section:'Outdoor', capacity:2, status:'FREE', steward:null, time:null },
-  { id:'t9', name:'Bar-1', section:'Bar', capacity:2, status:'OCCUPIED', steward:'Rahul', time:'6:45 PM' },
-  { id:'t10', name:'Bar-2', section:'Bar', capacity:2, status:'FREE', steward:null, time:null },
-  { id:'t11', name:'Bar-3', section:'Bar', capacity:2, status:'OCCUPIED', steward:'Rahul', time:'7:55 PM' },
-  { id:'t12', name:'Bar-4', section:'Bar', capacity:2, status:'RESERVED', steward:null, time:'9:00 PM' },
-];
-
+let API_TOKEN = localStorage.getItem('token') || '';
+let currentBranchId = localStorage.getItem('branchId') || '';
+let PRODUCTS = [];
+let TABLE_DATA = [];
 let cart = [];
 let selectedPayment = 'CASH';
-let currentUser = { name: 'Owner', email: 'owner@store.com', role: 'owner' };
+let currentUser = { name: 'Cashier', email: 'cashier@liquor.com', role: 'cashier' };
 let filterCatVal = 'All';
-const EMOJIS = { Whisky:'🥃', Beer:'🍺', Rum:'🥃', Wine:'🍷', Gin:'🍸' };
+const EMOJIS = { Whisky:'🥃', Beer:'🍺', Rum:'🥃', Wine:'🍷', Gin:'🍸', Vodka:'🍸' };
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 
-function loginAs(role) {
-  const map = {
-    owner: { name:'Owner (All Branches)', email:'owner@store.com' },
-    manager: { name:'Manager', email:'manager@store.com' },
-    cashier: { name:'Ravi Kumar (Cashier)', email:'cashier@store.com' },
-    steward: { name:'Steward', email:'steward@store.com' },
-  };
-  currentUser = { ...map[role], role };
-  doLogin();
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPass').value;
+  const loginBtn = document.querySelector('button[onclick="doLogin()"]');
+
+  if (loginBtn) {
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Authenticating...';
+  }
+
+  try {
+    const res = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Login failed: ' + (data.error || 'Invalid credentials'));
+      if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Sign In'; }
+      return;
+    }
+
+    API_TOKEN = data.token;
+    localStorage.setItem('token', API_TOKEN);
+
+    // Parse JWT Payload
+    const payload = JSON.parse(atob(API_TOKEN.split('.')[1]));
+    currentUser = {
+      name: payload.email.split('@')[0],
+      email: payload.email,
+      role: payload.role,
+      branchId: payload.branchId,
+      sub: payload.sub,
+    };
+    currentBranchId = payload.branchId;
+    localStorage.setItem('branchId', currentBranchId);
+
+    // Switch UI
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'flex';
+    document.getElementById('userDisplay').textContent =
+      ({ owner:'👑', manager:'🛠', cashier:'💰', steward:'🍽' }[currentUser.role] || '👤') + ' ' + currentUser.name;
+    document.getElementById('emailDisplay').textContent = currentUser.email;
+
+    // Load live backend data
+    await loadLiveProducts();
+    await loadLiveTables();
+
+  } catch (err) {
+    console.error('API login error:', err);
+    alert('Could not reach backend API at /api/v1/auth/login. Check if server is running.');
+  } finally {
+    if (loginBtn) { loginBtn.disabled = false; loginBtn.textContent = 'Sign In'; }
+  }
 }
 
-function doLogin() {
-  document.getElementById('loginPage').style.display = 'none';
-  document.getElementById('mainApp').style.display = 'flex';
-  document.getElementById('userDisplay').textContent =
-    { owner:'👑', manager:'🛠', cashier:'💰', steward:'🍽' }[currentUser.role] + ' ' + currentUser.name;
-  document.getElementById('emailDisplay').textContent = currentUser.email;
+async function loadLiveProducts() {
+  try {
+    const res = await fetch('/api/v1/products', {
+      headers: { 'Authorization': 'Bearer ' + API_TOKEN },
+    });
+    if (res.ok) {
+      const items = await res.json();
+      if (Array.isArray(items) && items.length > 0) {
+        PRODUCTS = items.map(p => ({
+          id: p.id,
+          name: p.name,
+          brand: p.brand,
+          category: p.categoryName || 'Whisky',
+          volume: (p.volumeMl || 750) + 'ml',
+          mrp: parseFloat(p.mrp),
+          barcode: p.barcode || '',
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn('Using cached products:', e);
+  }
   renderProducts();
+}
+
+async function loadLiveTables() {
+  if (!currentBranchId) return;
+  try {
+    const res = await fetch('/api/v1/tables/' + currentBranchId, {
+      headers: { 'Authorization': 'Bearer ' + API_TOKEN },
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json && Array.isArray(json.tables)) {
+        TABLE_DATA = json.tables;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed loading tables:', e);
+  }
   renderTables();
 }
 
+function loginAs(role) {
+  const map = {
+    owner: { email:'owner@liquor.com', pass:'Password@123' },
+    manager: { email:'owner@liquor.com', pass:'Password@123' },
+    cashier: { email:'cashier@liquor.com', pass:'Password@123' },
+    steward: { email:'cashier@liquor.com', pass:'Password@123' },
+  };
+  const acc = map[role];
+  if (acc) {
+    document.getElementById('loginEmail').value = acc.email;
+    document.getElementById('loginPass').value = acc.pass;
+    doLogin();
+  }
+}
+
 function logout() {
+  API_TOKEN = '';
+  localStorage.removeItem('token');
   document.getElementById('mainApp').style.display = 'none';
   document.getElementById('loginPage').style.display = 'flex';
 }
@@ -900,19 +981,132 @@ function renderTables() {
   grid.innerHTML = TABLE_DATA.map(t => {
     const colors = { FREE: '#16a34a', OCCUPIED: '#dc2626', RESERVED: '#d97706' };
     const icons = { FREE: '✅', OCCUPIED: '🪑', RESERVED: '🔖' };
+    const isOccupied = t.status === 'OCCUPIED';
     return `
-      <div class="table-tile table-${t.status}" onclick="alert('${t.name}: ${t.status}${t.steward ? ' · Steward: ' + t.steward : ''}')">
+      <div class="table-tile table-${t.status}" onclick="toggleTableStatus('${t.id}')">
         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
           <div style="font-weight:700; font-size:15px; color:var(--foreground);">${t.name}</div>
           <span style="font-size:11px; font-weight:600; color:${colors[t.status]}; background:${colors[t.status]}22; padding:2px 8px; border-radius:99px;">${t.status}</span>
         </div>
         <div>
-          <div style="font-size:11px; color:var(--muted-foreground);">${t.section} · ${t.capacity} seats</div>
-          ${t.steward ? `<div style="font-size:11px; color:var(--muted-foreground); margin-top:2px;">🍽 ${t.steward} · since ${t.time}</div>` : t.time ? `<div style="font-size:11px; color:#d97706; margin-top:2px;">⏰ Reserved ${t.time}</div>` : ''}
+          <div style="font-size:11px; color:var(--muted-foreground);">${t.section || 'General'} · ${t.capacity || 4} seats</div>
+          <div style="font-size:11px; color:var(--primary); margin-top:4px; font-weight:600;">
+            ${isOccupied ? 'Click to Close Table' : 'Click to Open / Occupy'}
+          </div>
         </div>
       </div>
     `;
   }).join('');
+}
+
+async function toggleTableStatus(tableId) {
+  const table = TABLE_DATA.find(t => t.id === tableId);
+  if (!table) return;
+
+  const endpoint = table.status === 'OCCUPIED'
+    ? `/api/v1/tables/${tableId}/close`
+    : `/api/v1/tables/${tableId}/open`;
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_TOKEN,
+      },
+      body: JSON.stringify({ branchId: currentBranchId }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Table update failed: ' + (data.error || 'Check authorization'));
+      return;
+    }
+
+    // Refresh live tables
+    await loadLiveTables();
+  } catch (err) {
+    console.error('Table status error:', err);
+    // Optimistic fallback
+    table.status = table.status === 'OCCUPIED' ? 'FREE' : 'OCCUPIED';
+    renderTables();
+  }
+}
+
+function calculateClosingDiff() {
+  const opening = parseFloat(document.getElementById('closingOpeningCash')?.value || '0');
+  const actual = parseFloat(document.getElementById('closingActualCash')?.value || '0');
+  const withdrawals = parseFloat(document.getElementById('closingWithdrawals')?.value || '0');
+  const diffEl = document.getElementById('closingDiff');
+  if (!diffEl) return;
+
+  const diff = actual - opening + withdrawals;
+  if (Math.abs(diff) < 0.01) {
+    diffEl.style.color = '#16a34a';
+    diffEl.textContent = '₹0.00 (Balanced)';
+  } else if (diff > 0) {
+    diffEl.style.color = '#16a34a';
+    diffEl.textContent = `+₹${diff.toFixed(2)} (Cash Surplus)`;
+  } else {
+    diffEl.style.color = '#dc2626';
+    diffEl.textContent = `-₹${Math.abs(diff).toFixed(2)} (Cash Shortage)`;
+  }
+}
+
+async function submitDayClosing() {
+  const openingCash = document.getElementById('closingOpeningCash').value.trim();
+  const actualCashCounted = document.getElementById('closingActualCash').value.trim();
+  const cashWithdrawals = document.getElementById('closingWithdrawals').value.trim();
+  const notes = document.getElementById('closingNotes').value.trim();
+  const statusMsg = document.getElementById('closingStatusMsg');
+  const submitBtn = document.getElementById('btnSubmitClosing');
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Closing Day in Postgres...';
+  }
+
+  try {
+    const res = await fetch('/api/v1/closing', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_TOKEN,
+      },
+      body: JSON.stringify({
+        branchId: currentBranchId,
+        openingCash,
+        actualCashCounted,
+        cashWithdrawals,
+        notes,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Day closing failed: ' + (data.error || 'Server rejected submission. Ensure role is Manager/Owner.'));
+      if (statusMsg) {
+        statusMsg.style.color = '#dc2626';
+        statusMsg.textContent = 'Failed: ' + (data.error || 'Error occurred');
+      }
+      return;
+    }
+
+    if (statusMsg) {
+      statusMsg.style.color = '#16a34a';
+      statusMsg.innerHTML = `✅ <b>Day Closed & Locked</b> (Audit ID: ${data.id.slice(0, 8)}...)<br>Gross: ₹${data.grossSales} · Net: ₹${data.actualCashCounted}`;
+    }
+    alert('✅ Day Closed successfully! Audit record saved in Postgres.');
+
+  } catch (err) {
+    console.error('Day closing error:', err);
+    alert('Could not submit closing to backend API.');
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Close Day & Save Report';
+    }
+  }
 }
 
 // ─── POS ─────────────────────────────────────────────────────────────────────
@@ -1022,13 +1216,59 @@ function setPayment(mode) {
   });
 }
 
-function checkout() {
+async function checkout() {
   if (cart.length === 0) { alert('Add at least one product to the bill.'); return; }
   const total = cart.reduce((s, i) => s + i.mrp * i.qty, 0);
-  document.getElementById('checkoutSummary').innerHTML =
-    `<b>₹${total.toFixed(2)}</b> collected via <b>${selectedPayment}</b><br>
-     ${cart.reduce((s,i)=>s+i.qty,0)} items · Stock updated · Receipt ready`;
-  document.getElementById('checkoutModal').style.display = 'flex';
+
+  const checkoutBtn = document.querySelector('button[onclick="checkout()"]');
+  if (checkoutBtn) {
+    checkoutBtn.disabled = true;
+    checkoutBtn.textContent = 'Processing...';
+  }
+
+  try {
+    const res = await fetch('/api/v1/bills', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + API_TOKEN,
+      },
+      body: JSON.stringify({
+        branchId: currentBranchId,
+        paymentMode: selectedPayment,
+        discount: '0.00',
+        items: cart.map(i => ({
+          productId: i.id,
+          quantity: i.qty,
+        })),
+      }),
+    });
+
+    const bill = await res.json();
+    if (!res.ok) {
+      alert('Checkout failed: ' + (bill.error || 'Server error'));
+      return;
+    }
+
+    document.getElementById('checkoutSummary').innerHTML =
+      `<b>₹${parseFloat(bill.total).toFixed(2)}</b> collected via <b>${selectedPayment}</b><br>
+       Bill No: <b>${bill.billNumber}</b><br>
+       ${cart.reduce((s,i)=>s+i.qty,0)} items · Live Stock deducted in Postgres`;
+    document.getElementById('checkoutModal').style.display = 'flex';
+
+  } catch (err) {
+    console.error('Checkout error:', err);
+    // Fallback display if offline
+    document.getElementById('checkoutSummary').innerHTML =
+      `<b>₹${total.toFixed(2)}</b> collected via <b>${selectedPayment}</b><br>
+       ${cart.reduce((s,i)=>s+i.qty,0)} items (Local Simulation)`;
+    document.getElementById('checkoutModal').style.display = 'flex';
+  } finally {
+    if (checkoutBtn) {
+      checkoutBtn.disabled = false;
+      checkoutBtn.textContent = 'Charge & Print Receipt';
+    }
+  }
 }
 
 function newBill() {

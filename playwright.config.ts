@@ -8,7 +8,14 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'list',
   use: {
+    baseURL: 'http://localhost:3001',
     trace: 'on-first-retry',
+  },
+  webServer: {
+    command: 'npm start',
+    url: 'http://localhost:3001/health',
+    reuseExistingServer: true,
+    timeout: 30000,
   },
   projects: [
     {

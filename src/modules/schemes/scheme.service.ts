@@ -2,15 +2,15 @@
  * scheme.service.ts — DB-backed supplier scheme operations.
  */
 
-import { db } from '../../db/client';
-import { schemes, schemePurchases } from '../../db/schema';
+import { db } from '../../db/client.js';
+import { schemes, schemePurchases } from '../../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
 import {
   computeSchemeProgress,
   isSchemeAlertTriggered,
   type Scheme,
-} from './scheme.engine';
+} from './scheme.engine.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 

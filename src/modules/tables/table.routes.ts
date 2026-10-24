@@ -7,14 +7,14 @@
  * POST /api/v1/tables/:tableId/close     — close table and end session
  */
 
-import { FastifyInstance } from 'fastify';
-import { requireRole, assertBranchAccess } from '../../middleware/auth.guard';
+import type { FastifyInstance } from 'fastify';
+import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import {
   getTablesForBranch,
   openTable,
   closeTable,
   createTable,
-} from './table.service';
+} from './table.service.js';
 
 export async function tableRoutes(app: FastifyInstance) {
   // List tables
@@ -22,7 +22,8 @@ export async function tableRoutes(app: FastifyInstance) {
     '/tables/:branchId',
     { preHandler: [requireRole('cashier')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.params.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.params.branchId, reply)) return;
       const list = await getTablesForBranch(req.params.branchId);
       return reply.send({ tables: list });
     }
@@ -33,7 +34,8 @@ export async function tableRoutes(app: FastifyInstance) {
     '/tables/:branchId',
     { preHandler: [requireRole('manager')] },
     async (req, reply) => {
-      assertBranchAccess(req.user!, req.params.branchId);
+      const user = getUser(req);
+      if (!assertBranchAccess(user, req.params.branchId, reply)) return;
       const { name, capacity, section } = req.body;
       if (!name?.trim()) return reply.status(400).send({ error: 'Table name is required.' });
       const table = await createTable(req.params.branchId, name, capacity, section);
@@ -49,8 +51,9 @@ export async function tableRoutes(app: FastifyInstance) {
     '/tables/:tableId/open',
     { preHandler: [requireRole('cashier')] },
     async (req, reply) => {
+      const user = getUser(req);
       const { branchId, stewardId, guestCount, notes } = req.body;
-      assertBranchAccess(req.user!, branchId);
+      if (!assertBranchAccess(user, branchId, reply)) return;
       const session = await openTable({
         tableId: req.params.tableId,
         branchId,
@@ -70,8 +73,9 @@ export async function tableRoutes(app: FastifyInstance) {
     '/tables/:tableId/close',
     { preHandler: [requireRole('cashier')] },
     async (req, reply) => {
+      const user = getUser(req);
       const { branchId, billId } = req.body;
-      assertBranchAccess(req.user!, branchId);
+      if (!assertBranchAccess(user, branchId, reply)) return;
       const session = await closeTable(req.params.tableId, branchId, billId);
       return reply.send({ session });
     }

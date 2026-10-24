@@ -8,13 +8,28 @@ export const stockReasonEnum = pgEnum('stock_reason', ['SALE', 'MANUAL_ADJUST', 
 
 // ─── BRANCHES ───────────────────────────────────────────────────────────────
 
+export const syndicates = pgTable('syndicates', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  name:         text('name').notNull(),
+  gstin:        text('gstin'),
+  pan:          text('pan'),
+  contactPhone: text('contact_phone'),
+  isActive:     boolean('is_active').notNull().default(true),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+import { AnyPgColumn } from 'drizzle-orm/pg-core';
+
 export const branches = pgTable('branches', {
-  id:        uuid('id').primaryKey().defaultRandom(),
-  name:      text('name').notNull(),
-  code:      text('code').notNull().unique(),   // e.g., "MH1" — used in bill numbers
-  address:   text('address'),
-  gstin:     text('gstin'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  id:              uuid('id').primaryKey().defaultRandom(),
+  syndicateId:     uuid('syndicate_id').references(() => syndicates.id),
+  parentBranchId:  uuid('parent_branch_id').references((): AnyPgColumn => branches.id), // For multi-tenancy parent/child stores
+  name:            text('name').notNull(),
+  code:            text('code').notNull().unique(),   // e.g., "MH1" — used in bill numbers
+  address:         text('address'),
+  gstin:           text('gstin'),
+  exciseLicenseNo: text('excise_license_no'),
+  createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
 // ─── USERS ──────────────────────────────────────────────────────────────────
@@ -41,18 +56,30 @@ export const categories = pgTable('categories', {
 // ─── PRODUCTS ───────────────────────────────────────────────────────────────
 
 export const products = pgTable('products', {
-  id:         uuid('id').primaryKey().defaultRandom(),
-  categoryId: uuid('category_id').references(() => categories.id),
-  barcode:    text('barcode').unique(),
-  sku:        text('sku').unique(),
-  name:       text('name').notNull(),
-  brand:      text('brand').notNull(),
-  volumeMl:   integer('volume_ml'),
-  mrp:        numeric('mrp', { precision: 12, scale: 2 }).notNull(),
-  costPrice:  numeric('cost_price', { precision: 12, scale: 2 }),
-  isActive:   boolean('is_active').notNull().default(true),
-  createdAt:  timestamp('created_at', { withTimezone: true }).defaultNow(),
+  id:           uuid('id').primaryKey().defaultRandom(),
+  categoryId:   uuid('category_id').references(() => categories.id),
+  barcode:      text('barcode').unique(),
+  sku:          text('sku').unique(),
+  name:         text('name').notNull(),
+  brand:        text('brand').notNull(),
+  volumeMl:     integer('volume_ml'),
+  exciseCode:   text('excise_code'), // e.g., 'Q', 'P', 'N'
+  packQuantity: integer('pack_quantity'), // e.g., 12, 24, 48 bottles/case
+  mrp:          numeric('mrp', { precision: 12, scale: 2 }).notNull(),
+  costPrice:    numeric('cost_price', { precision: 12, scale: 2 }),
+  isActive:     boolean('is_active').notNull().default(true),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
+
+export const userPagePermissions = pgTable('user_page_permissions', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  routePath: text('route_path').notNull(), // e.g., 'dashboard', 'tabentry', 'ledger'
+  canAccess: boolean('can_access').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqUserRoute: unique('uq_user_route').on(t.userId, t.routePath),
+}));
 
 // ─── STOCK ──────────────────────────────────────────────────────────────────
 
