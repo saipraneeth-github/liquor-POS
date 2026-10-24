@@ -3,11 +3,11 @@
  * Delegates status validation to kot.engine.ts.
  */
 
-import { db } from '../../db/client';
-import { kotOrders, kotItems } from '../../db/schema';
+import { db } from '../../db/client.js';
+import { kotOrders, kotItems } from '../../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
-import { canTransitionKotItem, consolidateKotOrders, type KotItemStatus, type KotOrder } from './kot.engine';
+import { canTransitionKotItem, consolidateKotOrders, type KotItemStatus, type KotOrder } from './kot.engine.js';
 
 export interface CreateKotInput {
   tableSessionId: string;
