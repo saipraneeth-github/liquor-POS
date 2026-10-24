@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../../db/client.js';
 import { products, categories, priceAudit } from '../../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { JwtPayload } from '../auth/auth.service.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
@@ -56,6 +56,14 @@ export async function getProductById(id: string) {
     .where(eq(products.id, id))
     .limit(1);
   return product ?? null;
+}
+
+export async function getProductsByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+  return await db
+    .select()
+    .from(products)
+    .where(inArray(products.id, ids));
 }
 
 export async function updateMrp(

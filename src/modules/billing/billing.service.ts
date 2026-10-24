@@ -4,7 +4,7 @@ import { bills, billItems, stock, stockAudit, branches } from '../../db/schema.j
 import { eq, inArray, and } from 'drizzle-orm';
 import { calculateBill, assertMrpMatch } from './billing.engine.js';
 import { checkStockAvailability, computeStockDeltas, computeVoidStockDeltas } from '../stock/stock.engine.js';
-import { getProductById } from '../products/product.service.js';
+import { getProductById, getProductsByIds } from '../products/product.service.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ async function generateBillNumber(branchId: string, tx: any): Promise<string> {
 export async function createBill(input: CreateBillInput, cashier: JwtPayload) {
   // 1. Load products and validate MRP
   const productIds = input.items.map((i) => i.productId);
-  const productList = await Promise.all(productIds.map((id) => getProductById(id)));
+  const productList = await getProductsByIds(productIds);
 
   const productMap = new Map(productList.filter(Boolean).map((p) => [p!.id, p!]));
 
