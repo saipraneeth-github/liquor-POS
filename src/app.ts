@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { authRoutes } from './modules/auth/auth.routes.js';
@@ -40,6 +41,9 @@ export function buildApp() {
     contentSecurityPolicy: false, // relaxed for preview.html standalone UI
   });
   fastify.register(fastifyCors, { origin: process.env.CORS_ORIGIN ?? '*' });
+  fastify.register(fastifyRateLimit, {
+    global: false, // only applied to routes that explicitly configure it
+  });
   fastify.register(fastifyJwt, {
     secret: process.env.JWT_SECRET ?? 'dev_secret_change_me',
     sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? '8h' },

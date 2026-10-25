@@ -3,6 +3,12 @@ import { loginUser } from '../../modules/auth/auth.service.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/auth/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute'
+      }
+    },
     schema: {
       body: {
         type: 'object',
