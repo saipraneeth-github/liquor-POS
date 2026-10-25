@@ -307,7 +307,7 @@ export async function getBalanceSheet(branchId: string, asOf?: string) {
 
 // ─── TALLY EXPORT ────────────────────────────────────────────────────────────
 
-export async function exportTally(branchId: string, range: DateRangeQuery, companyName?: string) {
+export async function exportTally(branchId: string, range: DateRangeQuery, companyName?: string, includeMasters = true) {
   const [branch] = await db.select().from(branches).where(eq(branches.id, branchId)).limit(1);
   if (!branch) throw new NotFoundError('Branch not found');
 
@@ -322,7 +322,12 @@ export async function exportTally(branchId: string, range: DateRangeQuery, compa
     lines:         v.lines.map((l) => ({ ledgerCode: l.ledgerCode, debit: l.debit, credit: l.credit })),
   }));
 
-  const xml = vouchersToTallyXml(tallyVouchers, names, companyName?.trim() || branch.name);
+  const usedCodes = new Set(tallyVouchers.flatMap((v) => v.lines.map((l) => l.ledgerCode)));
+  const masters = includeMasters
+    ? ledgers.filter((l) => usedCodes.has(l.code)).map((l) => ({ code: l.code, name: l.name, group: l.group }))
+    : undefined;
+
+  const xml = vouchersToTallyXml(tallyVouchers, names, companyName?.trim() || branch.name, masters);
   const filename = `tally-${branch.code}-${range.from ?? 'start'}-${range.to ?? 'today'}.xml`.replace(/[^A-Za-z0-9._-]/g, '_');
   return { xml, filename, voucherCount: tallyVouchers.length };
 }

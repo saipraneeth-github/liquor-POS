@@ -12,8 +12,10 @@ import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniq
 
 const ROLE = z.enum(['owner', 'manager', 'cashier', 'steward']);
 
+const USER_NAME = z.string().trim().min(1).max(100).refine((s) => !/[<>]/.test(s), 'Name must not contain < or >');
+
 export const CreateUserSchema = z.object({
-  name:        z.string().trim().min(1).max(100),
+  name:        USER_NAME,
   email:       z.string().trim().toLowerCase().email().max(254),
   password:    z.string().min(8).max(128),
   role:        ROLE,
@@ -22,7 +24,7 @@ export const CreateUserSchema = z.object({
 });
 
 export const UpdateUserSchema = z.object({
-  name:     z.string().trim().min(1).max(100).optional(),
+  name:     USER_NAME.optional(),
   role:     ROLE.optional(),
   isActive: z.boolean().optional(),
 }).refine((d) => Object.keys(d).length > 0, 'At least one field is required');

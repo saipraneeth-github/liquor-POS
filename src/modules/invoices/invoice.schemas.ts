@@ -7,7 +7,10 @@ export const MONEY = z.string().trim().regex(/^\d{1,10}(\.\d{1,2})?$/, 'must be 
 
 const DATE = z.string().trim().refine((s) => /^\d{4}-\d{2}-\d{2}/.test(s) && !Number.isNaN(Date.parse(s)), 'invalid date (use YYYY-MM-DD)');
 
+const SAFE_NAME = z.string().trim().min(1).max(200).refine((s) => !/[<>]/.test(s), 'must not contain < or >');
+
 export const InvoiceNumber = z.string().trim().min(1).max(60)
+  .refine((s) => !/[<>]/.test(s), 'must not contain < or >')
   .refine((s) => !s.toUpperCase().startsWith(PLACEHOLDER_PREFIX), `invoice numbers starting with ${PLACEHOLDER_PREFIX} are reserved for drafts`);
 
 export const LineInputSchema = z.object({
@@ -26,7 +29,7 @@ export const LineInputSchema = z.object({
 export type LineInput = z.infer<typeof LineInputSchema>;
 
 export const InvoiceInputSchema = z.object({
-  supplierName: z.string().trim().min(1).max(200),
+  supplierName: SAFE_NAME,
   invoiceNumber: InvoiceNumber.optional(),
   invoiceDate: DATE.nullable().optional(),
   totalAmount: MONEY.optional(),
@@ -39,7 +42,7 @@ const fieldEnum = z.enum(INVOICE_FIELDS as [InvoiceField, ...InvoiceField[]]);
 export const ColumnMappingSchema = z.record(fieldEnum, z.union([z.number().int().min(0).max(59), z.string().trim().min(1).max(60)]));
 
 export const UploadFieldsSchema = z.object({
-  supplierName: z.string().trim().min(1).max(200).optional(),
+  supplierName: SAFE_NAME.optional(),
   invoiceNumber: InvoiceNumber.optional(),
   invoiceDate: DATE.optional(),
   columnMapping: z.string().max(2000).optional()

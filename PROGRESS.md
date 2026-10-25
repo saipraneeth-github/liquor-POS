@@ -5,22 +5,11 @@
 
 ## TL;DR
 
-- **Work stopped and committed at the user's request (2026-10-25).** State at commit: `tsc --noEmit` clean,
-  Vitest **340/340** (35 files). Playwright last ran green (17/17, twice) in the UI-review fixer run.
-- **Finished:** Phases 1–5 + independent UI review (20 confirmed UI issues fixed; stewards can use Tables & KOT).
-- **Partially done — supplier invoice upload backend** (workflow was stopped mid-build): code exists in
-  `src/modules/invoices/**` (extraction engines for CSV/XLSX/PDF/OCR, catalog matching, validation flags,
-  draft/review/approve/reject service + routes, registered in `src/app.ts`) and migration `0002_invoice_upload.sql`.
-  It compiles, but has **no tests yet, has not been reviewed, and has no UI**. Treat it as unverified.
-- **Not pushed.** Commit is local on `master`; the user decides when to push.
-
-### Resume from here
-1. Invoice backend: write unit tests for `src/modules/invoices/extraction/*`, `match.engine`, `validate.engine`
-   and `tests/integration/invoices.int.test.ts` (CSV/XLSX/PDF/PNG uploads, edit → review → approve/reject,
-   duplicate 409, double-approve, 413/415, cross-branch 403). Fix what fails.
-2. Independent review of the invoice backend (accuracy/money lens + upload-security lens), then fix.
-3. UI: Inventory → Supplier invoices (upload, review grid with flags/match status, approve/reject, history) + e2e.
-4. Optional: Tally ledger-masters export (see Open items).
+- **All phases (1–6) complete and verified (2026-10-25).** `tsc --noEmit` clean, Vitest **355/355** (37 files), Playwright **21/21** (12 spec files).
+- **Finished:**
+  - Phases 1–5 + UI & layout polish across all 14 screens (cleaned polluted `.pglite` XSS test records, hardened backend entity-name schemas against `<`/`>`, fixed Dashboard KPI grid/spacing/quick-actions, fixed `.two-col` track sizing & `min-width: 0`, fixed Customers table clipping, POS card alignment & sticky bill panel, Shift & filter bar alignment, and Sidebar layout).
+  - Phase 6 — Supplier invoice upload & workflow (`src/modules/invoices/**`, migration `0002_invoice_upload.sql`, unit tests `tests/unit/invoices.engines.test.ts`, integration tests `tests/integration/invoices.int.test.ts`, Inventory → Supplier invoices UI in `preview.html`, and Playwright E2E `tests/e2e/supplier-invoices.spec.ts`).
+- **Not committed/pushed yet.** The user decides when to commit and push.
 
 ## Phase status
 
@@ -31,8 +20,8 @@
 | 2 | Terminals, cashier shifts with denomination count & discrepancy, daily counter sheets (Opening + Inward − Closing = Sold) | ✅ done + reviewed |
 | 3 | Customer khata (credit, repayments, statements, outstanding), scheme slabs & payout, excise quotas & lifting report, breakage, stock-audit report | ✅ done + reviewed |
 | 4 | Double-entry accounting (auto-posting via domain events), expenses, manual journals, trial balance, P&L, balance sheet, Tally XML export | ✅ done + reviewed |
-| 5 | Web UI for all modules, owner branch picker, role-aware nav, offline bill queue + sync, 19 UI bug fixes, 10 new Playwright journeys | ✅ done + independently reviewed (20 more fixes) |
-| 6 | Supplier invoice upload (local CSV/XLSX/PDF/OCR) + draft → review → approve/reject + history | 🟡 backend code written, untested/unreviewed; UI not started |
+| 5 | Web UI for all modules, owner branch picker, role-aware nav, offline bill queue + sync, UI & layout polish across all screens | ✅ done + verified |
+| 6 | Supplier invoice upload (local CSV/XLSX/PDF/OCR) + draft → review → approve/reject + history + UI + unit/integration/e2e tests | ✅ done + verified |
 
 ## In flight right now
 

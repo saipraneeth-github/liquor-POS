@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Decimal } from 'decimal.js';
 import {
   vouchersToTallyXml,
+  tallyParentGroup,
   xmlEscape,
   tallyDate,
   tallyVoucherTypeName,
@@ -127,5 +128,20 @@ describe('vouchersToTallyXml', () => {
     const opens = (out.match(/<[A-Z][A-Z.]*[ >]/g) ?? []).length;
     const closes = (out.match(/<\/[A-Z][A-Z.]*>/g) ?? []).length;
     expect(opens).toBe(closes);
+  });
+
+  it('includes <LEDGER> master definitions with Tally parent groups when ledgers are supplied', () => {
+    expect(tallyParentGroup({ code: 'CASH', group: 'ASSET' })).toBe('Cash-in-Hand');
+    expect(tallyParentGroup({ code: 'SALES', group: 'INCOME' })).toBe('Sales Accounts');
+    expect(tallyParentGroup({ code: 'EXPENSE_RENT', group: 'EXPENSE' })).toBe('Indirect Expenses');
+
+    const withMasters = vouchersToTallyXml([SALE], NAMES, 'Main Co', [
+      { code: 'CASH', name: 'Cash in Hand', group: 'ASSET' },
+      { code: 'SALES', name: 'Sales Account', group: 'INCOME' },
+    ]);
+    expect(withMasters).toContain('<LEDGER NAME="Cash in Hand" ACTION="Create">');
+    expect(withMasters).toContain('<PARENT>Cash-in-Hand</PARENT>');
+    expect(withMasters).toContain('<LEDGER NAME="Sales Account" ACTION="Create">');
+    expect(withMasters).toContain('<PARENT>Sales Accounts</PARENT>');
   });
 });

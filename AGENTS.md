@@ -122,6 +122,7 @@ Login: `POST /api/v1/auth/login {email, password}` → `{ token }`. Send as `Aut
 | Counter sheets | `POST /counter-sheets/:branchId` · `GET /counter-sheets/:branchId?date=` · `GET /counter-sheets/sheet/:id` · `PUT /counter-sheets/sheet/:id/lines` (cashier) · `POST /counter-sheets/sheet/:id/post` (manager) | |
 | Closing | `POST/GET /closing` | manager |
 | Inventory | `POST /inventory/invoices/parse` · `POST /inventory/invoices/approve` · `GET /inventory/indent/:branchId` (manager) · `GET /inventory/stock/:branchId` (cashier) | |
+| Supplier invoices | `POST /invoices/:branchId/upload` (multipart) · `POST /invoices/:branchId` · `GET /invoices/:branchId` · `GET /invoices/detail/:id` · `GET /invoices/detail/:id/file` · `PUT /invoices/detail/:id` (cashier) · `POST /invoices/detail/:id/review` · `POST /invoices/detail/:id/approve` · `POST /invoices/detail/:id/reject` (manager) | |
 | Khata | `GET/POST /customers/:branchId` · `GET /customers/:id/statement` · `POST /customers/:id/repayments` (cashier; credit fields manager) · `PATCH /customers/:id` · `GET /customers/:branchId/outstanding` (manager) | |
 | Schemes | `GET/POST /schemes/:branchId` · `GET /schemes/:branchId/alerts` · `POST /schemes/:schemeId/purchase` · `GET/POST /schemes/:schemeId/slabs` · `GET /schemes/:schemeId/payout` | manager |
 | Compliance | `GET/POST /compliance/quotas/:branchId` · `GET /compliance/lifting/:branchId` · `POST /compliance/breakage/:branchId` (cashier) · `GET /compliance/breakage/:branchId` · `GET /compliance/stock-audit/:branchId` (manager) | |

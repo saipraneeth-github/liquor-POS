@@ -7,13 +7,15 @@ import { ConflictError, NotFoundError, isUniqueViolation } from '../../lib/error
 
 // ─── SCHEMAS ─────────────────────────────────────────────────────────────────
 
+const TERMINAL_NAME = z.string().trim().min(1).max(100).refine((s) => !/[<>]/.test(s), 'Terminal name must not contain < or >');
+
 export const CreateTerminalSchema = z.object({
-  terminalName: z.string().trim().min(1).max(100),
-  deviceKey:    z.string().trim().min(8).max(128).optional(),
+  terminalName: TERMINAL_NAME,
+  deviceKey:    z.string().trim().min(8).max(128).refine((s) => !/[<>]/.test(s), 'Invalid deviceKey').optional(),
 });
 
 export const UpdateTerminalSchema = z.object({
-  terminalName: z.string().trim().min(1).max(100).optional(),
+  terminalName: TERMINAL_NAME.optional(),
   isActive:     z.boolean().optional(),
 }).refine((d) => d.terminalName !== undefined || d.isActive !== undefined, {
   message: 'Nothing to update',

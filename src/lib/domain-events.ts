@@ -25,7 +25,7 @@ export type Tx = Parameters<Parameters<DB['transaction']>[0]>[0];
 
 export interface DomainEventMap {
   'bill.paid':                { bill: typeof bills.$inferSelect; items: (typeof billItems.$inferSelect)[] };
-  'bill.voided':              { bill: typeof bills.$inferSelect; items: (typeof billItems.$inferSelect)[] };
+  'bill.voided':              { bill: typeof bills.$inferSelect; items: (typeof billItems.$inferSelect)[]; voidedById?: string | null };
   'supplierInvoice.approved': { invoice: typeof supplierInvoices.$inferSelect; items: (typeof supplierInvoiceItems.$inferSelect)[] };
   'credit.repayment':         { customer: typeof customers.$inferSelect; txn: typeof creditTransactions.$inferSelect };
   'expense.recorded':         { expense: typeof expenses.$inferSelect };

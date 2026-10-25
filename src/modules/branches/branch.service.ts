@@ -10,8 +10,10 @@ import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniq
 
 const GSTIN = z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be 15 alphanumeric characters');
 
+const BRANCH_NAME = z.string().trim().min(1).max(200).refine((s) => !/[<>]/.test(s), 'Branch name must not contain < or >');
+
 export const CreateBranchSchema = z.object({
-  name:            z.string().trim().min(1).max(200),
+  name:            BRANCH_NAME,
   code:            z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,10}$/, 'code must be 2-10 letters/digits'),
   address:         z.string().trim().max(500).optional(),
   gstin:           GSTIN.optional(),
@@ -22,7 +24,7 @@ export const CreateBranchSchema = z.object({
 
 // code is immutable: it is baked into every issued bill number
 export const UpdateBranchSchema = z.object({
-  name:            z.string().trim().min(1).max(200).optional(),
+  name:            BRANCH_NAME.optional(),
   address:         z.string().trim().max(500).nullable().optional(),
   gstin:           GSTIN.nullable().optional(),
   exciseLicenseNo: z.string().trim().max(100).nullable().optional(),

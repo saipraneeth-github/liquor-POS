@@ -9,6 +9,8 @@ import {
   priceAudit,
   billItems,
   bills,
+  schemes,
+  schemePurchases,
 } from '../../db/schema.js';
 import { eq, and, gte, inArray, ne, sql } from 'drizzle-orm';
 import {
@@ -117,13 +119,13 @@ export async function approveInwardInvoice(input: ApproveInvoiceInput, user: Jwt
 
 type InvoiceRow = typeof supplierInvoices.$inferSelect;
 type InvoiceItemRow = typeof supplierInvoiceItems.$inferSelect;
-export type InvoiceProductMap = Map<string, { id: string; mrp: string }>;
+export type InvoiceProductMap = Map<string, { id: string; mrp: string; packQuantity: number | null }>;
 
 /** Loads the referenced products (single query); throws 422 listing any unknown product ids. */
 export async function loadInvoiceProducts(tx: Tx, productIds: string[]): Promise<InvoiceProductMap> {
   const ids = [...new Set(productIds)];
   const productRows = ids.length === 0 ? [] : await tx
-    .select({ id: products.id, mrp: products.mrp })
+    .select({ id: products.id, mrp: products.mrp, packQuantity: products.packQuantity })
     .from(products)
     .where(inArray(products.id, ids));
   const productMap: InvoiceProductMap = new Map(productRows.map((p) => [p.id, p]));
@@ -134,13 +136,16 @@ export async function loadInvoiceProducts(tx: Tx, productIds: string[]): Promise
 
 /**
  * Applies an APPROVED invoice inside the caller's transaction: atomic stock increment + PURCHASE stock_audit per
- * line, product cost price update, MRP change recorded in price_audit, then 'supplierInvoice.approved'
- * (accounting posts the purchase voucher). Every item must have a productId present in `productMap`.
+ * line, product cost price update, MRP change recorded in price_audit, active supplier scheme progress, then
+ * 'supplierInvoice.approved' (accounting posts the purchase voucher).
  */
 export async function applyApprovedInvoice(
   tx: Tx,
   { invoice, items, userId, productMap }: { invoice: InvoiceRow; items: InvoiceItemRow[]; userId: string; productMap: InvoiceProductMap },
 ): Promise<void> {
+  let totalCases = new Decimal(0);
+  let totalValue = new Decimal(0);
+
   for (const item of items) {
     const productId = item.productId;
     if (!productId) throw new BusinessRuleError('Every invoice line must be matched to a product before approval');
@@ -165,6 +170,10 @@ export async function applyApprovedInvoice(
 
     // Update cost price; MRP changes are audited in price_audit
     const product = productMap.get(productId)!;
+    const packSize = product.packQuantity && product.packQuantity > 0 ? product.packQuantity : 12;
+    totalCases = totalCases.plus(new Decimal(item.quantity).div(packSize));
+    totalValue = totalValue.plus(item.lineCostTotal);
+
     const newMrp = new Decimal(item.mrp).toFixed(2);
     const mrpChanged = !new Decimal(product.mrp).equals(newMrp);
     await tx
@@ -174,6 +183,35 @@ export async function applyApprovedInvoice(
     if (mrpChanged) {
       await tx.insert(priceAudit).values({ productId, userId, oldMrp: product.mrp, newMrp });
       productMap.set(productId, { ...product, mrp: newMrp });
+    }
+  }
+
+  // Auto-credit any active supplier schemes matching this branch and supplier name
+  if (invoice.supplierName.trim() && (totalCases.gt(0) || totalValue.gt(0))) {
+    const activeSchemes = await tx
+      .select()
+      .from(schemes)
+      .where(and(
+        eq(schemes.branchId, invoice.branchId),
+        eq(schemes.status, 'ACTIVE'),
+        sql`lower(trim(${schemes.supplierName})) = lower(trim(${invoice.supplierName}))`,
+      ));
+    const casesStr = totalCases.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
+    const valStr = totalValue.toFixed(2);
+    for (const sc of activeSchemes) {
+      const inc = sc.targetType === 'QTY' ? new Decimal(casesStr) : new Decimal(valStr);
+      if (inc.lte(0)) continue;
+      await tx.insert(schemePurchases).values({
+        schemeId: sc.id,
+        qty: casesStr,
+        value: valStr,
+        referenceId: invoice.id,
+        notes: `Invoice ${invoice.invoiceNumber}`,
+      });
+      await tx
+        .update(schemes)
+        .set({ currentValue: sql`${schemes.currentValue} + ${inc.toFixed(2)}` })
+        .where(eq(schemes.id, sc.id));
     }
   }
 

@@ -60,7 +60,7 @@
   .skip-link:focus { top: 8px; }
   [hidden] { display: none !important; }
 
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
   .pad { padding: 18px; }
   .muted { color: var(--muted-foreground); }
   .small { font-size: 12px; }
@@ -68,7 +68,8 @@
   .h2 { font-size: 15px; font-weight: 700; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .row.between { justify-content: space-between; }
-  .stack { display: flex; flex-direction: column; gap: 10px; }
+  .row.end { align-items: flex-end; }
+  .stack { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .grow { flex: 1 1 auto; min-width: 0; }
   .right { text-align: right; }
   .mono { font-variant-numeric: tabular-nums; }
@@ -84,11 +85,14 @@
   .btn-ghost { background: none; border: none; cursor: pointer; color: var(--muted-foreground); padding: 4px 6px; border-radius: 6px; }
   .btn-ghost:hover { color: var(--foreground); }
 
-  .input { background: var(--background); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--foreground); width: 100%; font-size: 14px; }
+  .input { background: var(--background); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--foreground); width: 100%; font-size: 14px; min-width: 0; }
   .input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent); }
   .input-sm { padding: 6px 8px; font-size: 13px; }
   label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted-foreground); min-width: 0; }
   .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); gap: 10px; align-items: end; }
+  .form-grid > * { min-width: 0; }
+  .form-grid > .check { min-height: 38px; }
+  .form-grid > button { min-height: 38px; justify-self: start; }
   .check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
 
   .badge { display: inline-block; border-radius: 99px; padding: 2px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
@@ -101,20 +105,35 @@
   .tag { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px; background: var(--accent); color: var(--foreground); border: 1px solid var(--border); cursor: pointer; }
   .tag[aria-pressed="true"] { background: var(--primary); color: var(--primary-foreground); border-color: var(--primary); }
 
-  .table-wrap { overflow-x: auto; }
+  .table-wrap { overflow-x: auto; max-width: 100%; }
   .table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .table th { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
-  .table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; overflow-wrap: break-word; }
+  .table-compact th, .table-compact td { padding: 8px 8px; }
+  .card:not(.pad) .table-wrap .table th:first-child,
+  .card:not(.pad) .table-wrap .table td:first-child,
+  .card.table-wrap > .table th:first-child,
+  .card.table-wrap > .table td:first-child { padding-left: 18px; }
+  .card:not(.pad) .table-wrap .table th:last-child,
+  .card:not(.pad) .table-wrap .table td:last-child,
+  .card.table-wrap > .table th:last-child,
+  .card.table-wrap > .table td:last-child { padding-right: 18px; }
+  .card.pad .stat-card { background: var(--background); }
+  .table tr.row-active td { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+  .table tr.row-click { cursor: pointer; }
+  .table tr.row-click:hover td { background: color-mix(in srgb, var(--foreground) 4%, transparent); }
   .table tr:last-child td { border-bottom: none; }
   .table tfoot td { font-weight: 700; border-top: 2px solid var(--border); }
   .state { padding: 22px; text-align: center; color: var(--muted-foreground); font-size: 13px; }
   .state.error { color: var(--danger); }
 
-  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); gap: 12px; }
-  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 14px; }
+  .stats > * { min-width: 0; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
   .stat-label { font-size: 11px; color: var(--muted-foreground); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-  .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
-  .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; align-items: start; }
+  .stat-value { font-size: 24px; font-weight: 700; line-height: 1.2; }
+  .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; align-items: start; }
+  .two-col > * { min-width: 0; }
 
   .progress-bar { background: var(--border); border-radius: 99px; height: 8px; overflow: hidden; }
   .progress-fill { height: 100%; border-radius: 99px; background: var(--primary); }
@@ -133,13 +152,13 @@
   /* ── App shell ───────────────────────────────────────────────────────────── */
   #mainApp { display: none; height: 100vh; height: 100dvh; }
   #mainApp.on { display: flex; }
-  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); width: 230px; flex-shrink: 0; padding: 14px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
-  .brand { display: flex; align-items: center; gap: 10px; padding: 4px; }
-  .nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; cursor: pointer; color: var(--muted-foreground); font-size: 14px; font-weight: 500; background: none; border: none; text-align: left; width: 100%; }
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); width: 230px; flex-shrink: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 2px 4px; }
+  .nav { display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow-y: auto; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; cursor: pointer; color: var(--muted-foreground); font-size: 13px; font-weight: 500; background: none; border: none; text-align: left; width: 100%; }
   .nav-item:hover, .nav-item.active { background: var(--accent); color: var(--foreground); }
   .nav-item.active { box-shadow: inset 3px 0 0 var(--primary); }
-  .user-card { padding: 12px; background: var(--accent); border-radius: 10px; }
+  .user-card { padding: 10px 12px; background: var(--accent); border-radius: 10px; }
   .main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
   .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; background: var(--background); }
   #menuBtn { display: none; }
@@ -158,17 +177,18 @@
   .pos-layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
   .pos-products { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; }
   .pos-toolbar { padding: 14px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
-  .product-grid { padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr)); gap: 10px; }
-  .pos-product { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; text-align: center; display: flex; flex-direction: column; gap: 3px; align-items: center; }
+  .product-grid { padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(155px, 100%), 1fr)); gap: 10px; align-items: stretch; }
+  .pos-product { background: var(--background); border: 1px solid var(--border); border-radius: 10px; padding: 12px 10px; cursor: pointer; text-align: center; display: flex; flex-direction: column; gap: 4px; align-items: center; min-width: 0; height: 100%; }
+  .pos-product > span { max-width: 100%; overflow-wrap: break-word; }
   .pos-product:hover { border-color: var(--primary); }
   .pos-product:active { transform: scale(0.98); }
-  .pos-product .price { font-size: 16px; font-weight: 700; color: var(--primary); }
+  .pos-product .price { font-size: 16px; font-weight: 700; color: var(--primary); margin-top: auto; padding-top: 4px; }
   [data-theme="dark"] .pos-product .price { color: var(--purple); }
   .pos-product.oos { opacity: 0.55; }
-  .bill-panel { flex: 0 1 360px; min-width: min(300px, 100%); display: flex; flex-direction: column; position: sticky; top: 0; }
+  .bill-panel { flex: 0 1 360px; min-width: min(300px, 100%); display: flex; flex-direction: column; position: sticky; top: 0; max-height: calc(100dvh - 88px); overflow-y: auto; }
   .bill-panel > section { padding: 14px; border-bottom: 1px solid var(--border); }
   .bill-panel > section:last-child { border-bottom: none; }
-  #cartItems { display: flex; flex-direction: column; gap: 8px; max-height: 42vh; overflow: auto; }
+  #cartItems { display: flex; flex-direction: column; gap: 8px; max-height: 32vh; overflow: auto; }
   .cart-line { background: var(--accent); border-radius: 8px; padding: 10px 12px; }
   .qty-btn { background: var(--card); border: 1px solid var(--border); border-radius: 6px; width: 30px; height: 30px; cursor: pointer; font-size: 16px; }
   .pay-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
@@ -214,7 +234,7 @@
     #menuBtn { display: inline-flex; }
     .page { padding: 14px; }
     .branch-box { margin-left: 0; }
-    .bill-panel { position: static; flex-basis: 100%; }
+    .bill-panel { position: static; flex-basis: 100%; max-height: none; overflow-y: visible; }
     .pos-mobile-bar:not([hidden]) { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 50; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; box-shadow: 0 -4px 14px rgba(0,0,0,0.15); }
   }
   @media (max-width: 480px) {
@@ -303,7 +323,7 @@
           </div>
           <button class="btn-primary" type="button" id="dashNewBill" onclick="showPage('pos')">+ New Bill</button>
         </div>
-        <div id="dashBody"></div>
+        <div id="dashBody" class="stack" style="gap:16px;"></div>
       </section>
 
       <!-- ─── POS ─── -->
@@ -501,11 +521,11 @@
         </div>
         <div class="stats" id="stockStats"></div>
         <div class="card">
-          <div class="pad h2" style="padding-bottom:0;">Current stock</div>
+          <div class="pad h2" style="padding-bottom:8px;">Current stock</div>
           <div class="table-wrap" id="stockTable"></div>
         </div>
         <div class="card mgr-only">
-          <div class="pad h2" style="padding-bottom:0;">Reorder indent (30-day velocity, 5-day lead + 3-day buffer)</div>
+          <div class="pad h2" style="padding-bottom:8px;">Reorder indent (30-day velocity, 5-day lead + 3-day buffer)</div>
           <div class="table-wrap" id="indentTable"></div>
         </div>
         <div class="two-col">
@@ -523,8 +543,54 @@
             <div id="breakLog" class="table-wrap"></div>
           </div>
         </div>
+        <div class="card pad stack" id="supplierInvoicesCard">
+          <div class="row between">
+            <div>
+              <div class="h2">📄 Supplier invoices (upload, review &amp; inward)</div>
+              <div class="muted small">Upload CSV, Excel (.xlsx), PDF or invoice photo for local extraction &amp; catalog matching, or create a manual draft.</div>
+            </div>
+            <button class="btn-sec btn-sm" type="button" id="invNewDraftBtn" onclick="startManualInvoiceDraft()">+ Manual draft</button>
+          </div>
+          <form class="row end" id="invUploadForm" onsubmit="uploadSupplierInvoice(event)">
+            <label class="field grow" for="invUploadFile" style="min-width:220px;">Invoice file (CSV, XLSX, PDF, PNG, JPG ≤ 10 MB)
+              <input id="invUploadFile" class="input input-sm" type="file" accept=".csv,.xlsx,.pdf,.png,.jpg,.jpeg" required />
+            </label>
+            <label class="field" for="invUploadSupplier" style="width:180px;">Supplier (optional)
+              <input id="invUploadSupplier" class="input input-sm" maxlength="200" placeholder="Auto-detected" />
+            </label>
+            <label class="field" for="invUploadNumber" style="width:150px;">Invoice no. (optional)
+              <input id="invUploadNumber" class="input input-sm" maxlength="60" placeholder="Auto-detected" />
+            </label>
+            <label class="field" for="invUploadDate" style="width:145px;">Date (optional)
+              <input id="invUploadDate" class="input input-sm" type="date" />
+            </label>
+            <button class="btn-primary btn-sm" type="submit" id="invUploadBtn" style="min-height:34px;">⬆ Upload &amp; extract</button>
+          </form>
+          <div id="invDetailBox" hidden></div>
+          <div class="stack" style="margin-top:4px;">
+            <div class="row between end">
+              <div class="h2">Invoice history</div>
+              <div class="row end">
+                <label class="field" for="invFilterStatus">Status
+                  <select id="invFilterStatus" class="input input-sm" style="width:130px;" onchange="loadSupplierInvoices()">
+                    <option value="">All</option>
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="REVIEWED">REVIEWED</option>
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="REJECTED">REJECTED</option>
+                  </select>
+                </label>
+                <label class="field" for="invFilterQ">Search
+                  <input id="invFilterQ" class="input input-sm" style="width:180px;" placeholder="Supplier or invoice no." onkeydown="if(event.key==='Enter'){event.preventDefault();loadSupplierInvoices()}" />
+                </label>
+                <button class="btn-sec btn-sm" type="button" onclick="loadSupplierInvoices()" style="min-height:34px;">Filter</button>
+              </div>
+            </div>
+            <div id="invHistoryBox" class="table-wrap"></div>
+          </div>
+        </div>
         <details class="card mgr-only">
-          <summary>📄 Supplier invoice inward</summary>
+          <summary>⚡ Quick one-step supplier inward (direct approve)</summary>
           <div class="pad stack">
             <div class="form-grid">
               <label class="field" for="invSupplier">Supplier <input id="invSupplier" class="input" maxlength="200" /></label>
@@ -553,8 +619,8 @@
           <div class="muted small">Count closing bottles; sold = opening + inward − closing. A manager posts the sheet to correct stock.</div>
         </div>
         <div class="card pad">
-          <div class="form-grid">
-            <label class="field" for="counterDate">Sheet date <input id="counterDate" class="input" type="date" /></label>
+          <div class="row end">
+            <label class="field" for="counterDate" style="width:200px;">Sheet date <input id="counterDate" class="input" type="date" /></label>
             <button class="btn-sec" type="button" onclick="loadCounterForDate()">Open</button>
             <button class="btn-primary" type="button" id="counterCreateBtn" onclick="createCounterSheet()">Create sheet</button>
           </div>
@@ -598,7 +664,7 @@
         <div class="card pad stack">
           <div class="row between">
             <div class="h2">Stock lifting vs quota</div>
-            <div class="row">
+            <div class="row end">
               <label class="field" for="liftFrom">From <input id="liftFrom" class="input input-sm" type="date" /></label>
               <label class="field" for="liftTo">To <input id="liftTo" class="input input-sm" type="date" /></label>
               <button class="btn-primary btn-sm" type="button" onclick="loadLifting()">Run report</button>
@@ -821,7 +887,7 @@ function currentBranch() { return S.branches.find((b) => b.id === S.branchId) ||
 function branchLabel() { const b = currentBranch(); return b ? `${b.name} (${b.code})` : (S.branchId ? 'Assigned branch' : 'No branch selected'); }
 function plural(n, word) { return `${n} ${word}${n === 1 ? '' : 's'}`; }
 function badge(text, kind) { return `<span class="badge badge-${kind}">${esc(text)}</span>`; }
-function statusBadge(s) { return badge(s, { PAID: 'green', VOIDED: 'red', OPEN: 'blue', CLOSED: 'purple', DRAFT: 'yellow', POSTED: 'green', ACTIVE: 'green', COMPLETED: 'purple', EXPIRED: 'red', CANCELLED: 'red' }[s] || 'blue'); }
+function statusBadge(s) { return badge(s, { PAID: 'green', VOIDED: 'red', OPEN: 'blue', CLOSED: 'purple', DRAFT: 'yellow', REVIEWED: 'blue', APPROVED: 'green', REJECTED: 'red', POSTED: 'green', ACTIVE: 'green', COMPLETED: 'purple', EXPIRED: 'red', CANCELLED: 'red' }[s] || 'blue'); }
 function payBadge(m) { return badge(m || '—', { CASH: 'green', CARD: 'purple', UPI: 'blue', CREDIT: 'yellow', BANK: 'blue' }[m] || 'blue'); }
 function intOrNull(v) { const s = String(v ?? '').trim(); if (s === '') return null; return /^\d+$/.test(s) ? parseInt(s, 10) : NaN; }
 
@@ -1045,7 +1111,7 @@ function resetSessionState() {
   stopTimers();
   Object.assign(S, { token: '', user: null, branches: [], branchId: null, products: [], productMap: {}, categories: [], stock: {},
     cart: [], creditCustomer: null, creditResults: [], tableBill: null, shift: null, sheet: null, bills: [],
-    tables: [], ledgers: [], pendingTableLines: null });
+    tables: [], ledgers: [], pendingTableLines: null, selectedCustomerId: null, activeInvoice: null });
 }
 function showLogin(message) {
   $('mainApp').classList.remove('on');
@@ -1154,7 +1220,9 @@ async function changeBranch(id) {
   S.branchId = id;
   lsSet('lc_branch:' + S.user.sub, id);
   S.cart = []; S.creditCustomer = null; S.creditResults = []; S.tableBill = null; S.sheet = null;
-  S.ledgers = []; S.tables = []; S.pendingTableLines = null;   // branch-scoped caches
+  S.ledgers = []; S.tables = []; S.pendingTableLines = null; S.selectedCustomerId = null; S.activeInvoice = null;   // branch-scoped caches
+  if ($('custStatement')) $('custStatement').innerHTML = '<div class="state">Select a customer to see the khata statement.</div>';
+  if ($('invDetailBox')) { $('invDetailBox').hidden = true; $('invDetailBox').innerHTML = ''; }
   renderCart();
   $('sidebarBranch').textContent = branchLabel();
   toast('Switched to ' + branchLabel(), 'success');
@@ -1415,7 +1483,7 @@ function productOptions(selected) {
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
 async function loadDashboard() {
   const h = Number(new Date().toLocaleString('en-US', { hour: 'numeric', hour12: false }));
-  $('dashTitle').textContent = `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${S.user.name.split(' ')[0]} 👋`;
+  $('dashTitle').textContent = `${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}, ${S.user.name} 👋`;
   $('dashSub').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' · ' + branchLabel();
   $('dashNewBill').hidden = !can('cashier');
   const body = $('dashBody');
@@ -1449,28 +1517,45 @@ async function loadDashboard() {
   const billsPartial = billsR.status === 'fulfilled' && billsR.value.partial;
   const paid = bills.filter((b) => b.status === 'PAID');
   const salesPaise = paid.reduce((s, b) => s + toPaise(b.total), 0);
+  const avgPaise = paid.length ? Math.round(salesPaise / paid.length) : 0;
   const tables = tablesR.status === 'fulfilled' ? tablesR.value.tables : [];
   const occupied = tables.filter((t) => t.status === 'OCCUPIED').length;
   const low = S.products.filter((p) => S.stock[p.id] && S.stock[p.id].quantity <= (S.stock[p.id].reorderLevel || 0));
   const alerts = alertsR.status === 'fulfilled' && alertsR.value ? alertsR.value.alerts : [];
+  const quickLinks = [
+    ['pos', '🛒 POS Billing'],
+    ['shift', '⏱ Cashier Shift'],
+    ['tables', '🪑 Tables & KOT'],
+    ['stock', '📦 Inventory'],
+    ...(can('manager') ? [['closing', '🔒 Day Closing'], ['accounting', '📚 Accounting']] : []),
+  ];
   body.innerHTML = `
     <div class="stats">
       <div class="stat-card"><div class="stat-label">Today's sales (paid)</div><div class="stat-value mono" id="dashSales">${billsR.status === 'fulfilled' ? fmtPaise(salesPaise) : '—'}</div><div class="muted small">${plural(paid.length, 'paid bill')}${bills.length - paid.length ? ' · ' + (bills.length - paid.length) + ' voided' : ''}${billsPartial ? ' · <span class="warn">partial — open Bills for the full day</span>' : ''}</div></div>
-      <div class="stat-card"><div class="stat-label">Bills today</div><div class="stat-value" id="dashBills">${billsR.status === 'fulfilled' ? billsR.value.total : '—'}</div></div>
-      <div class="stat-card"><div class="stat-label">Tables occupied</div><div class="stat-value warn" id="dashTables">${occupied} / ${tables.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Low stock SKUs</div><div class="stat-value ${low.length ? 'neg' : ''}" id="dashLow">${low.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Bills today</div><div class="stat-value mono" id="dashBills">${billsR.status === 'fulfilled' ? billsR.value.total : '—'}</div><div class="muted small">${paid.length ? `Avg ${fmtPaise(avgPaise)} / paid bill` : 'No paid bills yet today'}</div></div>
+      <div class="stat-card"><div class="stat-label">Tables occupied</div><div class="stat-value mono ${occupied ? 'warn' : ''}" id="dashTables">${occupied} / ${tables.length}</div><div class="muted small">${Math.max(0, tables.length - occupied)} free · Floor &amp; bar</div></div>
+      <div class="stat-card"><div class="stat-label">Low stock SKUs</div><div class="stat-value mono ${low.length ? 'neg' : 'pos'}" id="dashLow">${low.length}</div><div class="muted small">${low.length ? 'At or below reorder level' : `All ${S.products.length} SKUs stocked`}</div></div>
     </div>
     <div class="two-col">
-      <div class="card"><div class="pad h2" style="padding-bottom:0;">Recent bills</div>
-        ${paid.length || bills.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Bill</th><th>Time</th><th>Mode</th><th>Status</th><th class="right">Total</th></tr></thead><tbody>
-          ${bills.slice(0, 6).map((b) => `<tr><td><b>${esc(b.billNumber)}</b></td><td>${fmtTime(b.createdAt)}</td><td>${payBadge(b.paymentMode)}</td><td>${statusBadge(b.status)}</td><td class="right mono">${money(b.total)}</td></tr>`).join('')}
+      <div class="card">
+        <div class="pad row between" style="padding-bottom:10px;"><div class="h2">Recent bills</div><button type="button" class="btn-ghost small" onclick="showPage('bills')">View all →</button></div>
+        ${paid.length || bills.length ? `<div class="table-wrap"><table class="table table-compact"><thead><tr><th>Bill</th><th>Time</th><th>Mode</th><th>Status</th><th class="right">Total</th></tr></thead><tbody>
+          ${bills.slice(0, 6).map((b) => `<tr class="row-click" onclick="viewBill('${b.id}')" title="Click to view bill details"><td><b>${esc(b.billNumber)}</b></td><td>${fmtTime(b.createdAt)}</td><td>${payBadge(b.paymentMode)}</td><td>${statusBadge(b.status)}</td><td class="right mono"><b>${money(b.total)}</b></td></tr>`).join('')}
         </tbody></table></div>` : '<div class="state">No bills yet today.</div>'}
       </div>
-      <div class="card pad stack"><div class="h2">⚡ Alerts</div>
-        ${low.map((p) => `<div class="small">${badge('Low stock', 'yellow')} ${esc(p.name)} — ${S.stock[p.id].quantity} left (reorder at ${S.stock[p.id].reorderLevel})</div>`).join('')}
-        ${alerts.map((a) => `<div class="small">${badge('Scheme', 'green')} ${esc(a.schemeName)} — ${Number(a.progressPct).toFixed(1)}% of target</div>`).join('')}
-        ${!low.length && !alerts.length ? '<div class="muted small">No alerts. 🎉</div>' : ''}
-        ${billsR.status === 'rejected' ? `<div class="neg small">Bills: ${esc(billsR.reason.message)}</div>` : ''}
+      <div class="stack" style="gap:16px;">
+        <div class="card pad stack"><div class="h2">⚡ Alerts</div>
+          ${low.map((p) => `<div class="small">${badge('Low stock', 'yellow')} ${esc(p.name)} — ${S.stock[p.id].quantity} left (reorder at ${S.stock[p.id].reorderLevel})</div>`).join('')}
+          ${alerts.map((a) => `<div class="small">${badge('Scheme', 'green')} ${esc(a.schemeName)} — ${Number(a.progressPct).toFixed(1)}% of target</div>`).join('')}
+          ${!low.length && !alerts.length ? `<div class="small">${badge('All clear', 'green')} <span class="muted">No low-stock or scheme alerts right now.</span></div>` : ''}
+          ${billsR.status === 'rejected' ? `<div class="neg small">Bills: ${esc(billsR.reason.message)}</div>` : ''}
+        </div>
+        <div class="card pad stack">
+          <div class="h2">Quick actions</div>
+          <div class="quick-grid">
+            ${quickLinks.map(([id, label]) => `<button type="button" class="btn-sec" style="text-align:left; padding:9px 12px;" onclick="showPage('${id}')">${label}</button>`).join('')}
+          </div>
+        </div>
       </div>
     </div>`;
 }
@@ -1792,13 +1877,13 @@ async function renderShiftOpen(el) {
     el.innerHTML = `<div class="card pad">No active terminals in this branch. ${can('manager') ? 'Add one under Admin → Terminals.' : 'Ask a manager to add a terminal.'}</div>`;
     return;
   }
-  el.innerHTML = `<div class="card pad stack" style="max-width:560px;">
+  el.innerHTML = `<div class="card pad stack" style="max-width:620px;">
     <div class="h2">Open a shift</div>
-    <form class="form-grid" onsubmit="openShift(event)">
-      <label class="field" for="shiftTerminal">Terminal
+    <form class="row end" onsubmit="openShift(event)">
+      <label class="field grow" for="shiftTerminal" style="min-width:180px;">Terminal
         <select id="shiftTerminal" class="input" required>${terms.map((t) => `<option value="${t.id}">${esc(t.terminalName)}</option>`).join('')}</select></label>
-      <label class="field" for="shiftFloat">Opening float (₹)<input id="shiftFloat" class="input" inputmode="decimal" value="1000.00" required /></label>
-      <button class="btn-primary" type="submit" id="shiftOpenBtn">Open Shift</button>
+      <label class="field" for="shiftFloat" style="width:160px;">Opening float (₹)<input id="shiftFloat" class="input" inputmode="decimal" value="1000.00" required /></label>
+      <button class="btn-primary" type="submit" id="shiftOpenBtn" style="min-height:38px;">Open Shift</button>
     </form></div>`;
 }
 
@@ -2049,11 +2134,11 @@ async function loadCustomers() {
     const q = $('custSearch').value.trim();
     const { customers } = await api(`/customers/${S.branchId}?limit=100${q ? '&search=' + encodeURIComponent(q) : ''}`);
     if (!customers.length) { empty(el, q ? 'No customers match.' : 'No customers yet.'); return; }
-    el.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Customer</th><th>Credit</th><th class="right">Outstanding</th><th></th></tr></thead><tbody>
-      ${customers.map((c) => `<tr class="cust-row" data-name="${esc(c.name)}"><td><b>${esc(c.name)}</b><div class="muted small">${esc(c.phone)}</div></td>
+    el.innerHTML = `<div class="table-wrap"><table class="table table-compact"><thead><tr><th>Customer</th><th>Credit</th><th class="right">Outstanding</th><th></th></tr></thead><tbody>
+      ${customers.map((c) => `<tr class="cust-row ${S.selectedCustomerId === c.id ? 'row-active' : ''}" data-name="${esc(c.name)}"><td><b>${esc(c.name)}</b><div class="muted small">${esc(c.phone)}</div></td>
         <td>${c.creditAllowed ? badge('Limit ' + money(c.creditLimit), 'blue') : badge('No credit', 'yellow')} ${c.isActive ? '' : badge('Inactive', 'red')}</td>
         <td class="right mono">${money(c.currentCredit)}</td>
-        <td><button type="button" class="btn-sec btn-sm" onclick="openStatement('${c.id}')">Statement</button></td></tr>`).join('')}
+        <td class="right" style="width:1%; white-space:nowrap;"><button type="button" class="btn-sec btn-sm" onclick="openStatement('${c.id}')">Statement</button></td></tr>`).join('')}
       </tbody></table></div>`;
   } catch (e) { errorState(el, e); }
 }
@@ -2093,6 +2178,11 @@ async function createCustomer(e) {
 }
 
 async function openStatement(id) {
+  S.selectedCustomerId = id;
+  document.querySelectorAll('#custList .cust-row').forEach((tr) => {
+    const btn = tr.querySelector('button[onclick]');
+    tr.classList.toggle('row-active', !!btn && btn.getAttribute('onclick').includes(id));
+  });
   const el = $('custStatement');
   loading(el, 'Loading statement…');
   try {
@@ -2446,6 +2536,7 @@ async function loadStockPage() {
     $('breakProduct').innerHTML = rows.map((r) => `<option value="${r.productId}">${esc(r.name)} (${r.quantity} in stock)</option>`).join('');
     for (const r of rows) S.stock[r.productId] = { quantity: r.quantity, reorderLevel: r.reorderLevel };
   } catch (e) { errorState(table, e); }
+  loadSupplierInvoices();
   if (can('manager')) { loadIndent(); loadBreakageLog(); if (!$('invLines').children.length) addInvoiceLine(); if (!$('invDate').value) $('invDate').value = bizDate(); }
 }
 async function loadIndent() {
@@ -2553,6 +2644,415 @@ async function approveInvoice() {
     await loadCatalog();
     loadStockPage();
   } catch (e) { errorState(out, e); }
+}
+
+// ─── SUPPLIER INVOICES (UPLOAD, DRAFT, REVIEW, APPROVE, HISTORY) ─────────────
+async function loadSupplierInvoices() {
+  const el = $('invHistoryBox');
+  if (!el || !needBranch(el)) return;
+  loading(el, 'Loading invoices…');
+  const qs = new URLSearchParams({ limit: '50' });
+  if ($('invFilterStatus')?.value) qs.set('status', $('invFilterStatus').value);
+  if ($('invFilterQ')?.value.trim()) qs.set('q', $('invFilterQ').value.trim());
+  try {
+    const r = await api(`/invoices/${S.branchId}?${qs}`);
+    if (!r.items.length) { empty(el, 'No supplier invoices found.'); return; }
+    el.innerHTML = `<table class="table table-compact"><thead><tr><th>Invoice No.</th><th>Supplier</th><th>Date</th><th>Source</th><th class="right">Lines</th><th class="right">Total</th><th>Status</th><th>Flags</th><th></th></tr></thead><tbody>
+      ${r.items.map((inv) => {
+        const flags = [];
+        if (inv.unmatchedCount > 0) flags.push(badge(`${inv.unmatchedCount} unmatched`, 'red'));
+        if (inv.flagCount > 0) flags.push(badge(`${inv.flagCount} flag${inv.flagCount === 1 ? '' : 's'}`, 'yellow'));
+        if (!flags.length) flags.push('<span class="muted small">—</span>');
+        return `<tr class="inv-history-row" data-invoice-id="${inv.id}" data-invoice-number="${esc(inv.invoiceNumber)}">
+          <td><b>${esc(inv.invoiceNumber)}</b>${inv.originalFilename ? `<div class="muted small">${esc(inv.originalFilename)}</div>` : ''}</td>
+          <td>${esc(inv.supplierName || '—')}</td>
+          <td class="small">${inv.invoiceDate ? fmtDate(inv.invoiceDate) : fmtDate(inv.createdAt)}</td>
+          <td>${badge(inv.source, 'purple')}</td>
+          <td class="right">${inv.lineCount}</td>
+          <td class="right mono"><b>${money(inv.totalAmount)}</b></td>
+          <td>${statusBadge(inv.status)}</td>
+          <td>${flags.join(' ')}</td>
+          <td class="right" style="width:1%; white-space:nowrap;"><button type="button" class="btn-sec btn-sm" onclick="openSupplierInvoice('${inv.id}')">Open</button></td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  } catch (e) { errorState(el, e); }
+}
+
+async function uploadSupplierInvoice(e) {
+  e.preventDefault();
+  if (!S.branchId) { toast('Select a branch first.', 'error'); return; }
+  const fileInput = $('invUploadFile');
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) { toast('Choose an invoice file to upload.', 'error'); return; }
+  const fd = new FormData();
+  const sup = $('invUploadSupplier').value.trim();
+  const num = $('invUploadNumber').value.trim();
+  const dt = $('invUploadDate').value;
+  if (sup) fd.append('supplierName', sup);
+  if (num) fd.append('invoiceNumber', num);
+  if (dt) fd.append('invoiceDate', dt);
+  fd.append('file', file);
+
+  await withBtn($('invUploadBtn'), 'Extracting…', async () => {
+    try {
+      const res = await fetch(`/api/v1/invoices/${S.branchId}/upload`, {
+        method: 'POST',
+        headers: S.token ? { Authorization: 'Bearer ' + S.token } : {},
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 409 && data.existingInvoiceId) {
+          toast(data.error + ' — opening existing invoice.', 'info');
+          await openSupplierInvoice(data.existingInvoiceId);
+          return;
+        }
+        throw new Error(formatApiError(data, res.status));
+      }
+      toast(`Extracted ${plural(data.items.length, 'line')} from ${file.name}`, 'success');
+      $('invUploadForm').reset();
+      S.activeInvoice = data;
+      renderSupplierInvoiceDetail();
+      loadSupplierInvoices();
+    } catch (err) {
+      toast('Upload failed: ' + err.message, 'error', 7000);
+    }
+  });
+}
+
+function startManualInvoiceDraft() {
+  const first = S.products[0];
+  S.activeInvoice = {
+    invoice: {
+      id: null,
+      supplierName: '',
+      invoiceNumber: '',
+      invoiceDate: bizDate(),
+      totalAmount: first ? (first.costPrice || '0.00') : '0.00',
+      linesTotal: first ? (first.costPrice || '0.00') : '0.00',
+      status: 'DRAFT',
+      source: 'MANUAL',
+      notes: '',
+      extractionWarnings: [],
+    },
+    items: [
+      {
+        id: null,
+        lineNumber: 1,
+        productId: first ? first.id : null,
+        rawDescription: first ? first.name : '',
+        barcode: first ? first.barcode : null,
+        quantity: 12,
+        costPrice: first ? (first.costPrice || '500.00') : '500.00',
+        mrp: first ? first.mrp : '700.00',
+        lineCostTotal: first && first.costPrice ? paiseToStr(toPaise(first.costPrice) * 12) : '6000.00',
+        matchStatus: 'MANUAL',
+        flags: [],
+      },
+    ],
+    attachment: null,
+  };
+  renderSupplierInvoiceDetail();
+}
+
+async function openSupplierInvoice(id) {
+  const box = $('invDetailBox');
+  box.hidden = false;
+  loading(box, 'Loading invoice…');
+  try {
+    S.activeInvoice = await api('/invoices/detail/' + id);
+    renderSupplierInvoiceDetail();
+  } catch (e) { errorState(box, e); }
+}
+
+function closeSupplierInvoiceDetail() {
+  S.activeInvoice = null;
+  $('invDetailBox').hidden = true;
+  $('invDetailBox').innerHTML = '';
+}
+
+function matchBadgeHtml(status) {
+  return badge(status || 'UNMATCHED', { MATCHED: 'green', MANUAL: 'green', SUGGESTED: 'yellow', UNMATCHED: 'red' }[status] || 'red');
+}
+
+function invLineRowHtml(item, idx, editable) {
+  const prodOpts = `<option value="">— Select product —</option>` + S.products.map((p) =>
+    `<option value="${p.id}" ${p.id === item.productId ? 'selected' : ''}>${esc(p.name)} (${money(p.mrp)})</option>`).join('');
+  const flags = (item.flags || []).map((f) => badge(f, f === 'CASES_CONVERTED' ? 'blue' : f === 'UNMATCHED' || f === 'AMOUNT_MISMATCH' || f === 'COST_ABOVE_MRP' ? 'red' : 'yellow')).join(' ');
+  const needsConfirm = item.matchStatus === 'SUGGESTED' && editable;
+  return `<tr class="inv-edit-row" data-item-id="${esc(item.id || '')}" data-match-status="${esc(item.matchStatus || 'UNMATCHED')}">
+    <td class="small muted">${idx + 1}</td>
+    <td>${editable ? `<input class="input input-sm ie-desc" value="${esc(item.rawDescription || '')}" required maxlength="500" aria-label="Line ${idx + 1} description" />` : esc(item.rawDescription)}</td>
+    <td>
+      ${editable ? `<select class="input input-sm ie-prod" onchange="onInvDraftProductChange(this)" aria-label="Line ${idx + 1} catalog product">${prodOpts}</select>` : `<b>${esc(item.productName || 'Unmatched')}</b>`}
+      <div class="row small" style="margin-top:4px; gap:6px;">
+        <span class="ie-match-badge">${matchBadgeHtml(item.matchStatus)}</span>
+        ${needsConfirm ? `<label class="check small"><input type="checkbox" class="ie-confirm" /> Confirm match</label>` : ''}
+      </div>
+    </td>
+    <td class="right">${editable ? `<input class="input input-sm ie-qty right" type="number" min="1" max="100000" value="${item.quantity || 1}" style="width:78px;" oninput="recalcInvDraft()" aria-label="Line ${idx + 1} quantity" />` : item.quantity}</td>
+    <td class="right">${editable ? `<input class="input input-sm ie-cost right mono" inputmode="decimal" value="${esc(item.costPrice || '0.00')}" style="width:96px;" oninput="recalcInvDraft()" aria-label="Line ${idx + 1} cost price" />` : `<span class="mono">${money(item.costPrice)}</span>`}</td>
+    <td class="right">${editable ? `<input class="input input-sm ie-mrp right mono" inputmode="decimal" value="${esc(item.mrp || '0.00')}" style="width:96px;" oninput="recalcInvDraft()" aria-label="Line ${idx + 1} MRP" />` : `<span class="mono">${money(item.mrp)}</span>`}</td>
+    <td class="right mono"><b class="ie-linetotal">${money(item.lineCostTotal)}</b>${item.extractedAmount && item.extractedAmount !== item.lineCostTotal ? `<div class="muted small">Doc: ${money(item.extractedAmount)}</div>` : ''}</td>
+    <td class="small">${flags || '<span class="muted">—</span>'}</td>
+    ${editable ? `<td class="right"><button type="button" class="btn-ghost" onclick="this.closest('tr').remove(); recalcInvDraft()" aria-label="Remove line ${idx + 1}">✕</button></td>` : ''}
+  </tr>`;
+}
+
+function renderSupplierInvoiceDetail() {
+  const box = $('invDetailBox');
+  const d = S.activeInvoice;
+  if (!d) { box.hidden = true; return; }
+  box.hidden = false;
+  const inv = d.invoice;
+  const editable = inv.status === 'DRAFT' || inv.status === 'REVIEWED';
+  const mgr = can('manager');
+  const warnings = inv.extractionWarnings || d.warnings || [];
+  const dtVal = inv.invoiceDate ? String(inv.invoiceDate).slice(0, 10) : bizDate();
+  const numVal = inv.invoiceNumber && !String(inv.invoiceNumber).startsWith('DRAFT-') ? inv.invoiceNumber : '';
+
+  box.innerHTML = `<div class="card pad stack" style="background:var(--background);">
+    <div class="row between">
+      <div class="row">
+        <div class="h2">${inv.id ? `Invoice ${esc(inv.invoiceNumber)}` : 'New manual invoice draft'}</div>
+        ${statusBadge(inv.status)}
+        ${badge(inv.source || 'MANUAL', 'purple')}
+        ${d.attachment ? `<button type="button" class="btn-sec btn-sm" onclick="downloadInvoiceFile('${inv.id}')">⬇ ${esc(d.attachment.filename)}</button>` : ''}
+      </div>
+      <button type="button" class="btn-ghost" onclick="closeSupplierInvoiceDetail()" aria-label="Close invoice detail">✕ Close</button>
+    </div>
+    ${warnings.length ? `<div class="row small" style="padding:8px 12px; border-radius:8px; background:color-mix(in srgb, var(--warning) 14%, transparent);">
+      <b class="warn">⚠ Warnings:</b> ${warnings.map((w) => badge(w, 'yellow')).join(' ')}</div>` : ''}
+    ${inv.status === 'REJECTED' && inv.rejectionReason ? `<div class="neg small">Rejected: ${esc(inv.rejectionReason)}</div>` : ''}
+    <div class="form-grid">
+      <label class="field" for="invEditSupplier">Supplier
+        <input id="invEditSupplier" class="input input-sm" value="${esc(inv.supplierName || '')}" ${editable ? '' : 'disabled'} maxlength="200" required />
+      </label>
+      <label class="field" for="invEditNumber">Invoice number
+        <input id="invEditNumber" class="input input-sm" value="${esc(numVal)}" placeholder="${inv.invoiceNumber && String(inv.invoiceNumber).startsWith('DRAFT-') ? esc(inv.invoiceNumber) + ' (enter real no.)' : 'e.g. INV-2026-01'}" ${editable ? '' : 'disabled'} maxlength="60" />
+      </label>
+      <label class="field" for="invEditDate">Invoice date
+        <input id="invEditDate" class="input input-sm" type="date" value="${esc(dtVal)}" ${editable ? '' : 'disabled'} />
+      </label>
+      <label class="field" for="invEditTotal">Document total (₹)
+        <input id="invEditTotal" class="input input-sm mono" inputmode="decimal" value="${esc(inv.totalAmount || '0.00')}" ${editable ? '' : 'disabled'} />
+      </label>
+      <label class="field" for="invEditNotes">Notes
+        <input id="invEditNotes" class="input input-sm" value="${esc(inv.notes || '')}" ${editable ? '' : 'disabled'} maxlength="1000" />
+      </label>
+    </div>
+    <div class="table-wrap">
+      <table class="table table-compact" id="invEditTable">
+        <thead><tr><th>#</th><th>Description</th><th>Catalog product</th><th class="right">Bottles</th><th class="right">Cost</th><th class="right">MRP</th><th class="right">Line total</th><th>Flags</th>${editable ? '<th></th>' : ''}</tr></thead>
+        <tbody id="invEditLines">${d.items.map((it, idx) => invLineRowHtml(it, idx, editable)).join('')}</tbody>
+      </table>
+    </div>
+    <div class="row between">
+      <div class="row">
+        ${editable ? `<button type="button" class="btn-sec btn-sm" onclick="addInvDraftLine()">+ Add line</button>` : ''}
+        <span class="small muted" id="invEditComputed">Lines total: <b>${money(inv.linesTotal || inv.totalAmount)}</b></span>
+      </div>
+      <div class="row">
+        ${editable ? `<button type="button" class="btn-sec" id="invSaveDraftBtn" onclick="saveSupplierInvoiceDraft()">💾 Save draft</button>` : ''}
+        ${editable && mgr && inv.id && inv.status === 'DRAFT' ? `<button type="button" class="btn-sec" id="invReviewBtn" onclick="reviewSupplierInvoice('${inv.id}')">✓ Mark reviewed</button>` : ''}
+        ${editable && mgr ? `<button type="button" class="btn-primary" id="invApproveBtn" onclick="approveSupplierInvoice()">✅ Approve &amp; add stock</button>` : ''}
+        ${editable && mgr && inv.id ? `<button type="button" class="btn-danger" id="invRejectBtn" onclick="openRejectSupplierInvoice('${inv.id}')">✕ Reject</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+  recalcInvDraft();
+}
+
+function onInvDraftProductChange(sel) {
+  const tr = sel.closest('tr');
+  const p = S.productMap[sel.value];
+  if (p) {
+    const costInput = tr.querySelector('.ie-cost');
+    const mrpInput = tr.querySelector('.ie-mrp');
+    const descInput = tr.querySelector('.ie-desc');
+    if (costInput && (!costInput.value || Number(costInput.value) === 0) && p.costPrice) costInput.value = p.costPrice;
+    if (mrpInput && (!mrpInput.value || Number(mrpInput.value) === 0)) mrpInput.value = p.mrp;
+    if (descInput && !descInput.value.trim()) descInput.value = p.name;
+    tr.dataset.matchStatus = 'MANUAL';
+    tr.querySelector('.ie-match-badge').innerHTML = matchBadgeHtml('MANUAL');
+  } else {
+    tr.dataset.matchStatus = 'UNMATCHED';
+    tr.querySelector('.ie-match-badge').innerHTML = matchBadgeHtml('UNMATCHED');
+  }
+  recalcInvDraft();
+}
+
+function addInvDraftLine() {
+  const tbody = $('invEditLines');
+  const first = S.products[0];
+  const idx = tbody.querySelectorAll('tr').length;
+  tbody.insertAdjacentHTML('beforeend', invLineRowHtml({
+    id: null,
+    productId: first ? first.id : null,
+    rawDescription: first ? first.name : 'Item',
+    quantity: 12,
+    costPrice: first ? (first.costPrice || '500.00') : '500.00',
+    mrp: first ? first.mrp : '700.00',
+    lineCostTotal: '0.00',
+    matchStatus: first ? 'MANUAL' : 'UNMATCHED',
+    flags: [],
+  }, idx, true));
+  recalcInvDraft();
+}
+
+function recalcInvDraft() {
+  const rows = [...document.querySelectorAll('#invEditLines .inv-edit-row')];
+  let sumPaise = 0;
+  rows.forEach((tr) => {
+    const qtyEl = tr.querySelector('.ie-qty');
+    const costEl = tr.querySelector('.ie-cost');
+    if (!qtyEl || !costEl) return;
+    const qty = intOrNull(qtyEl.value) || 0;
+    const costP = isMoney(costEl.value) ? toPaise(costEl.value) : 0;
+    const lineP = qty * costP;
+    sumPaise += lineP;
+    const lt = tr.querySelector('.ie-linetotal');
+    if (lt) lt.textContent = fmtPaise(lineP);
+  });
+  const compEl = $('invEditComputed');
+  if (compEl && rows.length && rows[0].querySelector('.ie-qty')) {
+    compEl.innerHTML = `Lines total: <b class="mono">${fmtPaise(sumPaise)}</b>`;
+  }
+  return sumPaise;
+}
+
+function collectInvDraftPayload() {
+  const supplierName = $('invEditSupplier').value.trim();
+  const invoiceNumber = $('invEditNumber').value.trim();
+  const invoiceDate = $('invEditDate').value || null;
+  const totalAmount = $('invEditTotal').value.trim();
+  const notes = $('invEditNotes').value.trim();
+  if (!supplierName) throw new Error('Enter the supplier name.');
+  const rows = [...document.querySelectorAll('#invEditLines .inv-edit-row')];
+  if (!rows.length) throw new Error('Invoice must have at least one line.');
+  const items = rows.map((tr, i) => {
+    const rawDescription = tr.querySelector('.ie-desc').value.trim();
+    const prodVal = tr.querySelector('.ie-prod').value;
+    const quantity = intOrNull(tr.querySelector('.ie-qty').value);
+    const costPrice = tr.querySelector('.ie-cost').value.trim();
+    const mrp = tr.querySelector('.ie-mrp').value.trim();
+    const confirmMatch = !!tr.querySelector('.ie-confirm')?.checked || tr.dataset.matchStatus === 'MANUAL';
+    if (!rawDescription) throw new Error(`Line ${i + 1}: enter a description.`);
+    if (quantity === null || Number.isNaN(quantity) || quantity < 0) throw new Error(`Line ${i + 1}: quantity must be a whole number.`);
+    if (!isMoney(costPrice)) throw new Error(`Line ${i + 1}: cost must be a valid amount.`);
+    if (!isMoney(mrp)) throw new Error(`Line ${i + 1}: MRP must be a valid amount.`);
+    return {
+      ...(tr.dataset.itemId ? { id: tr.dataset.itemId } : {}),
+      productId: prodVal || null,
+      confirmMatch,
+      rawDescription,
+      quantity,
+      costPrice,
+      mrp,
+    };
+  });
+  const payload = {
+    supplierName,
+    ...(invoiceNumber ? { invoiceNumber } : {}),
+    invoiceDate,
+    ...(totalAmount && isMoney(totalAmount) ? { totalAmount } : {}),
+    ...(notes ? { notes } : {}),
+    items,
+  };
+  return payload;
+}
+
+async function saveSupplierInvoiceDraft(silent) {
+  let payload;
+  try { payload = collectInvDraftPayload(); } catch (err) { toast(err.message, 'error'); return false; }
+  const curId = S.activeInvoice?.invoice?.id;
+  try {
+    if (curId) {
+      S.activeInvoice = await api('/invoices/detail/' + curId, { method: 'PUT', body: payload });
+    } else {
+      S.activeInvoice = await api('/invoices/' + S.branchId, { method: 'POST', body: payload });
+    }
+    renderSupplierInvoiceDetail();
+    loadSupplierInvoices();
+    if (!silent) toast('Invoice draft saved', 'success');
+    return true;
+  } catch (e) {
+    toast('Could not save draft: ' + e.message, 'error');
+    return false;
+  }
+}
+
+async function reviewSupplierInvoice(id) {
+  if (!(await saveSupplierInvoiceDraft(true))) return;
+  await withBtn($('invReviewBtn'), 'Reviewing…', async () => {
+    try {
+      S.activeInvoice = await api(`/invoices/detail/${id}/review`, { method: 'POST' });
+      renderSupplierInvoiceDetail();
+      loadSupplierInvoices();
+      toast('Invoice marked as reviewed', 'success');
+    } catch (e) { toast('Review failed: ' + e.message, 'error'); }
+  });
+}
+
+async function approveSupplierInvoice() {
+  if (!(await saveSupplierInvoiceDraft(true))) return;
+  const id = S.activeInvoice?.invoice?.id;
+  if (!id) return;
+  const totalBottles = (S.activeInvoice.items || []).reduce((s, i) => s + (i.quantity || 0), 0);
+  if (!(await confirmModal('Approve supplier invoice?',
+    `Approves invoice ${S.activeInvoice.invoice.invoiceNumber}, adds ${plural(totalBottles, 'bottle')} to stock and posts a purchase voucher for ${money(S.activeInvoice.invoice.linesTotal)}.`,
+    'Approve invoice'))) return;
+  await withBtn($('invApproveBtn'), 'Approving…', async () => {
+    try {
+      S.activeInvoice = await api(`/invoices/detail/${id}/approve`, { method: 'POST' });
+      renderSupplierInvoiceDetail();
+      toast('Supplier invoice approved — stock & accounts updated', 'success');
+      await loadCatalog();
+      loadStockPage();
+    } catch (e) { toast('Approval failed: ' + e.message, 'error'); }
+  });
+}
+
+function openRejectSupplierInvoice(id) {
+  openModal('Reject supplier invoice', `<form class="stack" onsubmit="confirmRejectSupplierInvoice(event, '${id}')">
+    <div class="muted small">Rejected invoices do not change stock or accounts. Provide a reason (at least 5 characters).</div>
+    <label class="field" for="invRejectReason">Rejection reason
+      <input id="invRejectReason" class="input" required minlength="5" maxlength="500" placeholder="Duplicate or wrong quantities" />
+    </label>
+    <div class="row">
+      <button type="submit" class="btn-danger" id="invRejectConfirmBtn">Reject invoice</button>
+      <button type="button" class="btn-sec" onclick="closeModal()">Cancel</button>
+    </div>
+  </form>`);
+}
+
+async function confirmRejectSupplierInvoice(e, id) {
+  e.preventDefault();
+  const reason = $('invRejectReason').value.trim();
+  if (reason.length < 5) { toast('Reason must be at least 5 characters.', 'error'); return; }
+  await withBtn($('invRejectConfirmBtn'), 'Rejecting…', async () => {
+    try {
+      S.activeInvoice = await api(`/invoices/detail/${id}/reject`, { method: 'POST', body: { reason } });
+      closeModal();
+      renderSupplierInvoiceDetail();
+      loadSupplierInvoices();
+      toast('Invoice rejected', 'info');
+    } catch (err) { toast('Reject failed: ' + err.message, 'error'); }
+  });
+}
+
+async function downloadInvoiceFile(id) {
+  try {
+    const { res } = await apiFull(`/invoices/detail/${id}/file`, { raw: true });
+    const blob = await res.blob();
+    const m = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') || '');
+    const name = m ? m[1] : 'invoice';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.style.display = 'none';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) { toast('Download failed: ' + e.message, 'error'); }
 }
 
 // ─── COUNTER SHEET ───────────────────────────────────────────────────────────
@@ -2877,10 +3377,10 @@ function showAccTab(k) {
   body.setAttribute('aria-labelledby', 'acctab-' + k);
   if (!needBranch(body)) return;
   const forms = {
-    tb: `<div class="row"><label class="field" for="tbAsOf">As of<input id="tbAsOf" class="input input-sm" type="date" value="${bizDate()}" /></label><button type="button" class="btn-primary btn-sm" onclick="loadTrialBalance()">Load</button></div>`,
-    pl: `<div class="row"><label class="field" for="plFrom">From<input id="plFrom" class="input input-sm" type="date" value="${monthStart()}" /></label><label class="field" for="plTo">To<input id="plTo" class="input input-sm" type="date" value="${bizDate()}" /></label><button type="button" class="btn-primary btn-sm" onclick="loadProfitLoss()">Load</button></div>`,
-    bs: `<div class="row"><label class="field" for="bsAsOf">As of<input id="bsAsOf" class="input input-sm" type="date" value="${bizDate()}" /></label><button type="button" class="btn-primary btn-sm" onclick="loadBalanceSheet()">Load</button></div>`,
-    daybook: `<div class="row"><label class="field" for="dbFrom">From<input id="dbFrom" class="input input-sm" type="date" value="${bizDate()}" /></label><label class="field" for="dbTo">To<input id="dbTo" class="input input-sm" type="date" value="${bizDate()}" /></label>
+    tb: `<div class="row end"><label class="field" for="tbAsOf">As of<input id="tbAsOf" class="input input-sm" type="date" value="${bizDate()}" /></label><button type="button" class="btn-primary btn-sm" onclick="loadTrialBalance()">Load</button></div>`,
+    pl: `<div class="row end"><label class="field" for="plFrom">From<input id="plFrom" class="input input-sm" type="date" value="${monthStart()}" /></label><label class="field" for="plTo">To<input id="plTo" class="input input-sm" type="date" value="${bizDate()}" /></label><button type="button" class="btn-primary btn-sm" onclick="loadProfitLoss()">Load</button></div>`,
+    bs: `<div class="row end"><label class="field" for="bsAsOf">As of<input id="bsAsOf" class="input input-sm" type="date" value="${bizDate()}" /></label><button type="button" class="btn-primary btn-sm" onclick="loadBalanceSheet()">Load</button></div>`,
+    daybook: `<div class="row end"><label class="field" for="dbFrom">From<input id="dbFrom" class="input input-sm" type="date" value="${bizDate()}" /></label><label class="field" for="dbTo">To<input id="dbTo" class="input input-sm" type="date" value="${bizDate()}" /></label>
       <label class="field" for="dbType">Type<select id="dbType" class="input input-sm"><option value="">All</option>${['SALES', 'PURCHASE', 'PAYMENT', 'RECEIPT', 'JOURNAL', 'CONTRA'].map((t) => `<option>${t}</option>`).join('')}</select></label><button type="button" class="btn-primary btn-sm" onclick="loadDayBook()">Load</button></div>`,
     ledgers: `<div class="row"><button type="button" class="btn-primary btn-sm" onclick="loadLedgers()">Refresh</button></div>`,
     expenses: `<form class="form-grid" onsubmit="recordExpense(event)">
@@ -2927,9 +3427,9 @@ async function loadProfitLoss() {
     const r = await api(`/accounting/profit-loss/${S.branchId}?from=${$('plFrom').value}&to=${$('plTo').value}`);
     const net = toPaise(r.netProfit);
     el.innerHTML = `<div class="two-col">
-      <div><div class="h2">Income</div><table class="table"><tbody>${amountTable(r.income, 'income')}</tbody><tfoot><tr><td>Total income</td><td class="right mono">${money(r.totalIncome)}</td></tr></tfoot></table></div>
-      <div><div class="h2">Expenses</div><table class="table"><tbody>${amountTable(r.expenses, 'expenses')}</tbody><tfoot><tr><td>Total expenses</td><td class="right mono">${money(r.totalExpense)}</td></tr></tfoot></table></div></div>
-      <div class="stat-card" style="margin-top:12px;"><div class="stat-label">Net ${net >= 0 ? 'profit' : 'loss'}</div><div class="stat-value mono ${net >= 0 ? 'pos' : 'neg'}" id="plNet">${money(r.netProfit)}</div></div>`;
+      <div class="stack"><div class="h2">Income</div><table class="table"><tbody>${amountTable(r.income, 'income')}</tbody><tfoot><tr><td>Total income</td><td class="right mono">${money(r.totalIncome)}</td></tr></tfoot></table></div>
+      <div class="stack"><div class="h2">Expenses</div><table class="table"><tbody>${amountTable(r.expenses, 'expenses')}</tbody><tfoot><tr><td>Total expenses</td><td class="right mono">${money(r.totalExpense)}</td></tr></tfoot></table></div></div>
+      <div class="stat-card" style="margin-top:14px;"><div class="stat-label">Net ${net >= 0 ? 'profit' : 'loss'}</div><div class="stat-value mono ${net >= 0 ? 'pos' : 'neg'}" id="plNet">${money(r.netProfit)}</div></div>`;
   } catch (e) { errorState(el, e); }
 }
 async function loadBalanceSheet() {
@@ -2937,10 +3437,10 @@ async function loadBalanceSheet() {
   loading(el);
   try {
     const r = await api(`/accounting/balance-sheet/${S.branchId}?asOf=${$('bsAsOf').value}`);
-    el.innerHTML = `<div id="bsStatus" style="margin-bottom:10px;">${r.isBalanced ? badge('Balanced ✓', 'green') : badge('Difference ' + money(r.difference), 'red')}</div>
+    el.innerHTML = `<div id="bsStatus" style="margin-bottom:12px;">${r.isBalanced ? badge('Balanced ✓', 'green') : badge('Difference ' + money(r.difference), 'red')}</div>
       <div class="two-col">
-        <div><div class="h2">Assets</div><table class="table"><tbody>${amountTable(r.assets, 'assets')}</tbody><tfoot><tr><td>Total assets</td><td class="right mono">${money(r.totalAssets)}</td></tr></tfoot></table></div>
-        <div><div class="h2">Liabilities &amp; equity</div><table class="table"><tbody>${amountTable(r.liabilities, 'liabilities')}${amountTable(r.equity, 'equity')}
+        <div class="stack"><div class="h2">Assets</div><table class="table"><tbody>${amountTable(r.assets, 'assets')}</tbody><tfoot><tr><td>Total assets</td><td class="right mono">${money(r.totalAssets)}</td></tr></tfoot></table></div>
+        <div class="stack"><div class="h2">Liabilities &amp; equity</div><table class="table"><tbody>${amountTable(r.liabilities, 'liabilities')}${amountTable(r.equity, 'equity')}
           <tr><td>Retained earnings (P&amp;L to date)</td><td class="right mono">${money(r.retainedEarnings)}</td></tr></tbody>
           <tfoot><tr><td>Total</td><td class="right mono">${money(r.totalLiabilitiesAndEquity)}</td></tr></tfoot></table></div></div>`;
   } catch (e) { errorState(el, e); }

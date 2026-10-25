@@ -31,15 +31,17 @@ const PHONE = z.string().trim().transform((v, ctx) => {
   return n;
 });
 
+const CUST_NAME = z.string().trim().min(1).max(200).refine((s) => !/[<>]/.test(s), 'Customer name must not contain < or >');
+
 export const CreateCustomerSchema = z.object({
-  name:          z.string().trim().min(1).max(200),
+  name:          CUST_NAME,
   phone:         PHONE,
   creditAllowed: z.boolean().optional(),
   creditLimit:   DECIMAL.optional(),
 });
 
 export const UpdateCustomerSchema = z.object({
-  name:          z.string().trim().min(1).max(200).optional(),
+  name:          CUST_NAME.optional(),
   phone:         PHONE.optional(),
   creditAllowed: z.boolean().optional(),
   creditLimit:   DECIMAL.optional(),

@@ -91,6 +91,16 @@ export function applyMapping(
       if (other !== field && columns[other] !== undefined && columns[other] === columns[field]) delete columns[other];
     }
   }
+  if (headerIndex < 0 && rows.length > 1) {
+    const numCols = (['quantity', 'cases', 'rate', 'mrp', 'amount'] as InvoiceField[])
+      .map((f) => columns[f]).filter((c): c is number => c !== undefined);
+    if (numCols.length > 0 && numCols.every((c) => {
+      const raw = (rows[0]?.[c] ?? '').trim();
+      return !raw || (parseMoney(raw) === null && parseQuantity(raw) === null && !looksLikeGarbledNumber(raw));
+    })) {
+      headerIndex = 0;
+    }
+  }
   return { index: headerIndex, columns };
 }
 

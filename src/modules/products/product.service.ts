@@ -8,14 +8,16 @@ import type { JwtPayload } from '../auth/auth.service.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
+const SAFE_TEXT = (max: number) => z.string().trim().min(1).max(max).refine((s) => !/[<>]/.test(s), 'Must not contain HTML angle brackets (< or >)');
+
 export const CreateProductSchema = z.object({
   categoryId:   z.string().uuid(),
-  barcode:      z.string().trim().min(1).max(64).optional(),
-  sku:          z.string().trim().min(1).max(64).optional(),
-  name:         z.string().trim().min(1).max(200),
-  brand:        z.string().trim().min(1).max(200),
+  barcode:      SAFE_TEXT(64).optional(),
+  sku:          SAFE_TEXT(64).optional(),
+  name:         SAFE_TEXT(200),
+  brand:        SAFE_TEXT(200),
   volumeMl:     z.number().int().positive().optional(),
-  exciseCode:   z.string().trim().max(10).optional(),
+  exciseCode:   z.string().trim().max(10).refine((s) => !/[<>]/.test(s), 'Must not contain < or >').optional(),
   packQuantity: z.number().int().positive().max(1000).optional(),
   mrp:          z.string().regex(/^\d+(\.\d{1,2})?$/, 'MRP must be a decimal string').refine((v) => Number(v) > 0, 'MRP must be positive'),
   costPrice:    z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),

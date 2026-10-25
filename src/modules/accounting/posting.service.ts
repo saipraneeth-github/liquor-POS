@@ -145,7 +145,7 @@ export async function postBillPaid({ bill }: DomainEventMap['bill.paid'], tx: Tx
   }, billPaidLines(bill));
 }
 
-export async function postBillVoided({ bill }: DomainEventMap['bill.voided'], tx: Tx) {
+export async function postBillVoided({ bill, voidedById }: DomainEventMap['bill.voided'], tx: Tx) {
   // Exact reversal of what was posted; fall back to re-deriving it (bill paid before accounting existed).
   // A bill that was never paid has no sale to reverse — posting one would invent a negative sale.
   const posted = await findSourceVoucherLines(tx, 'BILL', bill.id);
@@ -158,7 +158,7 @@ export async function postBillVoided({ bill }: DomainEventMap['bill.voided'], tx
     narration:   `Reversal of bill ${bill.billNumber}${bill.voidReason ? `: ${bill.voidReason}` : ''}`,
     sourceType:  'BILL_VOID',
     sourceId:    bill.id,
-    createdById: null,
+    createdById: voidedById ?? null,
   }, billVoidedLines(original));
 }
 

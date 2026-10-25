@@ -16,9 +16,41 @@ export interface TallyVoucher {
   lines: TallyVoucherLine[];
 }
 
+export interface TallyLedgerMaster {
+  code: string;
+  name: string;
+  group: string;         // ASSET | LIABILITY | EQUITY | INCOME | EXPENSE
+}
+
 export type LedgerNameLookup = Map<string, string> | Record<string, string>;
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
+
+const LEDGER_PARENT_BY_CODE: Record<string, string> = {
+  CASH:             'Cash-in-Hand',
+  BANK:             'Bank Accounts',
+  SUNDRY_DEBTORS:   'Sundry Debtors',
+  SUNDRY_CREDITORS: 'Sundry Creditors',
+  OUTPUT_GST:       'Duties & Taxes',
+  INPUT_GST:        'Duties & Taxes',
+  SALES:            'Sales Accounts',
+  PURCHASES:        'Purchase Accounts',
+  OWNER_EQUITY:     'Capital Account',
+  DISCOUNT_ALLOWED: 'Indirect Expenses',
+  BREAKAGE_LOSS:    'Indirect Expenses',
+};
+
+const LEDGER_PARENT_BY_GROUP: Record<string, string> = {
+  ASSET:     'Current Assets',
+  LIABILITY: 'Current Liabilities',
+  EQUITY:    'Capital Account',
+  INCOME:    'Indirect Incomes',
+  EXPENSE:   'Indirect Expenses',
+};
+
+export function tallyParentGroup(ledger: Pick<TallyLedgerMaster, 'code' | 'group'>): string {
+  return LEDGER_PARENT_BY_CODE[ledger.code.toUpperCase()] ?? LEDGER_PARENT_BY_GROUP[ledger.group.toUpperCase()] ?? 'Suspense A/c';
+}
 
 const VOUCHER_TYPE_NAMES: Record<string, string> = {
   SALES:    'Sales',
@@ -71,11 +103,12 @@ export function tallyLedgerEntry(line: TallyVoucherLine): { isDeemedPositive: 'Y
 
 // ─── EXPORTER ───────────────────────────────────────────────────────────────
 
-/** Builds a Tally Prime / ERP 9 "Import Data → Vouchers" XML envelope. */
+/** Builds a Tally Prime / ERP 9 "Import Data" XML envelope (with optional <LEDGER> masters before <VOUCHER>s). */
 export function vouchersToTallyXml(
   vouchers: TallyVoucher[],
   ledgerNameByCode: LedgerNameLookup,
   companyName: string,
+  ledgers?: TallyLedgerMaster[],
 ): string {
   const out: string[] = [];
   out.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -92,6 +125,19 @@ export function vouchersToTallyXml(
   out.push('        </STATICVARIABLES>');
   out.push('      </REQUESTDESC>');
   out.push('      <REQUESTDATA>');
+
+  for (const l of ledgers ?? []) {
+    const escapedName = xmlEscape(l.name);
+    const parent = xmlEscape(tallyParentGroup(l));
+    out.push('        <TALLYMESSAGE xmlns:UDF="TallyUDF">');
+    out.push(`          <LEDGER NAME="${escapedName}" ACTION="Create">`);
+    out.push('            <NAME.LIST>');
+    out.push(`              <NAME>${escapedName}</NAME>`);
+    out.push('            </NAME.LIST>');
+    out.push(`            <PARENT>${parent}</PARENT>`);
+    out.push('          </LEDGER>');
+    out.push('        </TALLYMESSAGE>');
+  }
 
   for (const v of vouchers) {
     const typeName = xmlEscape(tallyVoucherTypeName(v.voucherType));

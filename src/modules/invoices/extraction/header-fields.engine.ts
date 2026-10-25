@@ -48,7 +48,7 @@ export function findInvoiceNumber(lines: string[]): string | null {
   return null;
 }
 
-const SUPPLIER_RE = /\b(?:supplier|supplied by|sold by|vendor|seller|from|m\/s\.?)\s*(?:name)?\s*[:\-]\s*(.+)$/i;
+const SUPPLIER_RE = /\b(?:(?:supplier|supplied by|sold by|vendor|seller|from)\s*(?:name)?\s*[:\-]|m\/s\.?\s*[:\-]?)\s*(.+)$/i;
 const TRIVIAL_LINE = /\b(tax invoice|invoice|bill of supply|original|duplicate|triplicate|date|gstin|phone|ph|mobile|email|page|to|buyer|bill to|ship to|customer)\b/i;
 
 function cleanName(s: string): string {

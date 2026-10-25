@@ -22,9 +22,9 @@ const BranchParams = z.object({ branchId: z.string().uuid() });
 const TableParams  = z.object({ tableId: z.string().uuid() });
 
 const CreateTableSchema = z.object({
-  name:     z.string().trim().min(1, 'Table name is required.').max(50),
+  name:     z.string().trim().min(1, 'Table name is required.').max(50).refine((s) => !/[<>]/.test(s), 'Table name must not contain < or >'),
   capacity: z.number().int().min(1).max(100).optional(),
-  section:  z.string().trim().max(50).optional(),
+  section:  z.string().trim().max(50).refine((s) => !/[<>]/.test(s), 'Section must not contain < or >').optional(),
 });
 
 const OpenTableSchema = z.object({

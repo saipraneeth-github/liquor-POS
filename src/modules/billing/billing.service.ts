@@ -361,7 +361,7 @@ export async function voidBill(
       }
     }
 
-    await emitDomainEvent('bill.voided', { bill, items }, tx);
+    await emitDomainEvent('bill.voided', { bill, items, voidedById: user.sub }, tx);
 
     return bill;
   });
