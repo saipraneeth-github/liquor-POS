@@ -37,3 +37,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Embedded local database (npm run dev:local / e2e)
+.pglite/
+.pglite-e2e/

@@ -18,6 +18,7 @@ export interface DailyClosingReconciliationResult {
   cashSales: string;
   cardSales: string;
   upiSales: string;
+  creditSales: string;     // khata sales — revenue, but NOT cash in drawer
   grossSales: string;
   totalTax: string;
   cashWithdrawals: string;
@@ -50,6 +51,7 @@ export function reconcileDailyClosing(
   let cashSales = new Decimal(0);
   let cardSales = new Decimal(0);
   let upiSales = new Decimal(0);
+  let creditSales = new Decimal(0);
   let totalTax = new Decimal(0);
   let paidCount = 0;
   let voidedCount = 0;
@@ -72,11 +74,16 @@ export function reconcileDailyClosing(
         cardSales = cardSales.plus(total);
       } else if (mode === 'UPI') {
         upiSales = upiSales.plus(total);
+      } else if (mode === 'CREDIT') {
+        creditSales = creditSales.plus(total);
+      } else {
+        throw new Error(`Unknown payment mode ${bill.paymentMode} on bill ${bill.id}`);
       }
     }
   }
 
-  const grossSales = cashSales.plus(cardSales).plus(upiSales);
+  // Credit sales are revenue but never reach the drawer
+  const grossSales = cashSales.plus(cardSales).plus(upiSales).plus(creditSales);
   const expectedCashInDrawer = opening.plus(cashSales).minus(withdrawals);
   const cashDiscrepancy = actualCash.minus(expectedCashInDrawer);
 
@@ -85,6 +92,7 @@ export function reconcileDailyClosing(
     cashSales: cashSales.toFixed(2),
     cardSales: cardSales.toFixed(2),
     upiSales: upiSales.toFixed(2),
+    creditSales: creditSales.toFixed(2),
     grossSales: grossSales.toFixed(2),
     totalTax: totalTax.toFixed(2),
     cashWithdrawals: withdrawals.toFixed(2),

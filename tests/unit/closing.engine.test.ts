@@ -55,6 +55,27 @@ describe('reconcileDailyClosing', () => {
     expect(result.isBalanced).toBe(false);
   });
 
+  it('counts CREDIT (khata) sales as revenue but not as drawer cash', () => {
+    const withCredit: DailyBillSummaryInput[] = [
+      ...sampleBills,
+      { id: 'b6', total: '700.00', taxAmount: '106.78', paymentMode: 'CREDIT', status: 'PAID' },
+    ];
+    const result = reconcileDailyClosing(withCredit, cashFloat, '5500.00');
+    expect(result.creditSales).toBe('700.00');
+    expect(result.grossSales).toBe('6200.00');
+    expect(result.expectedCashInDrawer).toBe('5500.00');
+    expect(result.isBalanced).toBe(true);
+    expect(result.paidBillsCount).toBe(5);
+  });
+
+  it('rejects unknown payment modes instead of silently dropping revenue', () => {
+    expect(() => reconcileDailyClosing(
+      [{ id: 'x', total: '10.00', taxAmount: '1.00', paymentMode: 'BITCOIN', status: 'PAID' }],
+      cashFloat,
+      '0',
+    )).toThrow('Unknown payment mode');
+  });
+
   it('throws when actual cash is negative or invalid string', () => {
     expect(() => reconcileDailyClosing(sampleBills, cashFloat, '-50.00')).toThrow(
       'Actual cash counted cannot be negative',

@@ -16,11 +16,16 @@ export const LoginSchema = z.object({
 
 // ─── TOKEN PAYLOAD ──────────────────────────────────────────────────────────
 
+export type UserRole = 'owner' | 'manager' | 'cashier' | 'steward';
+
 export interface JwtPayload {
   sub: string;        // user ID
   email: string;
   role: string;
   branchId: string | null;
+  // owner scoping: NULL branch + NULL syndicate = platform owner; syndicate set = syndicate owner.
+  // Optional only for tokens minted before this claim existed (treated as "unknown" → DB lookup).
+  syndicateId?: string | null;
   iat?: number;
   exp?: number;
 }
@@ -62,6 +67,7 @@ export async function loginUser(
     email: user.email,
     role: user.role,
     branchId: user.branchId,
+    syndicateId: user.syndicateId ?? null,
   };
 
   // @ts-ignore — fastify-jwt types

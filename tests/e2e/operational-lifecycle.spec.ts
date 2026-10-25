@@ -15,21 +15,27 @@ test.describe('End-to-End Operational Lifecycle Tests', () => {
     await page.click('#nav-tables');
     await expect(page.locator('#page-tables')).toBeVisible();
 
-    // 3. Locate first table tile
-    const firstTable = page.locator('.table-tile').first();
-    await expect(firstTable).toBeVisible({ timeout: 10000 });
+    // 3. Locate a free table tile (by name, so its locator survives the re-render)
+    await expect(page.locator('.table-tile').first()).toBeVisible({ timeout: 10000 });
+    const freeTile = page.locator('.table-tile.table-FREE').first();
+    const name = await freeTile.getAttribute('data-table');
+    const tile = page.locator(`.table-tile[data-table="${name}"]`);
 
-    const statusBadge = firstTable.locator('span').first();
-    const initialStatus = await statusBadge.innerText();
+    // 4. Click tile to open it
+    await tile.click();
+    await expect(tile.locator('span').first()).toHaveText('OCCUPIED', { timeout: 5000 });
 
-    // 4. Click tile to toggle status
-    await firstTable.click();
-
-    // 5. Verify status badge updates
-    await expect(async () => {
-      const updatedStatus = await firstTable.locator('span').first().innerText();
-      expect(updatedStatus).not.toBe(initialStatus);
-    }).toPass({ timeout: 5000 });
+    // 5. Clicking an occupied tile never closes it: it opens the actions dialog instead
+    await tile.click();
+    await expect(page.locator('#modal')).toBeVisible();
+    await expect(page.locator('#tblActKot')).toBeVisible();
+    await expect(page.locator('#tblActBill')).toBeVisible();
+    await page.click('#tblActClose');
+    // No KOTs on it, so a plain confirmation is enough; cancelling keeps the table occupied
+    await expect(page.locator('#confirmOk')).toBeVisible();
+    await page.click('#confirmCancel');
+    await expect(page.locator('#modal')).toBeHidden();
+    await expect(tile.locator('span').first()).toHaveText('OCCUPIED');
   });
 
   test('Journey 6: Day Closing Reconciliation Submission (Owner/Manager role)', async ({ page }) => {
@@ -53,6 +59,9 @@ test.describe('End-to-End Operational Lifecycle Tests', () => {
     // 4. Click Submit Day Close button
     const submitBtn = page.locator('#btnSubmitClosing');
     await submitBtn.click();
+    // Locking the day asks for an in-page confirmation first
+    await expect(page.locator('#modalTitle')).toContainText('Close day');
+    await page.click('#confirmOk');
 
     // 5. Verify database audit record status message rendered
     const statusMsg = page.locator('#closingStatusMsg');

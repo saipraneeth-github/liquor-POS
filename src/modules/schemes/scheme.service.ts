@@ -3,14 +3,16 @@
  */
 
 import { db } from '../../db/client.js';
-import { schemes, schemePurchases } from '../../db/schema.js';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { schemes, schemePurchases, schemeSlabs } from '../../db/schema.js';
+import { asc, eq, sql } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
+import { BusinessRuleError, NotFoundError } from '../../lib/errors.js';
 import {
   computeSchemeProgress,
   isSchemeAlertTriggered,
   type Scheme,
 } from './scheme.engine.js';
+import { evaluateSlabs, validateSlabs } from './slab.engine.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,11 @@ export async function createScheme(input: CreateSchemeInput) {
 
 // ─── RECORD PURCHASE AGAINST SCHEME ──────────────────────────────────────────
 
+export async function getSchemeById(schemeId: string) {
+  const [scheme] = await db.select().from(schemes).where(eq(schemes.id, schemeId)).limit(1);
+  return scheme ?? null;
+}
+
 export async function recordSchemePurchase(
   schemeId: string,
   qty: string,
@@ -95,27 +102,102 @@ export async function recordSchemePurchase(
   notes?: string
 ) {
   return db.transaction(async (tx) => {
-    const [purchase] = await tx
-      .insert(schemePurchases)
-      .values({ schemeId, qty, value, referenceId: referenceId ?? null, notes: notes ?? null })
-      .returning();
-
-    // Increment currentValue on the scheme
     const [scheme] = await tx
-      .select({ currentValue: schemes.currentValue, targetType: schemes.targetType })
+      .select({ targetType: schemes.targetType, status: schemes.status })
       .from(schemes)
       .where(eq(schemes.id, schemeId));
 
-    if (!scheme) throw new Error(`Scheme ${schemeId} not found.`);
+    if (!scheme) throw new NotFoundError(`Scheme ${schemeId} not found.`);
+    if (scheme.status !== 'ACTIVE') throw new BusinessRuleError(`Scheme is ${scheme.status}; purchases can only be recorded on ACTIVE schemes.`);
 
     const increment = scheme.targetType === 'QTY' ? new Decimal(qty) : new Decimal(value);
-    const newCurrent = new Decimal(scheme.currentValue).plus(increment);
+    if (increment.isNegative() || increment.isZero()) {
+      throw new BusinessRuleError(`A positive ${scheme.targetType === 'QTY' ? 'qty' : 'value'} is required for this scheme.`);
+    }
 
+    const [purchase] = await tx
+      .insert(schemePurchases)
+      .values({
+        schemeId,
+        qty: new Decimal(qty).toFixed(2),
+        value: new Decimal(value).toFixed(2),
+        referenceId: referenceId ?? null,
+        notes: notes ?? null,
+      })
+      .returning();
+
+    // Atomic increment (no read-then-write race)
     await tx
       .update(schemes)
-      .set({ currentValue: newCurrent.toFixed(2) })
+      .set({ currentValue: sql`${schemes.currentValue} + ${increment.toFixed(2)}` })
       .where(eq(schemes.id, schemeId));
 
     return purchase;
   });
+}
+
+// ─── SLABS ───────────────────────────────────────────────────────────────────
+
+export interface SlabInput {
+  minCases: number;
+  freeBottles: number;
+  discountPerCase: string;
+}
+
+export async function getSchemeSlabs(schemeId: string) {
+  return db.select().from(schemeSlabs)
+    .where(eq(schemeSlabs.schemeId, schemeId))
+    .orderBy(asc(schemeSlabs.minCases));
+}
+
+/** Replaces all slabs of a scheme atomically. */
+export async function replaceSchemeSlabs(schemeId: string, slabs: SlabInput[]) {
+  const problem = validateSlabs(slabs);
+  if (problem) throw new BusinessRuleError(problem);
+
+  return db.transaction(async (tx) => {
+    const [scheme] = await tx.select({ id: schemes.id }).from(schemes).where(eq(schemes.id, schemeId)).for('update');
+    if (!scheme) throw new NotFoundError(`Scheme ${schemeId} not found.`);
+
+    await tx.delete(schemeSlabs).where(eq(schemeSlabs.schemeId, schemeId));
+    if (slabs.length === 0) return [];
+
+    const rows = await tx.insert(schemeSlabs).values(
+      slabs.map((s) => ({
+        schemeId,
+        minCases:        s.minCases,
+        freeBottles:     s.freeBottles,
+        discountPerCase: new Decimal(s.discountPerCase).toFixed(2),
+      })),
+    ).returning();
+    return rows.sort((a, b) => a.minCases - b.minCases);
+  });
+}
+
+/**
+ * Evaluates the scheme's recorded purchases against its slabs.
+ * `scheme_purchases.qty` is interpreted as CASES (the unit used by QTY schemes).
+ */
+export async function getSchemePayout(scheme: typeof schemes.$inferSelect) {
+  const [{ totalCases, purchaseCount, totalValue }] = await db
+    .select({
+      totalCases:    sql<string>`coalesce(sum(${schemePurchases.qty}), 0)::text`,
+      totalValue:    sql<string>`coalesce(sum(${schemePurchases.value}), 0)::text`,
+      purchaseCount: sql<number>`count(*)::int`,
+    })
+    .from(schemePurchases)
+    .where(eq(schemePurchases.schemeId, scheme.id));
+
+  const slabs = await getSchemeSlabs(scheme.id);
+  const evaluation = evaluateSlabs(totalCases, slabs);
+
+  return {
+    schemeId:      scheme.id,
+    schemeName:    scheme.schemeName,
+    targetType:    scheme.targetType,
+    purchaseCount: Number(purchaseCount),
+    totalValue:    new Decimal(totalValue).toFixed(2),
+    slabs,
+    ...evaluation,
+  };
 }

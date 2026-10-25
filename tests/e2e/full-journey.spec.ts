@@ -92,10 +92,15 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
     await page.fill('#loginPass', 'Password@123');
     await page.click('button:has-text("Sign In")');
 
-    const navTabs = ['dashboard', 'pos', 'tables', 'products', 'stock', 'schemes', 'bills', 'closing'];
+    // Cashier-level screens are reachable…
+    const navTabs = ['dashboard', 'pos', 'shift', 'bills', 'customers', 'tables', 'products', 'stock', 'counter'];
     for (const tab of navTabs) {
       await page.click(`#nav-${tab}`);
       await expect(page.locator(`#page-${tab}`)).toBeVisible();
+    }
+    // …manager-only screens are not offered to a cashier
+    for (const tab of ['schemes', 'compliance', 'accounting', 'closing', 'admin']) {
+      await expect(page.locator(`#nav-${tab}`)).toHaveCount(0);
     }
   });
 });

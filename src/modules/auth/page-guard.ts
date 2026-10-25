@@ -1,42 +1,66 @@
-import { FastifyRequest, FastifyReply } from 'fastify';
-import { db } from '../../db/client.js';
-import { userPagePermissions, users } from '../../db/schema.js';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import { and, eq } from 'drizzle-orm';
+import { db } from '../../db/client.js';
+import { userPagePermissions } from '../../db/schema.js';
+import { ROLE_RANK, roleRank } from '../../middleware/auth.guard.js';
+import type { JwtPayload, UserRole } from './auth.service.js';
+
+// ─── PAGE KEYS ───────────────────────────────────────────────────────────────
+
+/** Neutral page keys used by the user/page permission matrix. */
+export const PAGE_KEYS = [
+  'dashboard',
+  'pos',
+  'bills',
+  'tables',
+  'inventory',
+  'purchases',
+  'customers',
+  'schemes',
+  'closing',
+  'reports',
+  'accounting',
+  'settings',
+] as const;
+export type PageKey = (typeof PAGE_KEYS)[number];
+
+// ─── PAGE GUARD ──────────────────────────────────────────────────────────────
 
 /**
- * Ensures the authenticated user has permission to access the requested route.
- * Also verifies basic role requirements if specified.
+ * Fastify preHandler factory: verifies the JWT, optionally enforces a minimum role,
+ * then checks the page-permission matrix. Owners bypass the matrix; everyone else
+ * needs a `user_page_permissions` row with canAccess = true.
  */
-export async function pageGuard(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  routePath: string,
-  allowedRoles?: string[]
-) {
-  const user = request.user as { id: string; role: string } | undefined;
+export function requirePage(routePath: string, minRole?: UserRole) {
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    try {
+      await request.jwtVerify();
+    } catch {
+      reply.code(401).send({ error: 'Unauthorized' });
+      return;
+    }
 
-  if (!user || !user.id) {
-    return reply.status(401).send({ error: 'Unauthorized' });
-  }
+    const user = request.user as JwtPayload | undefined;
+    if (!user?.sub) {
+      reply.code(401).send({ error: 'Unauthorized' });
+      return;
+    }
 
-  // First, verify role level access if provided
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return reply.status(403).send({ error: 'Forbidden: Insufficient role' });
-  }
+    if (minRole && roleRank(user.role) < ROLE_RANK[minRole]) {
+      reply.code(403).send({ error: 'Forbidden: Insufficient role' });
+      return;
+    }
 
-  // Second, check granular user-to-page permission matrix
-  const permission = await db
-    .select()
-    .from(userPagePermissions)
-    .where(
-      and(
-        eq(userPagePermissions.userId, user.id),
-        eq(userPagePermissions.routePath, routePath)
-      )
-    )
-    .limit(1);
+    if (user.role === 'owner') return;
 
-  if (permission.length === 0 || !permission[0].canAccess) {
-    return reply.status(403).send({ error: 'Forbidden: Missing page access permission' });
-  }
+    const [permission] = await db
+      .select({ canAccess: userPagePermissions.canAccess })
+      .from(userPagePermissions)
+      .where(and(eq(userPagePermissions.userId, user.sub), eq(userPagePermissions.routePath, routePath)))
+      .limit(1);
+
+    if (!permission || !permission.canAccess) {
+      reply.code(403).send({ error: 'Forbidden: Missing page access permission' });
+    }
+  };
 }

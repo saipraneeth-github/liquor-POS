@@ -1,5 +1,53 @@
 import { describe, it, expect } from 'vitest';
-import { calculateBill, assertMrpMatch } from '../../src/modules/billing/billing.engine.js';
+import { Decimal } from 'decimal.js';
+import {
+  calculateBill,
+  assertMrpMatch,
+  mergeBillItems,
+  resolveTaxRate,
+  formatBillNumber,
+  allocateDiscount,
+} from '../../src/modules/billing/billing.engine.js';
+
+describe('mergeBillItems', () => {
+  it('merges duplicate productIds by summing quantities, keeping first-seen order', () => {
+    expect(mergeBillItems([
+      { productId: 'a', quantity: 1 },
+      { productId: 'b', quantity: 2 },
+      { productId: 'a', quantity: 3 },
+    ])).toEqual([{ productId: 'a', quantity: 4 }, { productId: 'b', quantity: 2 }]);
+  });
+
+  it('rejects non-positive or fractional quantities', () => {
+    expect(() => mergeBillItems([{ productId: 'a', quantity: 0 }])).toThrow('Invalid quantity');
+    expect(() => mergeBillItems([{ productId: 'a', quantity: 1.5 }])).toThrow('Invalid quantity');
+  });
+});
+
+describe('resolveTaxRate', () => {
+  it('uses the category rate and falls back to 18.00 only when uncategorised', () => {
+    expect(resolveTaxRate('12')).toBe('12.00');
+    expect(resolveTaxRate('0.00')).toBe('0.00');
+    expect(resolveTaxRate(null)).toBe('18.00');
+    expect(resolveTaxRate(undefined)).toBe('18.00');
+  });
+
+  it('beer at 12% back-calculates GST from a 200 MRP', () => {
+    const r = calculateBill([{ productId: 'beer', quantity: 1, unitPrice: '200.00', taxRate: resolveTaxRate('12.00') }]);
+    expect(r.taxAmount).toBe('21.43');   // 200 - 200/1.12 (178.57)
+  });
+});
+
+describe('formatBillNumber', () => {
+  it('formats CODE-YYYY-000001', () => {
+    expect(formatBillNumber('MAIN', 2026, 1)).toBe('MAIN-2026-000001');
+    expect(formatBillNumber('MH1', 2026, 1234567)).toBe('MH1-2026-1234567');
+  });
+
+  it('rejects invalid sequences', () => {
+    expect(() => formatBillNumber('X', 2026, 0)).toThrow();
+  });
+});
 
 describe('calculateBill', () => {
   it('calculates a single-item bill with 18% GST (MRP-inclusive)', () => {
@@ -97,5 +145,47 @@ describe('assertMrpMatch', () => {
 
   it('throws when prices differ', () => {
     expect(() => assertMrpMatch('400.00', '450.00', 'p1')).toThrow('Price mismatch');
+  });
+});
+
+// ─── DISCOUNT vs GST (review fix) ────────────────────────────────────────────
+
+describe('calculateBill — discount reduces the taxable value', () => {
+  it('computes GST on the discounted (net) amount, not on the gross MRP', () => {
+    const r = calculateBill([{ productId: 'w', quantity: 1, unitPrice: '1000.00', taxRate: '18.00' }], '100.00');
+    expect(r.total).toBe('900.00');
+    // 900 - 900/1.18 = 900 - 762.71 = 137.29 (gross would wrongly give 152.54)
+    expect(r.taxAmount).toBe('137.29');
+    expect(r.lines[0].lineTotal).toBe('1000.00');
+  });
+
+  it('apportions the discount pro rata across mixed tax rates', () => {
+    const r = calculateBill([
+      { productId: 'w', quantity: 1, unitPrice: '1000.00', taxRate: '18.00' },
+      { productId: 'b', quantity: 1, unitPrice: '200.00',  taxRate: '12.00' },
+    ], '120.00');
+    // shares 100 / 20 → nets 900 / 180 → tax 137.29 + 19.29
+    expect(r.lines[0].taxAmount).toBe('137.29');
+    expect(r.lines[1].taxAmount).toBe('19.29');
+    expect(r.taxAmount).toBe('156.58');
+    expect(r.total).toBe('1080.00');
+  });
+
+  it('full discount → zero tax', () => {
+    const r = calculateBill([{ productId: 'w', quantity: 2, unitPrice: '100.00', taxRate: '18.00' }], '200.00');
+    expect(r.total).toBe('0.00');
+    expect(r.taxAmount).toBe('0.00');
+  });
+});
+
+describe('allocateDiscount', () => {
+  const D = (v: string) => new Decimal(v);
+  it('shares sum exactly to the discount and never go negative', () => {
+    const shares = allocateDiscount([D('33.33'), D('33.33'), D('33.34')], D('10.00'));
+    expect(shares.reduce((s: any, x: any) => s.plus(x), D('0')).toFixed(2)).toBe('10.00');
+    expect(shares.every((s: any) => !s.isNegative())).toBe(true);
+  });
+  it('returns zeros when there is no discount', () => {
+    expect(allocateDiscount([D('5'), D('7')], D('0')).map((s) => s.toFixed(2))).toEqual(['0.00', '0.00']);
   });
 });

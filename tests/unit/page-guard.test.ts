@@ -1,79 +1,87 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { db } from '../../src/db/client.js';
-import { pageGuard } from '../../src/modules/auth/page-guard.js';
+import { requirePage } from '../../src/modules/auth/page-guard.js';
 
 vi.mock('../../src/db/client.js', () => ({
   db: {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
-    limit: vi.fn()
-  }
+    limit: vi.fn(),
+  },
 }));
 
 vi.mock('../../src/db/schema.js', () => ({
-  userPagePermissions: { userId: 'userId', routePath: 'routePath' },
-  users: {}
+  userPagePermissions: { userId: 'userId', routePath: 'routePath', canAccess: 'canAccess' },
+  users: {},
+  branches: {},
 }));
 
-describe('pageGuard', () => {
-  it('returns 401 if user is not authenticated', async () => {
-    const req = { user: undefined } as any;
-    const reply = {
-      status: vi.fn().mockReturnThis(),
-      send: vi.fn().mockReturnValue('UnauthorizedResponse')
-    } as any;
+function makeReq(user: unknown, verifyOk = true) {
+  return {
+    user,
+    jwtVerify: verifyOk ? vi.fn().mockResolvedValue(user) : vi.fn().mockRejectedValue(new Error('bad token')),
+  } as any;
+}
 
-    const result = await pageGuard(req, reply, 'dashboard');
-    expect(reply.status).toHaveBeenCalledWith(401);
+function makeReply() {
+  return { code: vi.fn().mockReturnThis(), send: vi.fn().mockReturnThis() } as any;
+}
+
+describe('requirePage', () => {
+  beforeEach(() => {
+    vi.mocked(db.limit).mockReset();
+  });
+
+  it('returns 401 when the JWT cannot be verified', async () => {
+    const reply = makeReply();
+    await requirePage('pos')(makeReq(undefined, false), reply);
+    expect(reply.code).toHaveBeenCalledWith(401);
     expect(reply.send).toHaveBeenCalledWith({ error: 'Unauthorized' });
-    expect(result).toBe('UnauthorizedResponse');
   });
 
-  it('returns 403 if user role is not in allowedRoles list', async () => {
-    const req = { user: { id: 'u1', role: 'cashier' } } as any;
-    const reply = {
-      status: vi.fn().mockReturnThis(),
-      send: vi.fn().mockReturnValue('ForbiddenRoleResponse')
-    } as any;
+  it('returns 401 when the token has no subject', async () => {
+    const reply = makeReply();
+    await requirePage('pos')(makeReq({ role: 'manager' }), reply);
+    expect(reply.code).toHaveBeenCalledWith(401);
+  });
 
-    const result = await pageGuard(req, reply, 'dashboard', ['owner', 'manager']);
-    expect(reply.status).toHaveBeenCalledWith(403);
+  it('returns 403 when the role is below minRole', async () => {
+    const reply = makeReply();
+    await requirePage('reports', 'manager')(makeReq({ sub: 'u1', role: 'cashier' }), reply);
+    expect(reply.code).toHaveBeenCalledWith(403);
     expect(reply.send).toHaveBeenCalledWith({ error: 'Forbidden: Insufficient role' });
-    expect(result).toBe('ForbiddenRoleResponse');
+    expect(db.limit).not.toHaveBeenCalled();
   });
 
-  it('returns 403 if route permission matrix explicitly denies access', async () => {
-    const req = { user: { id: 'u1', role: 'manager' } } as any;
-    const reply = {
-      status: vi.fn().mockReturnThis(),
-      send: vi.fn().mockReturnValue('ForbiddenMatrixResponse')
-    } as any;
+  it('lets owners bypass the permission matrix', async () => {
+    const reply = makeReply();
+    await requirePage('settings')(makeReq({ sub: 'o1', role: 'owner' }), reply);
+    expect(reply.code).not.toHaveBeenCalled();
+    expect(db.limit).not.toHaveBeenCalled();
+  });
 
-    // Mock DB returning canAccess = false
-    vi.mocked(db.limit).mockResolvedValueOnce([{ canAccess: false }] as any);
-
-    const result = await pageGuard(req, reply, 'syndicate-settings', ['manager']);
-    expect(reply.status).toHaveBeenCalledWith(403);
+  it('returns 403 when no permission row exists', async () => {
+    vi.mocked(db.limit).mockResolvedValueOnce([] as any);
+    const reply = makeReply();
+    await requirePage('inventory')(makeReq({ sub: 'u1', role: 'manager' }), reply);
+    expect(reply.code).toHaveBeenCalledWith(403);
     expect(reply.send).toHaveBeenCalledWith({ error: 'Forbidden: Missing page access permission' });
-    expect(result).toBe('ForbiddenMatrixResponse');
   });
 
-  it('allows access if role matches and route permission is true', async () => {
-    const req = { user: { id: 'u1', role: 'manager' } } as any;
-    const reply = {
-      status: vi.fn().mockReturnThis(),
-      send: vi.fn()
-    } as any;
+  it('returns 403 when the matrix explicitly denies access', async () => {
+    vi.mocked(db.limit).mockResolvedValueOnce([{ canAccess: false }] as any);
+    const reply = makeReply();
+    await requirePage('accounting', 'manager')(makeReq({ sub: 'u1', role: 'manager' }), reply);
+    expect(reply.code).toHaveBeenCalledWith(403);
+  });
 
-    // Mock DB returning canAccess = true
+  it('allows access when the role matches and canAccess is true (uses JWT sub)', async () => {
     vi.mocked(db.limit).mockResolvedValueOnce([{ canAccess: true }] as any);
-
-    const result = await pageGuard(req, reply, 'syndicate-settings', ['manager']);
-
-    // Should NOT send error response, allowing fastify preHandler to pass to next
-    expect(reply.status).not.toHaveBeenCalled();
+    const reply = makeReply();
+    await requirePage('pos', 'cashier')(makeReq({ sub: 'u1', role: 'cashier' }), reply);
+    expect(reply.code).not.toHaveBeenCalled();
     expect(reply.send).not.toHaveBeenCalled();
-    expect(result).toBeUndefined();
+    expect(db.where).toHaveBeenCalled();
   });
 });

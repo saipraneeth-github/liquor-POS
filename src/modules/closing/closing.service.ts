@@ -1,7 +1,8 @@
 import { db } from '../../db/client.js';
 import { bills, dailyClosings } from '../../db/schema.js';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { eq, and, gte, lt, inArray, desc } from 'drizzle-orm';
 import { reconcileDailyClosing, type CashFloatInput } from './closing.engine.js';
+import { businessDateOf, businessDayBounds } from '../../lib/business-day.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 
 export interface SubmitClosingInput {
@@ -10,14 +11,15 @@ export interface SubmitClosingInput {
   actualCashCounted: string;
   cashWithdrawals?: string;
   notes?: string;
-  startDate?: string;
-  endDate?: string;
+  businessDate?: string;   // YYYY-MM-DD; defaults to today
 }
 
 export async function performDailyClosing(input: SubmitClosingInput, user: JwtPayload) {
-  // Query all bills for this branch
-  // In production, filtered between startDate & endDate or current operating day
-  const branchBills = await db
+  // Only this branch's bills rung in on the business day being closed
+  const businessDate = input.businessDate ?? businessDateOf();
+  const { start, end } = businessDayBounds(businessDate);
+
+  const dayBills = await db
     .select({
       id: bills.id,
       total: bills.total,
@@ -26,7 +28,11 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
       status: bills.status,
     })
     .from(bills)
-    .where(eq(bills.branchId, input.branchId));
+    .where(and(
+      eq(bills.branchId, input.branchId),
+      gte(bills.createdAt, start),
+      lt(bills.createdAt, end),
+    ));
 
   const cashFloat: CashFloatInput = {
     openingCash: input.openingCash,
@@ -34,7 +40,7 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
   };
 
   const recon = reconcileDailyClosing(
-    branchBills.map((b) => ({
+    dayBills.map((b) => ({
       id: b.id,
       total: b.total,
       taxAmount: b.taxAmount,
@@ -50,10 +56,12 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
     .values({
       branchId: input.branchId,
       closedById: user.sub,
+      closingDate: start,
       openingCash: recon.openingCash,
       cashSales: recon.cashSales,
       cardSales: recon.cardSales,
       upiSales: recon.upiSales,
+      creditSales: recon.creditSales,
       grossSales: recon.grossSales,
       totalTax: recon.totalTax,
       cashWithdrawals: recon.cashWithdrawals,
@@ -69,12 +77,18 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
     })
     .returning();
 
-  return closingRecord;
+  return { ...closingRecord, businessDate };
 }
 
-export async function listDailyClosings(branchId?: string) {
-  if (branchId) {
-    return db.select().from(dailyClosings).where(eq(dailyClosings.branchId, branchId));
+/** Closing history. `branchIds === 'ALL'` → every branch. */
+export async function listDailyClosings(branchIds: string[] | 'ALL') {
+  if (branchIds === 'ALL') {
+    return db.select().from(dailyClosings).orderBy(desc(dailyClosings.createdAt));
   }
-  return db.select().from(dailyClosings);
+  if (branchIds.length === 0) return [];
+  return db
+    .select()
+    .from(dailyClosings)
+    .where(inArray(dailyClosings.branchId, branchIds))
+    .orderBy(desc(dailyClosings.createdAt));
 }

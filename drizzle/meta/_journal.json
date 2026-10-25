@@ -8,6 +8,20 @@
       "when": 1792850427031,
       "tag": "0000_tense_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792863506850,
+      "tag": "0001_phases_2_to_4",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792896946837,
+      "tag": "0002_invoice_upload",
+      "breakpoints": true
     }
   ]
 }

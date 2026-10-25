@@ -1,168 +1,294 @@
 import { z } from 'zod';
 import { db } from '../../db/client.js';
-import { bills, billItems, stock, stockAudit, branches } from '../../db/schema.js';
-import { eq, inArray, and } from 'drizzle-orm';
-import { calculateBill, assertMrpMatch } from './billing.engine.js';
+import {
+  bills,
+  billItems,
+  billCounters,
+  stock,
+  stockAudit,
+  branches,
+  products,
+  categories,
+  customers,
+  creditTransactions,
+  shiftSessions,
+} from '../../db/schema.js';
+import { eq, inArray, and, gte, lt, ne, desc, sql } from 'drizzle-orm';
+import { calculateBill, mergeBillItems, resolveTaxRate, formatBillNumber } from './billing.engine.js';
 import { checkStockAvailability, computeStockDeltas, computeVoidStockDeltas } from '../stock/stock.engine.js';
-import { getProductById } from '../products/product.service.js';
+import { assertCreditAvailable, applyCreditPurchase, applyCreditReversal } from '../customers/credit.engine.js';
+import { emitDomainEvent, type Tx } from '../../lib/domain-events.js';
+import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
+import { businessDateOf, businessDayBounds, isIsoDate } from '../../lib/business-day.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
+export const PAYMENT_MODES = ['CASH', 'CARD', 'UPI', 'CREDIT'] as const;
+export type PaymentMode = (typeof PAYMENT_MODES)[number];
+
 export const CreateBillSchema = z.object({
   branchId:    z.string().uuid(),
-  paymentMode: z.enum(['CASH', 'CARD', 'UPI']),
+  paymentMode: z.enum(PAYMENT_MODES),
   discount:    z.string().regex(/^\d+(\.\d{1,2})?$/).optional().default('0'),
+  customerId:  z.string().uuid().optional(),
+  clientRef:   z.string().trim().min(1).max(64).optional(),
   items: z.array(z.object({
     productId: z.string().uuid(),
-    quantity:  z.number().int().positive(),
-  })).min(1),
+    quantity:  z.number().int().positive().max(10_000),
+  })).min(1).max(500),
+}).refine((d) => d.paymentMode !== 'CREDIT' || !!d.customerId, {
+  message: 'customerId is required for CREDIT bills',
+  path: ['customerId'],
 });
 
 export const VoidBillSchema = z.object({
-  voidReason: z.string().min(5),
+  voidReason: z.string().trim().min(5).max(500),
+});
+
+export const ListBillsQuerySchema = z.object({
+  branchId: z.string().uuid(),
+  date:     z.string().refine(isIsoDate, 'date must be YYYY-MM-DD').optional(),
+  status:   z.enum(['OPEN', 'PAID', 'VOIDED']).optional(),
+  limit:    z.coerce.number().int().min(1).max(200).default(50),
+  offset:   z.coerce.number().int().min(0).default(0),
 });
 
 export type CreateBillInput = z.infer<typeof CreateBillSchema>;
+export type ListBillsQuery = z.infer<typeof ListBillsQuerySchema>;
+export type BillRow = typeof bills.$inferSelect;
+export type BillItemRow = typeof billItems.$inferSelect;
 
 // ─── BILL NUMBER GENERATOR ───────────────────────────────────────────────────
 
-async function generateBillNumber(branchId: string, tx: any): Promise<string> {
-  // Count existing bills in this branch this year
+/** Atomic per-branch, per-year sequence via bill_counters upsert (safe under concurrency). */
+async function generateBillNumber(branchId: string, tx: Tx): Promise<string> {
   const [branch] = await tx
     .select({ code: branches.code })
     .from(branches)
     .where(eq(branches.id, branchId))
     .limit(1);
+  if (!branch) throw new NotFoundError('Branch not found');
 
-  const code = branch?.code ?? 'XX';
-  const year = new Date().getFullYear();
-  // Get count of today's bills for sequence
-  const existing = await tx
-    .select()
-    .from(bills)
-    .where(eq(bills.branchId, branchId));
+  // Business-day year (store time zone), not the server's local clock
+  const year = Number(businessDateOf().slice(0, 4));
+  const [counter] = await tx
+    .insert(billCounters)
+    .values({ branchId, year, lastSeq: 1 })
+    .onConflictDoUpdate({
+      target: [billCounters.branchId, billCounters.year],
+      set: { lastSeq: sql`${billCounters.lastSeq} + 1` },
+    })
+    .returning({ lastSeq: billCounters.lastSeq });
 
-  const seq = String(existing.length + 1).padStart(6, '0');
-  return `${code}-${year}-${seq}`;
+  return formatBillNumber(branch.code, year, counter.lastSeq);
+}
+
+// ─── HELPERS ────────────────────────────────────────────────────────────────
+
+async function findBillByClientRef(clientRef: string) {
+  const [existing] = await db.select().from(bills).where(eq(bills.clientRef, clientRef)).limit(1);
+  if (!existing) return null;
+  const items = await db.select().from(billItems).where(eq(billItems.billId, existing.id));
+  return { ...existing, items };
+}
+
+function idempotentReplay(existing: BillRow & { items: BillItemRow[] }, input: CreateBillInput) {
+  if (existing.branchId !== input.branchId) {
+    throw new ConflictError('clientRef already used for a bill in another branch');
+  }
+  return { bill: existing, created: false as const };
 }
 
 // ─── BILLING SERVICE ─────────────────────────────────────────────────────────
 
-export async function createBill(input: CreateBillInput, cashier: JwtPayload) {
-  // 1. Load products and validate MRP
-  const productIds = input.items.map((i) => i.productId);
-  const productList = await Promise.all(productIds.map((id) => getProductById(id)));
-
-  const productMap = new Map(productList.filter(Boolean).map((p) => [p!.id, p!]));
-
-  if (productMap.size !== productIds.length) {
-    throw new Error('One or more products not found');
+/**
+ * Creates a PAID bill. Returns `created: false` when `clientRef` matched an existing bill
+ * (idempotent offline sync).
+ */
+export async function createBill(
+  input: CreateBillInput,
+  cashier: JwtPayload,
+): Promise<{ bill: BillRow & { items: BillItemRow[] }; created: boolean }> {
+  // 0. Idempotency: replay existing bill for the same clientRef
+  if (input.clientRef) {
+    const existing = await findBillByClientRef(input.clientRef);
+    if (existing) return idempotentReplay(existing, input);
   }
 
-  // 2. Build billing engine input (use registered MRP)
-  const lineInputs = input.items.map((item) => {
-    const product = productMap.get(item.productId)!;
-    // MRP is enforced from the database — no override at POS
-    return {
-      productId: item.productId,
-      quantity: item.quantity,
-      unitPrice: product.mrp,
-      taxRate: '18.00',   // TODO: load from category in Phase 2
-    };
-  });
+  // 1. Merge duplicate lines, load products + category tax in ONE query
+  const items = mergeBillItems(input.items);
+  const productIds = items.map((i) => i.productId);
+  const productRows = await db
+    .select({
+      id:       products.id,
+      name:     products.name,
+      mrp:      products.mrp,
+      isActive: products.isActive,
+      taxRate:  categories.taxRate,
+    })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(inArray(products.id, productIds));
 
-  // 3. Calculate totals
-  const calculation = calculateBill(lineInputs, input.discount);
+  const productMap = new Map(productRows.map((p) => [p.id, p]));
+  const missing = productIds.filter((id) => !productMap.has(id));
+  if (missing.length > 0) {
+    throw new BusinessRuleError(`One or more products not found: ${missing.join(', ')}`);
+  }
+  const inactive = productRows.filter((p) => !p.isActive);
+  if (inactive.length > 0) {
+    throw new BusinessRuleError(`Inactive products cannot be billed: ${inactive.map((p) => p.name).join(', ')}`);
+  }
 
-  // 4. Check stock availability
-  const stockEntries = await db
-    .select()
-    .from(stock)
-    .where(
-      and(
-        eq(stock.branchId, input.branchId),
-        inArray(stock.productId, productIds),
-      ),
-    );
-
-  const stockMap = new Map(stockEntries.map((s) => [s.productId, s.quantity]));
-  const shortages = checkStockAvailability(
-    input.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-    stockMap,
+  // 2. Price from DB (MRP, tax-inclusive) — never from the client
+  const calculation = calculateBill(
+    items.map((item) => {
+      const product = productMap.get(item.productId)!;
+      return {
+        productId: item.productId,
+        quantity:  item.quantity,
+        unitPrice: product.mrp,
+        taxRate:   resolveTaxRate(product.taxRate),
+      };
+    }),
+    input.discount,
   );
 
+  // 3. Friendly stock pre-check (the in-transaction guarded UPDATE is authoritative)
+  const stockEntries = await db
+    .select({ productId: stock.productId, quantity: stock.quantity })
+    .from(stock)
+    .where(and(eq(stock.branchId, input.branchId), inArray(stock.productId, productIds)));
+  const shortages = checkStockAvailability(items, new Map(stockEntries.map((s) => [s.productId, s.quantity])));
   if (shortages.length > 0) {
-    throw new Error(
+    throw new BusinessRuleError(
       `Insufficient stock: ${shortages
         .map((s) => `product ${s.productId} (requested ${s.requested}, available ${s.available})`)
         .join(', ')}`,
     );
   }
 
-  // 5. Transact: insert bill + items + deduct stock + audit
-  const createdBill = await db.transaction(async (tx) => {
-    const billNumber = await generateBillNumber(input.branchId, tx);
-    const now = new Date();
+  // 4. Transaction: number, bill, items, guarded stock deduction, audit, credit, event
+  try {
+    const created = await db.transaction(async (tx) => {
+      const billNumber = await generateBillNumber(input.branchId, tx);
+      const now = new Date();
 
-    const [bill] = await tx.insert(bills).values({
-      branchId:    input.branchId,
-      cashierId:   cashier.sub,
-      billNumber,
-      status:      'PAID',
-      subtotal:    calculation.subtotal,
-      taxAmount:   calculation.taxAmount,
-      discount:    calculation.discount,
-      total:       calculation.total,
-      paymentMode: input.paymentMode,
-      paidAt:      now,
-    }).returning();
+      // Link to the cashier's open shift in this branch (if any). FOR SHARE blocks a concurrent
+      // shift close until this bill commits, so the close always sees it in its totals.
+      const [shift] = await tx
+        .select({ id: shiftSessions.id })
+        .from(shiftSessions)
+        .where(and(
+          eq(shiftSessions.branchId, input.branchId),
+          eq(shiftSessions.cashierId, cashier.sub),
+          eq(shiftSessions.status, 'OPEN'),
+        ))
+        .orderBy(desc(shiftSessions.openedAt))
+        .limit(1)
+        .for('share');
 
-    await tx.insert(billItems).values(
-      calculation.lines.map((line) => ({
-        billId:    bill.id,
-        productId: line.productId,
-        quantity:  line.quantity,
-        unitPrice: line.unitPrice,
-        taxRate:   line.taxRate,
-        taxAmount: line.taxAmount,
-        lineTotal: line.lineTotal,
-      })),
-    );
+      // Credit (khata) check — lock the customer row
+      let customer: typeof customers.$inferSelect | undefined;
+      if (input.paymentMode === 'CREDIT') {
+        [customer] = await tx
+          .select()
+          .from(customers)
+          .where(eq(customers.id, input.customerId!))
+          .for('update');
+        if (!customer || customer.branchId !== input.branchId) {
+          throw new BusinessRuleError('Customer not found in this branch');
+        }
+        if (!customer.isActive) throw new BusinessRuleError('Customer is inactive');
+        if (!customer.creditAllowed) throw new BusinessRuleError('Credit is not allowed for this customer');
+        assertCreditAvailable(customer.currentCredit, customer.creditLimit, calculation.total);
+      }
 
-    // Deduct stock
-    const deltas = computeStockDeltas(
-      input.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-    );
+      const [bill] = await tx.insert(bills).values({
+        branchId:       input.branchId,
+        cashierId:      cashier.sub,
+        billNumber,
+        status:         'PAID',
+        subtotal:       calculation.subtotal,
+        taxAmount:      calculation.taxAmount,
+        discount:       calculation.discount,
+        total:          calculation.total,
+        paymentMode:    input.paymentMode,
+        customerId:     customer?.id ?? null,   // only validated (CREDIT) customers are linked
+        shiftSessionId: shift?.id ?? null,
+        clientRef:      input.clientRef ?? null,
+        paidAt:         now,
+      }).returning();
 
-    for (const delta of deltas) {
-      await tx
-        .update(stock)
-        .set({ quantity: stockEntries.find((s) => s.productId === delta.productId)!.quantity + delta.delta })
-        .where(
-          and(
+      const insertedItems = await tx.insert(billItems).values(
+        calculation.lines.map((line) => ({
+          billId:    bill.id,
+          productId: line.productId,
+          quantity:  line.quantity,
+          unitPrice: line.unitPrice,
+          taxRate:   line.taxRate,
+          taxAmount: line.taxAmount,
+          lineTotal: line.lineTotal,
+        })),
+      ).returning();
+
+      // Guarded, atomic stock deduction (sorted to keep lock order stable)
+      const deltas = computeStockDeltas(items).sort((a, b) => a.productId.localeCompare(b.productId));
+      for (const delta of deltas) {
+        const qty = -delta.delta;
+        const updated = await tx
+          .update(stock)
+          .set({ quantity: sql`${stock.quantity} - ${qty}` })
+          .where(and(
             eq(stock.branchId, input.branchId),
             eq(stock.productId, delta.productId),
-          ),
-        );
+            gte(stock.quantity, qty),
+          ))
+          .returning({ id: stock.id });
+        if (updated.length === 0) {
+          throw new BusinessRuleError(`Insufficient stock: product ${delta.productId} (requested ${qty})`);
+        }
+      }
+
+      await tx.insert(stockAudit).values(
+        deltas.map((d) => ({
+          branchId:    input.branchId,
+          productId:   d.productId,
+          userId:      cashier.sub,
+          changeQty:   d.delta,
+          reason:      'SALE' as const,
+          referenceId: bill.id,
+        })),
+      );
+
+      if (customer) {
+        const balanceAfter = applyCreditPurchase(customer.currentCredit, calculation.total);
+        await tx.update(customers).set({ currentCredit: balanceAfter }).where(eq(customers.id, customer.id));
+        await tx.insert(creditTransactions).values({
+          customerId:   customer.id,
+          type:         'PURCHASE',
+          amount:       calculation.total,
+          balanceAfter,
+          billId:       bill.id,
+          recordedById: cashier.sub,
+          notes:        `Bill ${bill.billNumber}`,
+        });
+      }
+
+      await emitDomainEvent('bill.paid', { bill, items: insertedItems }, tx);
+
+      return { ...bill, items: insertedItems };
+    });
+    return { bill: created, created: true };
+  } catch (err) {
+    // Lost a race on the same clientRef → replay the winner
+    if (input.clientRef && isUniqueViolation(err)) {
+      const existing = await findBillByClientRef(input.clientRef);
+      if (existing) return idempotentReplay(existing, input);
     }
-
-    // Audit log
-    await tx.insert(stockAudit).values(
-      deltas.map((d) => ({
-        branchId:    input.branchId,
-        productId:   d.productId,
-        userId:      cashier.sub,
-        changeQty:   d.delta,
-        reason:      'SALE' as const,
-        referenceId: bill.id,
-      })),
-    );
-
-    return bill;
-  });
-
-  return createdBill;
+    throw err;
+  }
 }
 
 // ─── VOID BILL ───────────────────────────────────────────────────────────────
@@ -171,80 +297,85 @@ export async function voidBill(
   billId: string,
   voidReason: string,
   user: JwtPayload,
-) {
-  const [bill] = await db
-    .select()
-    .from(bills)
-    .where(eq(bills.id, billId))
-    .limit(1);
-
-  if (!bill) throw new Error('Bill not found');
-  if (bill.status === 'VOIDED') throw new Error('Bill is already voided');
-
-  const items = await db
-    .select()
-    .from(billItems)
-    .where(eq(billItems.billId, billId));
-
-  const stockEntries = await db
-    .select()
-    .from(stock)
-    .where(
-      and(
-        eq(stock.branchId, bill.branchId),
-        inArray(stock.productId, items.map((i) => i.productId)),
-      ),
-    );
-
-  const stockMap = new Map(stockEntries.map((s) => [s.productId, s]));
-
-  await db.transaction(async (tx) => {
-    await tx
+): Promise<BillRow> {
+  return db.transaction(async (tx) => {
+    // Race-free status flip: only one void can win
+    const [bill] = await tx
       .update(bills)
       .set({ status: 'VOIDED', voidedAt: new Date(), voidReason })
-      .where(eq(bills.id, billId));
+      .where(and(eq(bills.id, billId), ne(bills.status, 'VOIDED')))
+      .returning();
 
-    // Reverse stock
-    const deltas = computeVoidStockDeltas(
-      items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-    );
-
-    for (const delta of deltas) {
-      const current = stockMap.get(delta.productId);
-      if (!current) continue;
-      await tx
-        .update(stock)
-        .set({ quantity: current.quantity + delta.delta })
-        .where(
-          and(
-            eq(stock.branchId, bill.branchId),
-            eq(stock.productId, delta.productId),
-          ),
-        );
+    if (!bill) {
+      const [exists] = await tx.select({ id: bills.id }).from(bills).where(eq(bills.id, billId)).limit(1);
+      if (!exists) throw new NotFoundError('Bill not found');
+      throw new BusinessRuleError('Bill is already voided');
     }
 
-    await tx.insert(stockAudit).values(
-      deltas.map((d) => ({
-        branchId:    bill.branchId,
-        productId:   d.productId,
-        userId:      user.sub,
-        changeQty:   d.delta,
-        reason:      'VOID_REVERSAL' as const,
-        referenceId: billId,
-      })),
-    );
+    const items = await tx.select().from(billItems).where(eq(billItems.billId, billId));
+
+    // Reverse stock atomically; recreate a missing stock row
+    const deltas = computeVoidStockDeltas(items).sort((a, b) => a.productId.localeCompare(b.productId));
+    for (const delta of deltas) {
+      await tx
+        .insert(stock)
+        .values({ branchId: bill.branchId, productId: delta.productId, quantity: delta.delta })
+        .onConflictDoUpdate({
+          target: [stock.branchId, stock.productId],
+          set: { quantity: sql`${stock.quantity} + ${delta.delta}` },
+        });
+    }
+
+    if (deltas.length > 0) {
+      await tx.insert(stockAudit).values(
+        deltas.map((d) => ({
+          branchId:    bill.branchId,
+          productId:   d.productId,
+          userId:      user.sub,
+          changeQty:   d.delta,
+          reason:      'VOID_REVERSAL' as const,
+          referenceId: billId,
+        })),
+      );
+    }
+
+    // Reverse khata credit
+    if (bill.paymentMode === 'CREDIT' && bill.customerId) {
+      const [customer] = await tx
+        .select()
+        .from(customers)
+        .where(eq(customers.id, bill.customerId))
+        .for('update');
+      if (customer) {
+        const balanceAfter = applyCreditReversal(customer.currentCredit, bill.total);
+        await tx.update(customers).set({ currentCredit: balanceAfter }).where(eq(customers.id, customer.id));
+        await tx.insert(creditTransactions).values({
+          customerId:   customer.id,
+          type:         'ADJUSTMENT',
+          amount:       bill.total,
+          balanceAfter,
+          billId:       bill.id,
+          recordedById: user.sub,
+          notes:        `Void of bill ${bill.billNumber}: ${voidReason}`,
+        });
+      }
+    }
+
+    await emitDomainEvent('bill.voided', { bill, items }, tx);
+
+    return bill;
   });
 }
 
 // ─── BILL LOOKUP ─────────────────────────────────────────────────────────────
 
-export async function getBillById(billId: string) {
-  const [bill] = await db
-    .select()
-    .from(bills)
-    .where(eq(bills.id, billId))
-    .limit(1);
+export async function getBillHeader(billId: string) {
+  const [bill] = await db.select().from(bills).where(eq(bills.id, billId)).limit(1);
+  return bill ?? null;
+}
 
+export async function getBillById(billId: string) {
+  const bill = await getBillHeader(billId);
   if (!bill) return null;
 
   const items = await db
@@ -253,4 +384,25 @@ export async function getBillById(billId: string) {
     .where(eq(billItems.billId, billId));
 
   return { ...bill, items };
+}
+
+/** Paginated bill history for a branch, newest first. */
+export async function listBills(query: ListBillsQuery) {
+  const conditions = [eq(bills.branchId, query.branchId)];
+  if (query.status) conditions.push(eq(bills.status, query.status));
+  if (query.date) {
+    const { start, end } = businessDayBounds(query.date);
+    conditions.push(gte(bills.createdAt, start), lt(bills.createdAt, end));
+  }
+  const where = and(...conditions);
+
+  const [rows, [{ count }]] = await Promise.all([
+    db.select().from(bills).where(where)
+      .orderBy(desc(bills.createdAt), desc(bills.billNumber))
+      .limit(query.limit)
+      .offset(query.offset),
+    db.select({ count: sql<number>`count(*)::int` }).from(bills).where(where),
+  ]);
+
+  return { bills: rows, total: Number(count), limit: query.limit, offset: query.offset };
 }
