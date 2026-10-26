@@ -69,6 +69,10 @@ export function voucherTotals(lines: Pick<PostingLine, 'debit' | 'credit'>[]): V
 /** Throws unless sum(debit) == sum(credit) > 0 and every line has exactly one positive 2dp side. */
 export function assertBalanced(lines: Pick<PostingLine, 'ledger' | 'debit' | 'credit'>[]): void {
   if (lines.length < 2) throw new Error('A voucher needs at least two lines');
+
+  let totalDebit = new Decimal(0);
+  let totalCredit = new Decimal(0);
+
   for (const l of lines) {
     if (!MONEY_2DP.test(l.debit) || !MONEY_2DP.test(l.credit)) {
       throw new Error(`Line amounts must be 2dp decimal strings (ledger ${l.ledger})`);
@@ -82,12 +86,15 @@ export function assertBalanced(lines: Pick<PostingLine, 'ledger' | 'debit' | 'cr
     if (positives !== 1) {
       throw new Error(`Each line must have exactly one of debit/credit > 0 (ledger ${l.ledger})`);
     }
+
+    totalDebit = totalDebit.plus(debit);
+    totalCredit = totalCredit.plus(credit);
   }
-  const totals = voucherTotals(lines);
-  if (!new Decimal(totals.debit).equals(totals.credit)) {
-    throw new Error(`Voucher is not balanced: debit ${totals.debit} != credit ${totals.credit}`);
+
+  if (!totalDebit.equals(totalCredit)) {
+    throw new Error(`Voucher is not balanced: debit ${totalDebit.toFixed(2)} != credit ${totalCredit.toFixed(2)}`);
   }
-  if (!new Decimal(totals.debit).greaterThan(0)) {
+  if (!totalDebit.greaterThan(0)) {
     throw new Error('Voucher total must be greater than zero');
   }
 }

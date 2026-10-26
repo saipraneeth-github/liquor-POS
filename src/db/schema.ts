@@ -126,7 +126,9 @@ export const bills = pgTable('bills', {
   voidedAt:    timestamp('voided_at', { withTimezone: true }),
   voidReason:  text('void_reason'),
   createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
-});
+}, (t) => ({
+  idxBranchCreated: index('idx_bills_branch_created').on(t.branchId, t.createdAt),
+}));
 
 // Per-branch, per-year bill sequence. Incremented atomically with UPDATE … RETURNING.
 export const billCounters = pgTable('bill_counters', {

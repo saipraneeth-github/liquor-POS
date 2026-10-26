@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "idx_bills_branch_created" ON "bills" USING btree ("branch_id","created_at");
