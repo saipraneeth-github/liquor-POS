@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm';
 
 export const userRoleEnum = pgEnum('user_role', ['owner', 'manager', 'cashier', 'steward']);
 export const billStatusEnum = pgEnum('bill_status', ['OPEN', 'PAID', 'VOIDED']);
+export const taxTypeEnum = pgEnum('tax_type', ['GST', 'VAT_EXCISE']);
 export const stockReasonEnum = pgEnum('stock_reason', ['SALE', 'MANUAL_ADJUST', 'PURCHASE', 'VOID_REVERSAL', 'DAMAGE', 'BREAKAGE', 'COUNTER_SHEET', 'SCHEME_FREE_GOODS']);
 
 // ─── BRANCHES ───────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ export const categories = pgTable('categories', {
   id:      uuid('id').primaryKey().defaultRandom(),
   name:    text('name').notNull().unique(),     // e.g., "Whisky", "Beer"
   taxRate: numeric('tax_rate', { precision: 5, scale: 2 }).notNull(),  // GST %
+  taxType: taxTypeEnum('tax_type').notNull().default('GST'),
 });
 
 // ─── PRODUCTS ───────────────────────────────────────────────────────────────
@@ -146,6 +148,7 @@ export const billItems = pgTable('bill_items', {
   quantity:  integer('quantity').notNull(),
   unitPrice: numeric('unit_price', { precision: 12, scale: 2 }).notNull(),  // MRP at sale time
   taxRate:   numeric('tax_rate', { precision: 5, scale: 2 }).notNull(),
+  taxType:   taxTypeEnum('tax_type').notNull().default('GST'),
   taxAmount: numeric('tax_amount', { precision: 12, scale: 2 }).notNull(),
   lineTotal: numeric('line_total', { precision: 12, scale: 2 }).notNull(),
 });
