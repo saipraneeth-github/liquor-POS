@@ -172,6 +172,7 @@ export const dailyClosings = pgTable('daily_closings', {
   id:                   uuid('id').primaryKey().defaultRandom(),
   branchId:             uuid('branch_id').notNull().references(() => branches.id),
   closedById:           uuid('closed_by_id').notNull().references(() => users.id),
+  // Unique per branch per calendar day; enforced by migration 0003 expression index on (branch_id, closing_date::date)
   closingDate:          timestamp('closing_date', { withTimezone: true }).defaultNow(),
   openingCash:          numeric('opening_cash', { precision: 12, scale: 2 }).notNull(),
   cashSales:            numeric('cash_sales', { precision: 12, scale: 2 }).notNull(),
@@ -191,6 +192,10 @@ export const dailyClosings = pgTable('daily_closings', {
   notes:                text('notes'),
   status:               closingStatusEnum('status').notNull().default('CLOSED'),
   createdAt:            timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (table) => {
+  return {
+    uq_daily_closing_branch_date: uniqueIndex('uq_daily_closing_branch_date').on(table.branchId, table.closingDate)
+  }
 });
 
 // ─── SUPPLIER INVOICES (PURCHASE ENTRY) ──────────────────────────────────────

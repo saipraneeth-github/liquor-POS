@@ -1,5 +1,5 @@
 {
-  "id": "eac61358-edbf-43a7-9b32-688bbef171ea",
+  "id": "8e9759f5-56e6-4da9-8c21-62140f29577a",
   "prevId": "cb8d5930-712b-4e9f-acff-f372f72d6f34",
   "version": "7",
   "dialect": "postgresql",
@@ -188,14 +188,6 @@
           "type": "numeric(5, 2)",
           "primaryKey": false,
           "notNull": true
-        },
-        "tax_type": {
-          "name": "tax_type",
-          "type": "tax_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'GST'"
         },
         "tax_amount": {
           "name": "tax_amount",
@@ -663,14 +655,6 @@
           "type": "numeric(5, 2)",
           "primaryKey": false,
           "notNull": true
-        },
-        "tax_type": {
-          "name": "tax_type",
-          "type": "tax_type",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'GST'"
         }
       },
       "indexes": {},
@@ -1161,7 +1145,29 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "uq_daily_closing_branch_date": {
+          "name": "uq_daily_closing_branch_date",
+          "columns": [
+            {
+              "expression": "branch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "closing_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "daily_closings_branch_id_branches_id_fk": {
           "name": "daily_closings_branch_id_branches_id_fk",
@@ -3996,14 +4002,6 @@
         "FREE",
         "OCCUPIED",
         "RESERVED"
-      ]
-    },
-    "public.tax_type": {
-      "name": "tax_type",
-      "schema": "public",
-      "values": [
-        "GST",
-        "VAT_EXCISE"
       ]
     },
     "public.user_role": {

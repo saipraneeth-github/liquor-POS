@@ -238,4 +238,15 @@ describe('scheme slabs & payout', () => {
     const missing = await app.inject({ method: 'GET', url: '/api/v1/schemes/00000000-0000-0000-0000-000000000000/payout', headers: ctx.auth('manager') });
     expect(missing.statusCode).toBe(404);
   });
+
+  it('cannot replace slabs on a closed or completed scheme', async () => {
+    await ctx.db.update(ctx.schema.schemes).set({ status: 'COMPLETED' }).where(eq(ctx.schema.schemes.id, schemeId));
+    const res = await app.inject({
+      method: 'POST', url: `/api/v1/schemes/${schemeId}/slabs`, headers: ctx.auth('manager'),
+      payload: { slabs: [{ minCases: 5, freeBottles: 1, discountPerCase: '10' }] },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error).toMatch(/Cannot edit slabs/);
+    await ctx.db.update(ctx.schema.schemes).set({ status: 'ACTIVE' }).where(eq(ctx.schema.schemes.id, schemeId));
+  });
 });

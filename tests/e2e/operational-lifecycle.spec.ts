@@ -39,8 +39,15 @@ test.describe('End-to-End Operational Lifecycle Tests', () => {
   });
 
   test('Journey 6: Day Closing Reconciliation Submission (Owner/Manager role)', async ({ page }) => {
-    // 1. Login as Owner (Owner has manager/owner rank required for POST /closing)
-    await page.fill('#loginEmail', 'owner@liquor.com');
+    // Use a past business date (2 days ago) to avoid conflicting with the
+    // owner-branch-closing.spec.ts test which closes today's date on the same
+    // in-memory PGlite database used for the full E2E suite.
+    const past = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10); // YYYY-MM-DD
+
+    // 1. Login as Manager
+    await page.fill('#loginEmail', 'manager@liquor.com');
     await page.fill('#loginPass', 'Password@123');
     await page.click('button:has-text("Sign In")');
 
@@ -48,7 +55,10 @@ test.describe('End-to-End Operational Lifecycle Tests', () => {
     await page.click('#nav-closing');
     await expect(page.locator('#page-closing')).toBeVisible();
 
-    // 3. Enter closing cash values
+    // 3. Set business date to 2 days ago so it doesn't collide with today's closing
+    await page.fill('#closingDate', past);
+
+    // 4. Enter cash values
     await page.fill('#closingOpeningCash', '5000.00');
     await page.fill('#closingActualCash', '5000.00');
     await page.fill('#closingWithdrawals', '0.00');
@@ -56,16 +66,13 @@ test.describe('End-to-End Operational Lifecycle Tests', () => {
     // Handle the browser alert dialog automatically
     page.once('dialog', dialog => dialog.accept());
 
-    // 4. Click Submit Day Close button
-    const submitBtn = page.locator('#btnSubmitClosing');
-    await submitBtn.click();
+    // 5. Submit
+    await page.click('#btnSubmitClosing');
     // Locking the day asks for an in-page confirmation first
     await expect(page.locator('#modalTitle')).toContainText('Close day');
     await page.click('#confirmOk');
 
-    // 5. Verify database audit record status message rendered
-    const statusMsg = page.locator('#closingStatusMsg');
-    await expect(statusMsg).toContainText('Day Closed & Locked', { timeout: 10000 });
+    // 6. Verify success message
+    await expect(page.locator('#closingStatusMsg')).toContainText('Day Closed & Locked', { timeout: 10000 });
   });
 });
-

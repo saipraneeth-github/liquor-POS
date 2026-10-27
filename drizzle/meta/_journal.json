@@ -26,8 +26,9 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1793085498806,
-      "tag": "0003_good_mesmero",
+      "when": 1792985801026,
+      "when": 1761513600000,
+      "tag": "0003_unique_daily_closing",
       "breakpoints": true
     }
   ]
