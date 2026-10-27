@@ -1,11 +1,11 @@
 # PROGRESS.md — where we are and how to resume
 
 > Living handoff file. Update it at the end of every work session. Read `AGENTS.md` for the project itself.
-> Last updated: 2026-10-25 (IST)
+> Last updated: 2026-10-26 (IST)
 
 ## TL;DR
 
-- **All phases (1–6) complete and verified (2026-10-25).** `tsc --noEmit` clean, Vitest **355/355** (37 files), Playwright **21/21** (12 spec files).
+- **All phases (1–6) complete and verified (2026-10-25).** `tsc --noEmit` clean, Vitest **357/357** (37 files: 230 unit + 127 integration), Playwright **21/21** (12 spec files).
 - **Finished:**
   - Phases 1–5 + UI & layout polish across all 14 screens (cleaned polluted `.pglite` XSS test records, hardened backend entity-name schemas against `<`/`>`, fixed Dashboard KPI grid/spacing/quick-actions, fixed `.two-col` track sizing & `min-width: 0`, fixed Customers table clipping, POS card alignment & sticky bill panel, Shift & filter bar alignment, and Sidebar layout).
   - Phase 6 — Supplier invoice upload & workflow (`src/modules/invoices/**`, migration `0002_invoice_upload.sql`, unit tests `tests/unit/invoices.engines.test.ts`, integration tests `tests/integration/invoices.int.test.ts`, Inventory → Supplier invoices UI in `preview.html`, and Playwright E2E `tests/e2e/supplier-invoices.spec.ts`).
@@ -138,3 +138,11 @@ Design:
   336 tests green. Started Phase 5 UI agent.
 
 - **2026-10-25** — Phase 5 UI finished + independent UI review (20 fixes). Invoice-upload backend started in parallel (local libs, no API key); stopped mid-build at the user's request. Tally export confirmed done (gaps: ledger masters, direct sync, item-level GST). All work committed locally.
+
+- **2026-10-26** � Bug fixes & stabilization:
+  - Resolved PGlite wasm/memory hook timeout during integration tests on Windows by configuring serial file execution (\--fileParallelism=false\, \hookTimeout: 120_000\).
+  - Added duplicate same-day closing check in \closing.service.ts\ throwing 409 ConflictError when a branch day closing has already been posted for that business date. Added migration \ 003_unique_daily_closing.sql\.
+  - Added active-status enforcement in \scheme.service.ts\ preventing slab changes on non-ACTIVE schemes (COMPLETED/EXPIRED/CANCELLED), with integration test.
+  - Fixed E2E rate-limit 429 errors by restricting \/auth/login\ rate limiting to production environments only in \uth.routes.ts\.
+  - Verified green across full stack: \
+pm run build\ clean, Vitest **357/357** passed (37 files), Playwright **21/21** passed (12 spec files).

@@ -156,8 +156,9 @@ export async function replaceSchemeSlabs(schemeId: string, slabs: SlabInput[]) {
   if (problem) throw new BusinessRuleError(problem);
 
   return db.transaction(async (tx) => {
-    const [scheme] = await tx.select({ id: schemes.id }).from(schemes).where(eq(schemes.id, schemeId)).for('update');
+    const [scheme] = await tx.select({ id: schemes.id, status: schemes.status }).from(schemes).where(eq(schemes.id, schemeId)).for('update');
     if (!scheme) throw new NotFoundError(`Scheme ${schemeId} not found.`);
+    if (scheme.status !== 'ACTIVE') throw new BusinessRuleError(`Cannot edit slabs: scheme is ${scheme.status}. Only ACTIVE schemes can have their slabs updated.`);
 
     await tx.delete(schemeSlabs).where(eq(schemeSlabs.schemeId, schemeId));
     if (slabs.length === 0) return [];

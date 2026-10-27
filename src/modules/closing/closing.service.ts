@@ -1,9 +1,10 @@
 import { db } from '../../db/client.js';
 import { bills, dailyClosings } from '../../db/schema.js';
-import { eq, and, gte, lt, inArray, desc } from 'drizzle-orm';
+import { eq, and, gte, lt, inArray, desc, sql } from 'drizzle-orm';
 import { reconcileDailyClosing, type CashFloatInput } from './closing.engine.js';
 import { businessDateOf, businessDayBounds } from '../../lib/business-day.js';
 import type { JwtPayload } from '../auth/auth.service.js';
+import { ConflictError } from '../../lib/errors.js';
 
 export interface SubmitClosingInput {
   branchId: string;
@@ -18,6 +19,28 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
   // Only this branch's bills rung in on the business day being closed
   const businessDate = input.businessDate ?? businessDateOf();
   const { start, end } = businessDayBounds(businessDate);
+
+  // ── Guard: one closing per branch per calendar day ─────────────────────────
+  // We store the business-day start timestamp in closing_date, so comparing
+  // the date portion is equivalent to comparing businessDate strings.
+  const existing = await db
+    .select({ id: dailyClosings.id })
+    .from(dailyClosings)
+    .where(
+      and(
+        eq(dailyClosings.branchId, input.branchId),
+        // closing_date holds the business-day start; cast to date for calendar equality
+        sql`(${dailyClosings.closingDate})::date = ${businessDate}::date`,
+      ),
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    throw new ConflictError(
+      `Day closing for ${businessDate} has already been submitted for this branch.`,
+    );
+  }
+  // ────────────────────────────────────────────────────────────────────────────
 
   const dayBills = await db
     .select({
