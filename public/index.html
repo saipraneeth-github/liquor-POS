@@ -20,8 +20,18 @@
     <p>This is a temporary scaffold frontend connecting to the Fastify Backend API.</p>
 
     <div style="margin-bottom: 16px;">
-      <input type="text" id="synName" placeholder="Syndicate Name" />
-      <input type="text" id="synGst" placeholder="GSTIN" />
+      <div style="margin-bottom: 12px;">
+        <label for="synName" style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 4px;">
+          Syndicate Name <span style="color: #ef4444;" aria-hidden="true">*</span>
+        </label>
+        <input type="text" id="synName" placeholder="Syndicate Name" required aria-required="true" />
+      </div>
+      <div style="margin-bottom: 12px;">
+        <label for="synGst" style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 4px;">
+          GSTIN
+        </label>
+        <input type="text" id="synGst" placeholder="GSTIN" />
+      </div>
       <button onclick="createSyndicate()">Create Syndicate</button>
     </div>
 
