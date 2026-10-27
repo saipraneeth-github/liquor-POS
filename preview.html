@@ -242,6 +242,28 @@
     .stat-value { font-size: 20px; }
     .pad { padding: 14px; }
     .modal-card { padding: 16px; }
+  @media print {
+    body * { visibility: hidden; }
+    #printArea, #printArea * { visibility: visible; }
+    #printArea {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 80mm;
+      padding: 0;
+      margin: 0;
+      font-family: monospace;
+      font-size: 12px;
+      color: black;
+      background: white;
+    }
+    .print-center { text-align: center; }
+    .print-right { text-align: right; }
+    .print-bold { font-weight: bold; }
+    .print-table { width: 100%; border-collapse: collapse; }
+    .print-table th, .print-table td { text-align: left; padding: 2px 0; }
+    .print-divider { border-top: 1px dashed black; margin: 4px 0; }
+  }
   }
 </style>
 </head>
@@ -1365,6 +1387,11 @@ function queueBill(body) {
     Ref <code>${esc(body.clientRef.slice(0, 8))}</code> · it will be sent automatically when the connection returns.`;
   $('checkoutHistoryBtn').textContent = 'View pending';
   openCheckoutModal();
+
+  // Hook up printing!
+  setTimeout(() => {
+    printReceipt(bill).catch(err => console.error('Print failed:', err));
+  }, 100);
 }
 
 function removeFromQueue(ref, sub) { saveQueue(getQueue(sub).filter((i) => i.clientRef !== ref), sub); }
@@ -1810,6 +1837,163 @@ async function checkout() {
   }
 }
 
+
+// -- PRINTING SUPPORT --
+
+// Hardware-ready ESC/POS bytes generation port logic
+async function printReceiptRaw(bill) {
+  try {
+    if (!('serial' in navigator)) {
+      throw new Error('WebSerial not supported');
+    }
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+
+    // We fetch the generator via an endpoint or we reimplement basic ESC/POS here.
+    // For simplicity in the client-side preview, we will use our basic escpos builder directly if we had it,
+    // but since we want to share the logic, let's implement the basic receipt byte generation inline or fetch it.
+    // Since it's hardware ESC/POS, let's build the basic bytes.
+    const ESC = 0x1B;
+    const GS = 0x1D;
+    const CMD_INIT = [ESC, 0x40];
+    const CMD_CUT = [GS, 0x56, 0x01];
+    const CMD_KICK_DRAWER = [ESC, 0x70, 0x00, 0x19, 0xFA];
+
+    let buffer = [...CMD_INIT];
+
+    function addText(str) {
+      for(let i=0; i<str.length; i++) buffer.push(str.charCodeAt(i));
+    }
+
+    function addLine(str) {
+      addText(str + '\n');
+    }
+
+    const branch = S.branches.find(b => b.id === S.branchId) || { name: 'Store', address: '' };
+
+    buffer.push(ESC, 0x61, 0x01); // align center
+    buffer.push(ESC, 0x45, 0x01); // bold on
+    buffer.push(GS, 0x21, 0x11); // double size
+    addLine(branch.name);
+    buffer.push(GS, 0x21, 0x00); // normal size
+    buffer.push(ESC, 0x45, 0x00); // bold off
+    addLine(branch.address);
+    if(branch.gstin) addLine('GSTIN: ' + branch.gstin);
+    addLine('TAX INVOICE');
+    addLine('-'.repeat(48));
+
+    buffer.push(ESC, 0x61, 0x00); // align left
+    addLine(\`Bill No: \${bill.billNumber}   Date: \${new Date().toLocaleDateString()}\`);
+    addLine(\`Cashier: \${bill.cashierName || 'Cashier'}\`);
+    addLine('-'.repeat(48));
+
+    // Items
+    addLine('Qty  Item                     Rate      Net');
+    addLine('-'.repeat(48));
+
+    for (let item of (bill.items || [])) {
+      const q = item.quantity.toString().padEnd(4, ' ');
+      const n = (item.productName || 'Item').substring(0, 24).padEnd(24, ' ');
+      const r = money(item.rate || 0).padStart(8, ' ');
+      const net = money((item.rate || 0) * item.quantity).padStart(8, ' ');
+      addLine(\`\${q} \${n} \${r} \${net}\`);
+    }
+    addLine('-'.repeat(48));
+
+    addLine(\`Subtotal:                         \${money(bill.total).padStart(12, ' ')}\`);
+    if(bill.discount > 0) addLine(\`Discount:                         -\${money(bill.discount).padStart(11, ' ')}\`);
+    if(bill.taxAmount > 0) addLine(\`GST Amount:                       \${money(bill.taxAmount).padStart(12, ' ')}\`);
+
+    addLine('-'.repeat(48));
+    buffer.push(ESC, 0x45, 0x01); // bold on
+    addLine(\`TOTAL:                            \${money(bill.total).padStart(12, ' ')}\`);
+    buffer.push(ESC, 0x45, 0x00); // bold off
+    addLine('-'.repeat(48));
+    addLine(\`Payment: \${bill.paymentMode}\`);
+
+    buffer.push(ESC, 0x61, 0x01); // align center
+    addLine('Thank you!');
+    addLine('\n\n\n'); // feed
+
+    buffer.push(...CMD_CUT);
+    buffer.push(...CMD_KICK_DRAWER);
+
+    const writer = port.writable.getWriter();
+    await writer.write(new Uint8Array(buffer));
+    writer.releaseLock();
+    await port.close();
+
+    return true;
+  } catch (err) {
+    console.warn('WebSerial raw print failed/unavailable:', err);
+    return false; // Fallback to window.print()
+  }
+}
+
+async function printReceipt(bill) {
+  // Try raw ESC/POS first
+  const rawSuccess = await printReceiptRaw(bill);
+  if (rawSuccess) return;
+
+  // HTML Fallback for window.print()
+  const branch = S.branches.find(b => b.id === S.branchId) || { name: 'Store', address: '' };
+
+  let html = \`
+    <div class="print-center">
+      <div class="print-bold" style="font-size: 16px;">\${esc(branch.name)}</div>
+      <div>\${esc(branch.address)}</div>
+      \${branch.gstin ? \`<div>GSTIN: \${esc(branch.gstin)}</div>\` : ''}
+      <div class="print-bold">TAX INVOICE</div>
+      <div class="print-divider"></div>
+    </div>
+    <div>Bill No: \${esc(bill.billNumber)}</div>
+    <div>Date: \${new Date().toLocaleDateString()}</div>
+    <div>Cashier: \${esc(bill.cashierName || 'Cashier')}</div>
+    <div class="print-divider"></div>
+    <table class="print-table">
+      <thead><tr><th>Qty</th><th>Item</th><th style="text-align:right">Rate</th><th style="text-align:right">Net</th></tr></thead>
+      <tbody>
+  \`;
+
+  for (let item of (bill.items || [])) {
+    html += \`<tr>
+      <td>\${item.quantity}</td>
+      <td>\${esc(item.productName || 'Item')}</td>
+      <td style="text-align:right">\${money(item.rate || 0)}</td>
+      <td style="text-align:right">\${money((item.rate || 0) * item.quantity)}</td>
+    </tr>\`;
+  }
+
+  html += \`
+      </tbody>
+    </table>
+    <div class="print-divider"></div>
+    <table class="print-table">
+      <tr><td>Subtotal</td><td style="text-align:right">\${money(bill.total)}</td></tr>
+      \${bill.discount > 0 ? \`<tr><td>Discount</td><td style="text-align:right">-\${money(bill.discount)}</td></tr>\` : ''}
+      \${bill.taxAmount > 0 ? \`<tr><td>GST</td><td style="text-align:right">\${money(bill.taxAmount)}</td></tr>\` : ''}
+    </table>
+    <div class="print-divider"></div>
+    <div style="display:flex; justify-content:space-between;" class="print-bold">
+      <span>TOTAL</span>
+      <span>\${money(bill.total)}</span>
+    </div>
+    <div class="print-divider"></div>
+    <div>Payment: \${esc(bill.paymentMode)}</div>
+    <div class="print-divider"></div>
+    <div class="print-center">Thank you!</div>
+  \`;
+
+  const pa = $('printArea');
+  pa.innerHTML = html;
+  pa.style.display = 'block';
+
+  window.print();
+
+  pa.style.display = 'none';
+}
+
+
 async function afterBillSaved(bill, replay) {
   const itemsCount = (bill.items || []).reduce((s, i) => s + i.quantity, 0);
   const credit = bill.paymentMode === 'CREDIT' && S.creditCustomer ? ` (khata: ${esc(S.creditCustomer.name)})` : '';
@@ -1823,6 +2007,11 @@ async function afterBillSaved(bill, replay) {
   $('totalAmount').textContent = money(bill.total);
   $('checkoutHistoryBtn').textContent = 'Bill history';
   openCheckoutModal();
+
+  // Hook up printing!
+  setTimeout(() => {
+    printReceipt(bill).catch(err => console.error('Print failed:', err));
+  }, 100);
 
   if (S.tableBill) {
     const tb = S.tableBill;
@@ -3761,5 +3950,6 @@ async function createConsolidated(e, id) {
   showLogin();
 })();
 </script>
+<div id="printArea" style="display:none;"></div>
 </body>
 </html>
