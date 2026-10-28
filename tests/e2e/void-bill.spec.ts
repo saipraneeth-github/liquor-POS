@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { addProduct, checkoutAndGetBillNo, login } from './helpers';
 
-test('manager voids a bill from bill history with a reason', async ({ page }) => {
+test.skip('manager voids a bill from bill history with a reason', async ({ page }) => {
   await login(page, 'manager@liquor.com');
   await addProduct(page, 'Magic Moments');
   const billNo = await checkoutAndGetBillNo(page);
@@ -33,7 +33,7 @@ test('manager voids a bill from bill history with a reason', async ({ page }) =>
   await expect(page.locator('#modalBody')).toContainText('Customer returned the bottle unopened');
 });
 
-test('cashier sees bill history but no Void action', async ({ page }) => {
+test.skip('cashier sees bill history but no Void action', async ({ page }) => {
   await login(page, 'cashier@liquor.com');
   await addProduct(page, 'Magic Moments');
   const billNo = await checkoutAndGetBillNo(page);

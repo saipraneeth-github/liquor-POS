@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:local": "node --import tsx src/dev-local.ts",
-    "build": "tsc",
+    "build": "npm run build:frontend && tsc",
     "prestart": "npm run build",
     "start": "node --env-file=.env dist/index.js",
     "test": "vitest run",
@@ -18,7 +18,9 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:seed": "node --env-file=.env --import tsx src/db/seed.ts",
-    "db:migrate": "node --env-file=.env --import tsx src/db/migrate.ts"
+    "db:migrate": "node --env-file=.env --import tsx src/db/migrate.ts",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build"
   },
   "dependencies": {
     "@fastify/cors": "^10.1.0",
@@ -27,7 +29,7 @@
     "@fastify/multipart": "^10.1.3",
     "@fastify/rate-limit": "^11.2.1",
     "@fastify/sensible": "^5.6.0",
-    "@fastify/static": "^10.1.7",
+    "@fastify/static": "^10.1.8",
     "@napi-rs/canvas": "^1.0.11",
     "@tesseract.js-data/eng": "^1.0.0",
     "@types/bcryptjs": "^2.4.6",
