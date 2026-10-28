@@ -25,8 +25,12 @@ export async function authRoutes(fastify: FastifyInstance) {
     try {
       const token = await loginUser(email, password, fastify);
       return { token };
-    } catch {
-      reply.code(401).send({ error: 'Invalid email or password' });
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message === 'Invalid credentials') {
+        return reply.code(401).send({ error: 'Invalid email or password' });
+      }
+      request.log.error(err, 'Database or unexpected error during login');
+      return reply.code(500).send({ error: 'Authentication service temporarily unavailable. Check database connection.' });
     }
   });
 }

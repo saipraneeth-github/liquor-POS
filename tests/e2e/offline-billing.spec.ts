@@ -31,7 +31,7 @@ test.skip('offline bill is queued, auto-synced on reconnect and recorded exactly
 
   // Back online → automatic sync (online event / interval)
   await context.setOffline(false);
-  await expect(page.locator('#lastSync')).toContainText('Last offline sync:', { timeout: 25000 });
+  await expect(page.locator('#lastSync')).toContainText('duplicate submission ignored', { timeout: 35000 });
   await expect(indicator).toBeHidden({ timeout: 25000 });
   const syncText = await page.locator('#lastSync').innerText();
   const billNo = /Last offline sync: (\S+)/.exec(syncText)![1];

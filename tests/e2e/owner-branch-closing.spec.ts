@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { apiPost, apiToken, login, uniq } from './helpers';
 
-test.skip('owner picks a branch (persisted across reload) and closes the day for it', async ({ page, request }) => {
+test('owner picks a branch (persisted across reload) and closes the day for it', async ({ page, request }) => {
   // A second branch in the owner's syndicate so the picker has a real choice
   const token = await apiToken(request, 'owner@liquor.com');
   const code = 'Z' + uniq().slice(-6);

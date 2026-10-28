@@ -1,11 +1,13 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '../api/client';
 
-type User = {
+export type User = {
   id: string;
   email: string;
   name: string;
   role: 'owner' | 'manager' | 'cashier' | 'steward';
+  branchId?: string | null;
+  syndicateId?: string | null;
 };
 
 interface AuthContextType {
@@ -21,17 +23,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const logout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setUser(null);
+  };
+
   useEffect(() => {
     const token = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-    if (token && storedUser) {
-      setUser(JSON.parse(storedUser));
-      // Basic check, if fetch fails with 401, clear it
-      api.get('/health').catch(() => {
-         setError('session has expired');
-         logout();
+    if (!token) return;
+    // Validate the stored token against /me — expired or invalid tokens will 401
+    api.get<User>('/me')
+      .then((freshUser) => {
+        setUser(freshUser);
+        localStorage.setItem('user', JSON.stringify(freshUser));
+      })
+      .catch(() => {
+        setError('Session expired. Please sign in again.');
+        logout();
       });
-    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = (token: string, user: User) => {
@@ -39,12 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('user', JSON.stringify(user));
     setUser(user);
     setError(null);
-  };
-
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
   };
 
   return (

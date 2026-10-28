@@ -10,16 +10,24 @@ class ApiClient {
   }
 
   async get<T>(url: string): Promise<T> {
+    const res = await fetch(`${API_BASE}${url}`, { headers: this.getHeaders() });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  async post<T>(url: string, data?: unknown): Promise<T> {
     const res = await fetch(`${API_BASE}${url}`, {
+      method: 'POST',
       headers: this.getHeaders(),
+      body: data ? JSON.stringify(data) : undefined,
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }
 
-  async post<T>(url: string, data?: any): Promise<T> {
+  async patch<T>(url: string, data?: unknown): Promise<T> {
     const res = await fetch(`${API_BASE}${url}`, {
-      method: 'POST',
+      method: 'PATCH',
       headers: this.getHeaders(),
       body: data ? JSON.stringify(data) : undefined,
     });

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from './AuthProvider';
+import { useState } from 'react';
+import { useAuth, type User } from './AuthProvider';
 import { api } from '../api/client';
 import { useNavigate } from 'react-router-dom';
 
@@ -10,30 +10,26 @@ export function Login() {
   const { login, error: contextError } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (contextError) {
-      setLoginError(contextError);
-    }
-  }, [contextError]);
+  // Show auth-context errors (e.g. session expiry on restore) once
+  const displayError = loginError || contextError || '';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError('');
     try {
-      const res = await api.post<{ token: string; user: any }>('/auth/login', {
-        email,
-        password,
-      });
-      // Mock user since the API might not return everything needed in the first iteration
-      const mockUser = {
-        id: '1',
-        email,
-        name: email.split('@')[0],
-        role: email.split('@')[0] as 'owner' | 'manager' | 'cashier' | 'steward'
-      };
-      login(res.token, res.user || mockUser);
+      // Step 1: exchange credentials for token
+      const { token } = await api.post<{ token: string }>('/auth/login', { email, password });
+      // Step 2: store token so /me request is authenticated
+      localStorage.setItem('token', token);
+      // Step 3: fetch real user profile (id, name, role, branchId, …)
+      const freshUser = await api.get<User>('/me');
+      login(token, freshUser);
       navigate('/');
-    } catch (err: any) {
-      setLoginError(err.message || 'Login failed');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login failed';
+      setLoginError(msg);
+      // Clear the token if /me failed so we don't get stuck with a bad token
+      localStorage.removeItem('token');
     }
   };
 
@@ -46,7 +42,9 @@ export function Login() {
     <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900" id="loginPage">
       <div className="w-full max-w-md p-8 bg-white dark:bg-gray-800 rounded-lg shadow-md">
         <h1 className="text-2xl font-bold mb-6 text-center dark:text-white">Liquor Counter POS</h1>
-        {loginError && <div className="text-red-500 mb-4 text-center" id="loginError">{loginError}</div>}
+        {displayError && (
+          <div className="text-red-500 mb-4 text-center" id="loginError">{displayError}</div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1 dark:text-gray-300">Email</label>

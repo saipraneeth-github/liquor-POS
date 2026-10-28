@@ -3,6 +3,39 @@ import { drizzle as drizzlePg } from 'drizzle-orm/postgres-js';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { PGlite } from '@electric-sql/pglite';
 import * as schema from './schema.js';
+import dns from 'node:dns';
+
+// Fallback DNS resolver for ISPs/routers (like Airtel/Jio) that return RCODE_REFUSED for cloud DB domains like *.neon.tech
+if (!process.env.DATABASE_URL?.startsWith('pglite://')) {
+  try {
+    dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+    const origLookup = dns.lookup;
+    // @ts-expect-error - wrapping node:dns lookup to provide public DNS fallback
+    dns.lookup = (hostname: string, options: any, callback: any) => {
+      if (typeof options === 'function') {
+        callback = options;
+        options = {};
+      }
+      origLookup(hostname, options, (err: any, address: any, family: any) => {
+        if (err && (err.code === 'ENOTFOUND' || err.code === 'EREFUSED')) {
+          dns.resolve4(hostname, (err2, addresses) => {
+            if (!err2 && addresses?.length) {
+              if (options?.all) {
+                return callback(null, addresses.map((a) => ({ address: a, family: 4 })));
+              }
+              return callback(null, addresses[0], 4);
+            }
+            callback(err, address, family);
+          });
+        } else {
+          callback(err, address, family);
+        }
+      });
+    };
+  } catch {
+    // Non-fatal if runtime restricts DNS configuration
+  }
+}
 
 /**
  * DATABASE_URL selects the driver:

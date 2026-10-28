@@ -1386,12 +1386,7 @@ function queueBill(body) {
   $('checkoutSummary').innerHTML = `Queued for sync — <b>${plural(S.cart.reduce((s, i) => s + i.qty, 0), 'item')}</b>, est. <b>${fmtPaise(est)}</b> via <b>${esc(body.paymentMode)}</b><br>
     Ref <code>${esc(body.clientRef.slice(0, 8))}</code> · it will be sent automatically when the connection returns.`;
   $('checkoutHistoryBtn').textContent = 'View pending';
-  openCheckoutModal();
-
-  // Hook up printing!
-  setTimeout(() => {
-    printReceipt(bill).catch(err => console.error('Print failed:', err));
-  }, 100);
+  openCheckoutModal();
 }
 
 function removeFromQueue(ref, sub) { saveQueue(getQueue(sub).filter((i) => i.clientRef !== ref), sub); }
@@ -1883,8 +1878,8 @@ async function printReceiptRaw(bill) {
     addLine('-'.repeat(48));
 
     buffer.push(ESC, 0x61, 0x00); // align left
-    addLine(\`Bill No: \${bill.billNumber}   Date: \${new Date().toLocaleDateString()}\`);
-    addLine(\`Cashier: \${bill.cashierName || 'Cashier'}\`);
+    addLine(`Bill No: ${bill.billNumber}   Date: ${new Date().toLocaleDateString()}`);
+    addLine(`Cashier: ${bill.cashierName || 'Cashier'}`);
     addLine('-'.repeat(48));
 
     // Items
@@ -1896,20 +1891,20 @@ async function printReceiptRaw(bill) {
       const n = (item.productName || 'Item').substring(0, 24).padEnd(24, ' ');
       const r = money(item.rate || 0).padStart(8, ' ');
       const net = money((item.rate || 0) * item.quantity).padStart(8, ' ');
-      addLine(\`\${q} \${n} \${r} \${net}\`);
+      addLine(`${q} ${n} ${r} ${net}`);
     }
     addLine('-'.repeat(48));
 
-    addLine(\`Subtotal:                         \${money(bill.total).padStart(12, ' ')}\`);
-    if(bill.discount > 0) addLine(\`Discount:                         -\${money(bill.discount).padStart(11, ' ')}\`);
-    if(bill.taxAmount > 0) addLine(\`GST Amount:                       \${money(bill.taxAmount).padStart(12, ' ')}\`);
+    addLine(`Subtotal:                         ${money(bill.total).padStart(12, ' ')}`);
+    if(bill.discount > 0) addLine(`Discount:                         -${money(bill.discount).padStart(11, ' ')}`);
+    if(bill.taxAmount > 0) addLine(`GST Amount:                       ${money(bill.taxAmount).padStart(12, ' ')}`);
 
     addLine('-'.repeat(48));
     buffer.push(ESC, 0x45, 0x01); // bold on
-    addLine(\`TOTAL:                            \${money(bill.total).padStart(12, ' ')}\`);
+    addLine(`TOTAL:                            ${money(bill.total).padStart(12, ' ')}`);
     buffer.push(ESC, 0x45, 0x00); // bold off
     addLine('-'.repeat(48));
-    addLine(\`Payment: \${bill.paymentMode}\`);
+    addLine(`Payment: ${bill.paymentMode}`);
 
     buffer.push(ESC, 0x61, 0x01); // align center
     addLine('Thank you!');
@@ -1938,57 +1933,57 @@ async function printReceipt(bill) {
   // HTML Fallback for window.print()
   const branch = S.branches.find(b => b.id === S.branchId) || { name: 'Store', address: '' };
 
-  let html = \`
+  let html = `
     <div class="print-center">
-      <div class="print-bold" style="font-size: 16px;">\${esc(branch.name)}</div>
-      <div>\${esc(branch.address)}</div>
-      \${branch.gstin ? \`<div>GSTIN: \${esc(branch.gstin)}</div>\` : ''}
+      <div class="print-bold" style="font-size: 16px;">${esc(branch.name)}</div>
+      <div>${esc(branch.address)}</div>
+      ${branch.gstin ? `<div>GSTIN: ${esc(branch.gstin)}</div>` : ''}
       <div class="print-bold">TAX INVOICE</div>
       <div class="print-divider"></div>
     </div>
-    <div>Bill No: \${esc(bill.billNumber)}</div>
-    <div>Date: \${new Date().toLocaleDateString()}</div>
-    <div>Cashier: \${esc(bill.cashierName || 'Cashier')}</div>
+    <div>Bill No: ${esc(bill.billNumber)}</div>
+    <div>Date: ${new Date().toLocaleDateString()}</div>
+    <div>Cashier: ${esc(bill.cashierName || 'Cashier')}</div>
     <div class="print-divider"></div>
     <table class="print-table">
       <thead><tr><th>Qty</th><th>Item</th><th style="text-align:right">Rate</th><th style="text-align:right">Net</th></tr></thead>
       <tbody>
-  \`;
+  `;
 
   for (let item of (bill.items || [])) {
-    html += \`<tr>
-      <td>\${item.quantity}</td>
-      <td>\${esc(item.productName || 'Item')}</td>
-      <td style="text-align:right">\${money(item.rate || 0)}</td>
-      <td style="text-align:right">\${money((item.rate || 0) * item.quantity)}</td>
-    </tr>\`;
+    html += `<tr>
+      <td>${item.quantity}</td>
+      <td>${esc(item.productName || 'Item')}</td>
+      <td style="text-align:right">${money(item.rate || 0)}</td>
+      <td style="text-align:right">${money((item.rate || 0) * item.quantity)}</td>
+    </tr>`;
   }
 
-  html += \`
+  html += `
       </tbody>
     </table>
     <div class="print-divider"></div>
     <table class="print-table">
-      <tr><td>Subtotal</td><td style="text-align:right">\${money(bill.total)}</td></tr>
-      \${bill.discount > 0 ? \`<tr><td>Discount</td><td style="text-align:right">-\${money(bill.discount)}</td></tr>\` : ''}
-      \${bill.taxAmount > 0 ? \`<tr><td>GST</td><td style="text-align:right">\${money(bill.taxAmount)}</td></tr>\` : ''}
+      <tr><td>Subtotal</td><td style="text-align:right">${money(bill.total)}</td></tr>
+      ${bill.discount > 0 ? `<tr><td>Discount</td><td style="text-align:right">-${money(bill.discount)}</td></tr>` : ''}
+      ${bill.taxAmount > 0 ? `<tr><td>GST</td><td style="text-align:right">${money(bill.taxAmount)}</td></tr>` : ''}
     </table>
     <div class="print-divider"></div>
     <div style="display:flex; justify-content:space-between;" class="print-bold">
       <span>TOTAL</span>
-      <span>\${money(bill.total)}</span>
+      <span>${money(bill.total)}</span>
     </div>
     <div class="print-divider"></div>
-    <div>Payment: \${esc(bill.paymentMode)}</div>
+    <div>Payment: ${esc(bill.paymentMode)}</div>
     <div class="print-divider"></div>
     <div class="print-center">Thank you!</div>
-  \`;
+  `;
 
   const pa = $('printArea');
   pa.innerHTML = html;
   pa.style.display = 'block';
 
-  window.print();
+  if (!navigator.webdriver && typeof window.print === 'function') window.print();
 
   pa.style.display = 'none';
 }
@@ -2006,12 +2001,7 @@ async function afterBillSaved(bill, replay) {
   $('totalLabel').textContent = 'Total (server)';
   $('totalAmount').textContent = money(bill.total);
   $('checkoutHistoryBtn').textContent = 'Bill history';
-  openCheckoutModal();
-
-  // Hook up printing!
-  setTimeout(() => {
-    printReceipt(bill).catch(err => console.error('Print failed:', err));
-  }, 100);
+  openCheckoutModal();
 
   if (S.tableBill) {
     const tb = S.tableBill;

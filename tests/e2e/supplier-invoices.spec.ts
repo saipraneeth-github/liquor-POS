@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { login, uniq } from './helpers';
 
-test.skip('supplier invoice upload: CSV extract -> review & map unmatched line -> approve -> stock & history updated', async ({ page }) => {
+test('supplier invoice upload: CSV extract -> review & map unmatched line -> approve -> stock & history updated', async ({ page }) => {
   const invNo = `INV-2026-${uniq()}`;
   const csv = [
     `Supplier: United Spirits Depot`,

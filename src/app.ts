@@ -46,11 +46,17 @@ export function buildApp() {
   fastify.register(fastifyRateLimit, {
     global: false, // only applied to routes that explicitly configure it
   });
-  fastify.register(fastifyStatic, {
-    root: path.join(process.cwd(), 'dist/frontend'),
-    prefix: '/',
-    wildcard: false, // disable wildcard to handle it manually for SPA
-  });
+  // Serve React SPA static assets only when built (dist/frontend exists).
+  // In dev mode (npm run dev), the SPA is served by Vite's dev server on a separate port.
+  const spaDistDir = path.join(process.cwd(), 'dist/frontend');
+  if (fs.existsSync(spaDistDir)) {
+    fastify.register(fastifyStatic, {
+      root: spaDistDir,
+      prefix: '/',
+      index: false,
+      wildcard: false, // SPA fallback is handled by setNotFoundHandler below
+    });
+  }
 
   fastify.register(fastifyJwt, {
     secret: process.env.JWT_SECRET ?? randomBytes(32).toString('hex'),
@@ -59,7 +65,19 @@ export function buildApp() {
 
   // ─── ROOT & UI PREVIEW ─────────────────────────────────────────────────────
 
-
+  fastify.get('/', async (request, reply) => {
+    const accept = request.headers.accept ?? '';
+    if (!accept.includes('text/html')) {
+      return { name: 'Liquor Counter POS API', version: '0.1.0', health: '/health', preview: '/preview', api: '/api/v1' };
+    }
+    // In production, React SPA is served from dist/frontend via fastifyStatic
+    // In dev, fall back to the standalone preview.html
+    const previewPath = path.resolve(process.cwd(), 'preview.html');
+    if (fs.existsSync(previewPath)) {
+      return reply.type('text/html').send(fs.readFileSync(previewPath, 'utf8'));
+    }
+    return { name: 'Liquor Counter POS API', version: '0.1.0' };
+  });
 
   fastify.get('/preview', async (_request, reply) => {
     const htmlPath = path.resolve(process.cwd(), 'preview.html');
@@ -78,7 +96,11 @@ export function buildApp() {
     if (request.url.startsWith('/api/')) {
       return reply.code(404).send({ error: 'Not found' });
     }
-    return reply.sendFile('index.html');
+    // For SPA routes — only works when dist/frontend is built
+    if (fs.existsSync(path.join(process.cwd(), 'dist/frontend/index.html'))) {
+      return (reply as any).sendFile('index.html');
+    }
+    return reply.code(404).send({ error: 'Not found' });
   });
 
   // ─── ROUTES ───────────────────────────────────────────────────────────────

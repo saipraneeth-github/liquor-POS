@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { addProduct, apiGet, apiPost, apiToken, checkoutAndGetBillNo, login, uniq } from './helpers';
 
-test.skip('cashier opens a shift, rings a bill and closes with denominations showing the discrepancy', async ({ page, request }) => {
+test('cashier opens a shift, rings a bill and closes with denominations showing the discrepancy', async ({ page, request }) => {
   // Isolated cashier + terminal so other specs' bills never land in this shift
   const id = uniq();
   const mgr = await apiToken(request, 'manager@liquor.com');

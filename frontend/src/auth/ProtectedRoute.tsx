@@ -32,14 +32,18 @@ export function ProtectedRoute() {
   const userRank = roleRank[user.role as keyof typeof roleRank];
 
   if (userRank < reqRank) {
-    // Injecting directly into DOM for toast host since it's in Layout which might remount or wait
+    // Show toast via the toast host rendered in Layout
+    const routeLabel = location.pathname.replace('/', '') || 'this page';
     setTimeout(() => {
       const toastHost = document.getElementById('toastHost');
       if (toastHost) {
-        toastHost.innerHTML = `<div class="toast error">cannot open Accounting</div>`;
-        setTimeout(() => { toastHost.innerHTML = ''; }, 3000);
+        const el = document.createElement('div');
+        el.className = 'toast error';
+        el.textContent = `cannot open ${routeLabel}`;
+        toastHost.appendChild(el);
+        setTimeout(() => el.remove(), 3000);
       }
-    }, 100);
+    }, 50);
     return <Navigate to="/" replace />;
   }
 
