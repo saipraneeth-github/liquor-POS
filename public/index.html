@@ -8,8 +8,11 @@
     body { font-family: system-ui, -apple-system, sans-serif; background: #f4f4f5; padding: 20px; }
     .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
     h1 { color: #18181b; }
+    input { padding: 8px 12px; border: 1px solid #d4d4d8; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
     button { background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
-    button:hover { background: #1d4ed8; }
+    button:hover:not(:disabled) { background: #1d4ed8; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    input:focus-visible, button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e4e4e7; }
   </style>
@@ -19,11 +22,21 @@
     <h1>Multi-Tenant Syndicate Directory (Phase 1)</h1>
     <p>This is a temporary scaffold frontend connecting to the Fastify Backend API.</p>
 
-    <div style="margin-bottom: 16px;">
-      <input type="text" id="synName" placeholder="Syndicate Name" />
-      <input type="text" id="synGst" placeholder="GSTIN" />
-      <button onclick="createSyndicate()">Create Syndicate</button>
-    </div>
+    <form onsubmit="createSyndicate(event)" style="margin-bottom: 16px;">
+      <div style="margin-bottom: 12px;">
+        <label for="synName" style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 4px;">
+          Syndicate Name <span style="color: #ef4444;" aria-hidden="true">*</span>
+        </label>
+        <input type="text" id="synName" placeholder="Syndicate Name" required aria-required="true" />
+      </div>
+      <div style="margin-bottom: 12px;">
+        <label for="synGst" style="display: block; font-size: 14px; font-weight: 500; margin-bottom: 4px;">
+          GSTIN
+        </label>
+        <input type="text" id="synGst" placeholder="GSTIN" />
+      </div>
+      <button type="submit" id="submitBtn">Create Syndicate</button>
+    </form>
 
     <button onclick="loadSyndicates()">Refresh List</button>
 
@@ -61,21 +74,32 @@
       });
     }
 
-    async function createSyndicate() {
+    async function createSyndicate(event) {
+      if (event) event.preventDefault();
       const name = document.getElementById('synName').value;
       const gstin = document.getElementById('synGst').value;
 
       if(!name) return alert('Name required');
 
-      await fetch('/api/v1/syndicates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, gstin })
-      });
+      const submitBtn = document.getElementById('submitBtn');
+      const originalText = submitBtn.innerText;
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Creating...';
 
-      document.getElementById('synName').value = '';
-      document.getElementById('synGst').value = '';
-      loadSyndicates();
+      try {
+        await fetch('/api/v1/syndicates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, gstin })
+        });
+
+        document.getElementById('synName').value = '';
+        document.getElementById('synGst').value = '';
+        loadSyndicates();
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = originalText;
+      }
     }
 
     // Initial load
