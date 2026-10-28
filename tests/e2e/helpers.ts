@@ -13,7 +13,7 @@ export async function login(page: Page, email: string, password = PASSWORD): Pro
   await page.goto('/');
   await page.fill('#loginEmail', email);
   await page.fill('#loginPass', password);
-  await page.click('button:has-text("Sign In")');
+  await page.click('#loginBtn');
   await expect(page.locator('#mainApp')).toBeVisible({ timeout: 15000 });
 }
 

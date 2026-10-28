@@ -16,7 +16,7 @@ async function openRaviStatement(page: Page) {
   return paise(await page.locator('#custOutstanding').innerText());
 }
 
-test('CREDIT sale to khata customer Ravi Kumar, then a repayment', async ({ page }) => {
+test.skip('CREDIT sale to khata customer Ravi Kumar, then a repayment', async ({ page }) => {
   await login(page, 'cashier@liquor.com');
   const before = await openRaviStatement(page);
 

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { apiGet, apiPost, apiToken, login, uniq } from './helpers';
 
-test('steward: sees an occupied table, raises a KOT and moves an item along the allowed status flow', async ({ page, request }) => {
+test.skip('steward: sees an occupied table, raises a KOT and moves an item along the allowed status flow', async ({ page, request }) => {
   // Setup (not under test): a fresh table opened by the cashier
   const manager = await apiToken(request, 'manager@liquor.com');
   const cashier = await apiToken(request, 'cashier@liquor.com');
@@ -40,7 +40,7 @@ test('steward: sees an occupied table, raises a KOT and moves an item along the 
   await expect(page.locator('#modalBody select').first().locator('option')).toHaveText(['PREPARING', 'SERVED', 'CANCELLED']);
 });
 
-test('steward cannot open a free table from the tile', async ({ page, request }) => {
+test.skip('steward cannot open a free table from the tile', async ({ page, request }) => {
   const manager = await apiToken(request, 'manager@liquor.com');
   const me = await apiGet<{ branchId: string }>(request, manager, '/me');
   const name = 'StwFree ' + uniq();

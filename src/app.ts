@@ -3,6 +3,7 @@ import fastifyJwt from '@fastify/jwt';
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
+import fastifyStatic from '@fastify/static';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { authRoutes } from './modules/auth/auth.routes.js';
@@ -44,6 +45,12 @@ export function buildApp() {
   fastify.register(fastifyRateLimit, {
     global: false, // only applied to routes that explicitly configure it
   });
+  fastify.register(fastifyStatic, {
+    root: path.join(process.cwd(), 'dist/frontend'),
+    prefix: '/',
+    wildcard: false, // disable wildcard to handle it manually for SPA
+  });
+
   fastify.register(fastifyJwt, {
     secret: process.env.JWT_SECRET ?? 'dev_secret_change_me',
     sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? '8h' },
@@ -51,24 +58,7 @@ export function buildApp() {
 
   // ─── ROOT & UI PREVIEW ─────────────────────────────────────────────────────
 
-  fastify.get('/', async (request, reply) => {
-    const accept = request.headers.accept ?? '';
-    if (accept.includes('text/html')) {
-      const htmlPath = path.resolve(process.cwd(), 'preview.html');
-      if (fs.existsSync(htmlPath)) {
-        const html = fs.readFileSync(htmlPath, 'utf8');
-        return reply.type('text/html').send(html);
-      }
-    }
-    return {
-      name: 'Liquor Counter POS API',
-      version: '0.1.0',
-      status: 'running',
-      preview: '/preview',
-      health: '/health',
-      endpoints: '/api/v1',
-    };
-  });
+
 
   fastify.get('/preview', async (_request, reply) => {
     const htmlPath = path.resolve(process.cwd(), 'preview.html');
@@ -81,6 +71,13 @@ export function buildApp() {
 
   fastify.get('/favicon.ico', async (_request, reply) => {
     return reply.code(204).send();
+  });
+
+  fastify.setNotFoundHandler((request, reply) => {
+    if (request.url.startsWith('/api/')) {
+      return reply.code(404).send({ error: 'Not found' });
+    }
+    return reply.sendFile('index.html');
   });
 
   // ─── ROUTES ───────────────────────────────────────────────────────────────

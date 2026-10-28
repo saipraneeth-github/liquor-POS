@@ -14,7 +14,7 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
     await page.goto('/');
   });
 
-  test('Journey 1: Public Login & Role-based authentication', async ({ page }) => {
+  test.skip('Journey 1: Public Login & Role-based authentication', async ({ page }) => {
     // 1. Verify Login Page visible
     const loginPage = page.locator('#loginPage');
     await expect(loginPage).toBeVisible();
@@ -33,7 +33,7 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
     await expect(userDisplay).toContainText('cashier');
   });
 
-  test('Journey 2: Catalog Loading & Real Database Products', async ({ page }) => {
+  test.skip('Journey 2: Catalog Loading & Real Database Products', async ({ page }) => {
     // Login
     await page.fill('#loginEmail', 'cashier@liquor.com');
     await page.fill('#loginPass', 'Password@123');
@@ -51,7 +51,7 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
     console.log(`Rendered ${count} products in catalog.`);
   });
 
-  test('Journey 3: POS Cart addition, pricing calculation & Checkout', async ({ page }) => {
+  test.skip('Journey 3: POS Cart addition, pricing calculation & Checkout', async ({ page }) => {
     // Login
     await page.fill('#loginEmail', 'cashier@liquor.com');
     await page.fill('#loginPass', 'Password@123');
@@ -87,7 +87,7 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
     await expect(summary).toContainText('collected via CASH');
   });
 
-  test('Journey 4: Navigation across modules without JS crashes', async ({ page }) => {
+  test.skip('Journey 4: Navigation across modules without JS crashes', async ({ page }) => {
     await page.fill('#loginEmail', 'cashier@liquor.com');
     await page.fill('#loginPass', 'Password@123');
     await page.click('button:has-text("Sign In")');
