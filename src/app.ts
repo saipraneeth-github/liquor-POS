@@ -5,6 +5,7 @@ import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { productRoutes } from './modules/products/product.routes.js';
 import { billingRoutes } from './modules/billing/billing.routes.js';
@@ -45,7 +46,7 @@ export function buildApp() {
     global: false, // only applied to routes that explicitly configure it
   });
   fastify.register(fastifyJwt, {
-    secret: process.env.JWT_SECRET ?? 'dev_secret_change_me',
+    secret: process.env.JWT_SECRET ?? randomBytes(32).toString('hex'),
     sign: { expiresIn: process.env.JWT_EXPIRES_IN ?? '8h' },
   });
 
