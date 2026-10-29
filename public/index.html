@@ -38,7 +38,7 @@
       <button type="submit" id="submitBtn">Create Syndicate</button>
     </form>
 
-    <button onclick="loadSyndicates()">Refresh List</button>
+    <button id="refreshBtn" onclick="loadSyndicates()">Refresh List</button>
 
     <table id="syndicatesTable">
       <thead>
@@ -56,22 +56,46 @@
 
   <script>
     async function loadSyndicates() {
-      const res = await fetch('/api/v1/syndicates');
-      const data = await res.json();
+      const refreshBtn = document.getElementById('refreshBtn');
+      const originalText = refreshBtn ? refreshBtn.innerText : 'Refresh List';
+      if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerText = 'Refreshing...';
+      }
 
       const tbody = document.querySelector('#syndicatesTable tbody');
-      tbody.innerHTML = '';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #6b7280;">Loading...</td></tr>';
 
-      data.forEach(syn => {
-        tbody.innerHTML += `
-          <tr>
-            <td>${syn.id.substring(0, 8)}...</td>
-            <td>${syn.name}</td>
-            <td>${syn.gstin || '-'}</td>
-            <td>${syn.isActive ? 'Active' : 'Inactive'}</td>
-          </tr>
-        `;
-      });
+      try {
+        const res = await fetch('/api/v1/syndicates');
+        if (!res.ok) throw new Error('Failed to fetch data');
+        const data = await res.json();
+
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #6b7280; font-style: italic;">No syndicates found. Create one above!</td></tr>';
+          return;
+        }
+
+        data.forEach(syn => {
+          tbody.innerHTML += `
+            <tr>
+              <td>${syn.id.substring(0, 8)}...</td>
+              <td>${syn.name}</td>
+              <td>${syn.gstin || '-'}</td>
+              <td>${syn.isActive ? 'Active' : 'Inactive'}</td>
+            </tr>
+          `;
+        });
+      } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #ef4444;">Failed to load syndicates. Please try again.</td></tr>';
+      } finally {
+        if (refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.innerText = originalText;
+        }
+      }
     }
 
     async function createSyndicate(event) {
