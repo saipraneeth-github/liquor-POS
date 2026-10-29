@@ -146,29 +146,33 @@ export async function applyApprovedInvoice(
   let totalCases = new Decimal(0);
   let totalValue = new Decimal(0);
 
+  if (items.length === 0) return;
+
+  const stockInsertsMap = new Map<string, { branchId: string; productId: string; quantity: number; reorderLevel: number }>();
+  const stockAuditInserts = [];
+  const productUpdatesMap = new Map<string, { costPrice: string; mrp?: string }>();
+  const priceAuditInserts = [];
+
   for (const item of items) {
     const productId = item.productId;
     if (!productId) throw new BusinessRuleError('Every invoice line must be matched to a product before approval');
 
-    // Atomic stock increment (creates the row if missing)
-    await tx
-      .insert(stock)
-      .values({ branchId: invoice.branchId, productId, quantity: item.quantity, reorderLevel: 5 })
-      .onConflictDoUpdate({
-        target: [stock.branchId, stock.productId],
-        set: { quantity: sql`${stock.quantity} + ${item.quantity}` },
-      });
+    const existingStock = stockInsertsMap.get(productId);
+    if (existingStock) {
+      existingStock.quantity += item.quantity;
+    } else {
+      stockInsertsMap.set(productId, { branchId: invoice.branchId, productId, quantity: item.quantity, reorderLevel: 5 });
+    }
 
-    await tx.insert(stockAudit).values({
+    stockAuditInserts.push({
       branchId: invoice.branchId,
       productId,
       userId,
       changeQty: item.quantity,
-      reason: 'PURCHASE',
+      reason: 'PURCHASE' as const,
       referenceId: invoice.id,
     });
 
-    // Update cost price; MRP changes are audited in price_audit
     const product = productMap.get(productId)!;
     const packSize = product.packQuantity && product.packQuantity > 0 ? product.packQuantity : 12;
     totalCases = totalCases.plus(new Decimal(item.quantity).div(packSize));
@@ -176,14 +180,38 @@ export async function applyApprovedInvoice(
 
     const newMrp = new Decimal(item.mrp).toFixed(2);
     const mrpChanged = !new Decimal(product.mrp).equals(newMrp);
-    await tx
-      .update(products)
-      .set({ costPrice: new Decimal(item.costPrice).toFixed(2), ...(mrpChanged ? { mrp: newMrp } : {}) })
-      .where(eq(products.id, productId));
+
+    // We update product for every item that dictates it, but for costPrice we just use the last item's cost price,
+    // however if we have multiple items for same product, this update could run multiple times concurrently.
+    // It's safer to only push one update per product. We do this by aggregating updates into a map.
+    productUpdatesMap.set(productId, { costPrice: new Decimal(item.costPrice).toFixed(2), ...(mrpChanged ? { mrp: newMrp } : {}) });
+
     if (mrpChanged) {
-      await tx.insert(priceAudit).values({ productId, userId, oldMrp: product.mrp, newMrp });
+      priceAuditInserts.push({ productId, userId, oldMrp: product.mrp, newMrp });
       productMap.set(productId, { ...product, mrp: newMrp });
     }
+  }
+
+  // Batch insert stock and aggregate quantities on conflict
+  await tx.insert(stock)
+    .values(Array.from(stockInsertsMap.values()))
+    .onConflictDoUpdate({
+      target: [stock.branchId, stock.productId],
+      set: { quantity: sql`${stock.quantity} + EXCLUDED.quantity` },
+    });
+
+  // Batch insert stock audits
+  await tx.insert(stockAudit).values(stockAuditInserts);
+
+  // Batch update products
+  const productUpdates = Array.from(productUpdatesMap.entries()).map(([id, updateData]) =>
+    tx.update(products).set(updateData).where(eq(products.id, id))
+  );
+  await Promise.all(productUpdates);
+
+  // Batch insert price audits if any
+  if (priceAuditInserts.length > 0) {
+    await tx.insert(priceAudit).values(priceAuditInserts);
   }
 
   // Auto-credit any active supplier schemes matching this branch and supplier name
