@@ -316,17 +316,15 @@ export async function voidBill(
 
     // Reverse stock atomically; recreate a missing stock row
     const deltas = computeVoidStockDeltas(items).sort((a, b) => a.productId.localeCompare(b.productId));
-    for (const delta of deltas) {
+    if (deltas.length > 0) {
       await tx
         .insert(stock)
-        .values({ branchId: bill.branchId, productId: delta.productId, quantity: delta.delta })
+        .values(deltas.map((delta) => ({ branchId: bill.branchId, productId: delta.productId, quantity: delta.delta })))
         .onConflictDoUpdate({
           target: [stock.branchId, stock.productId],
-          set: { quantity: sql`${stock.quantity} + ${delta.delta}` },
+          set: { quantity: sql`${stock.quantity} + EXCLUDED.quantity` },
         });
-    }
 
-    if (deltas.length > 0) {
       await tx.insert(stockAudit).values(
         deltas.map((d) => ({
           branchId:    bill.branchId,
