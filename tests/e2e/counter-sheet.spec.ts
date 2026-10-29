@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { login } from './helpers';
 
-test.skip('counter sheet: create for a date, edit closing counts with live sold/revenue, save and post', async ({ page }) => {
+test('counter sheet: create for a date, edit closing counts with live sold/revenue, save and post', async ({ page }) => {
   // A random past date (sheets are unique per branch+date; future dates are rejected)
   const d = new Date(Date.UTC(2025, 0, 1) + Math.floor(Math.random() * 300) * 86400000).toISOString().slice(0, 10);
 

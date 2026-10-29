@@ -11,13 +11,15 @@ export default defineConfig({
     baseURL: 'http://localhost:3001',
     trace: 'on-first-retry',
   },
-  // Fresh embedded PGlite database per run (migrated + seeded by src/dev-local.ts) — no Postgres install needed.
+  // Fresh embedded PGlite database per run (migrated + seeded by src/dev-local.ts) â€” no Postgres install needed.
   // Set E2E_DATABASE_URL to run against a real database instead.
   webServer: {
     command: 'node -e "require(\'fs\').rmSync(\'.pglite-e2e\',{recursive:true,force:true})" && node --import tsx src/dev-local.ts',
     url: 'http://localhost:3001/health',
     reuseExistingServer: !process.env.CI,
-    timeout: 120000,
+    timeout: 180000,
+    stdout: 'pipe',
+    stderr: 'pipe',
     env: {
       DATABASE_URL: process.env.E2E_DATABASE_URL ?? 'pglite://./.pglite-e2e',
       PORT: '3001',
@@ -31,4 +33,3 @@ export default defineConfig({
     },
   ],
 });
-

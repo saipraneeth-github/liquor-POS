@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import {
@@ -41,12 +42,33 @@ export function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [showSignoutWarning, setShowSignoutWarning] = useState(false);
 
   if (!user) return null;
 
   const userRank = roleRank[user.role as keyof typeof roleRank] || 0;
+  const sub = (user as any)?.sub ?? user?.id ?? '';
 
-  const handleLogout = () => {
+  const getPendingQueueCount = (): number => {
+    try {
+      const q = JSON.parse(localStorage.getItem(`lc_offline_bills:${sub}`) || '[]');
+      return q.length;
+    } catch {
+      return 0;
+    }
+  };
+
+  const handleLogoutClick = () => {
+    const pending = getPendingQueueCount();
+    if (pending > 0) {
+      setShowSignoutWarning(true);
+      return;
+    }
+    doLogout();
+  };
+
+  const doLogout = () => {
+    setShowSignoutWarning(false);
     logout();
     navigate('/login');
   };
@@ -92,7 +114,7 @@ export function Layout() {
             <div id="emailDisplay" className="text-gray-500">{user.email}</div>
           </div>
           <button
-            onClick={handleLogout}
+            onClick={handleLogoutClick}
             className="flex items-center justify-center gap-2 w-full px-3 py-2 text-red-600 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
           >
             <LogOut size={18} />
@@ -100,21 +122,53 @@ export function Layout() {
           </button>
         </div>
       </aside>
+
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4">
           <div className="font-semibold text-lg" id="pageTitle">
              {navItems.find(i => i.path === location.pathname)?.label || ''}
           </div>
           <div className="flex items-center gap-4 text-sm">
-            <div id="lastSync" className="text-gray-500"></div>
-            <div id="offlineIndicator" className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">Online</div>
+            {/* Header hooks if needed */}
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4">
           <Outlet />
         </main>
       </div>
-      <div id="toastHost" className="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
+      {/* Sign-out with unsynced bills warning modal */}
+      {showSignoutWarning && (
+        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 border dark:border-gray-700">
+            <h2 className="text-lg font-bold text-red-600 mb-2" id="modalTitle">
+              Sign out with unsynced bills?
+            </h2>
+            <div id="modalBody" className="text-sm text-gray-600 dark:text-gray-300 mb-6">
+              You have {getPendingQueueCount()} offline bill(s) that have not reached the server yet.
+              They stay on this device and are sent only when you sign in here again — other users will not submit them.
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                id="confirmCancel"
+                onClick={() => setShowSignoutWarning(false)}
+                className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                id="confirmOk"
+                onClick={doLogout}
+                className="px-4 py-2 bg-red-600 text-white rounded text-sm font-semibold hover:bg-red-700"
+              >
+                Sign out anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

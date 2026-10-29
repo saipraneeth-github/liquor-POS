@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 
 type Product = {
@@ -42,6 +43,7 @@ function genUUID(): string {
 
 export function POS() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -292,7 +294,10 @@ export function POS() {
               {checkoutModal.offline && (
                 <button
                   id="checkoutHistoryBtn"
-                  onClick={() => setCheckoutModal(null)}
+                  onClick={() => {
+                    setCheckoutModal(null);
+                    navigate('/bills');
+                  }}
                   className="flex-1 bg-gray-200 text-gray-800 p-2 rounded"
                 >
                   View pending

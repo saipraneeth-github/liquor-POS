@@ -20,7 +20,14 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const u = localStorage.getItem('user');
+      return u ? JSON.parse(u) : null;
+    } catch {
+      return null;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
 
   const logout = () => {
@@ -39,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('user', JSON.stringify(freshUser));
       })
       .catch(() => {
-        setError('Session expired. Please sign in again.');
+        setError('Your session has expired. Please sign in again.');
         logout();
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps

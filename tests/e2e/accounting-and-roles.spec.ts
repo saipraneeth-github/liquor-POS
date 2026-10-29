@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { addProduct, checkoutAndGetBillNo, login } from './helpers';
 
-test.skip('accounting: trial balance is balanced after sales; P&L and Tally export work', async ({ page }) => {
+test('accounting: trial balance is balanced after sales; P&L and Tally export work', async ({ page }) => {
   await login(page, 'manager@liquor.com');
   await addProduct(page, 'Royal Challenge');
   await checkoutAndGetBillNo(page);
@@ -26,7 +26,7 @@ test.skip('accounting: trial balance is balanced after sales; P&L and Tally expo
   await expect(page.locator('#tallyResult')).toContainText('Downloaded');
 });
 
-test.skip('role gating: steward cannot see accounting or billing; cashier cannot open manager screens', async ({ page }) => {
+test('role gating: steward cannot see accounting or billing; cashier cannot open manager screens', async ({ page }) => {
   await login(page, 'steward@liquor.com');
   await expect(page.locator('#userDisplay')).toContainText('steward');
   await expect(page.locator('#nav-dashboard')).toBeVisible();
@@ -34,7 +34,7 @@ test.skip('role gating: steward cannot see accounting or billing; cashier cannot
     await expect(page.locator(`#nav-${tab}`)).toHaveCount(0);
   }
   // Forcing navigation is refused with a visible message and the page stays hidden
-  await page.goto('/accounting');
+  await page.evaluate(() => (window as unknown as { showPage: (p: string) => void }).showPage('accounting'));
   await expect(page.locator('#toastHost')).toContainText('cannot open Accounting');
   await expect(page.locator('#page-accounting')).toBeHidden();
 
@@ -52,7 +52,7 @@ test.skip('role gating: steward cannot see accounting or billing; cashier cannot
   await expect(page.locator('#nav-closing')).toHaveCount(0);
 });
 
-test.skip('expired or invalid session returns to the login page with a message', async ({ page }) => {
+test('expired or invalid session returns to the login page with a message', async ({ page }) => {
   await login(page, 'cashier@liquor.com');
   // Replace the stored token with one the server rejects, then reload (session restore → 401)
   await page.evaluate(() => {

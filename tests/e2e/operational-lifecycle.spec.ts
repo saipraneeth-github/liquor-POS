@@ -5,7 +5,7 @@ test.describe('End-to-End Operational Lifecycle Tests', () => {
     await page.goto('/');
   });
 
-  test.skip('Journey 5: Table Status Mutation (Open Table -> Occupied)', async ({ page }) => {
+  test('Journey 5: Table Status Mutation (Open Table -> Occupied)', async ({ page }) => {
     // 1. Login as Cashier (Cashier has cashier role required for tables/open)
     await page.fill('#loginEmail', 'cashier@liquor.com');
     await page.fill('#loginPass', 'Password@123');

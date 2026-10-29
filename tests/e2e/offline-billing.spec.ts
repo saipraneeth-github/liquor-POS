@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { addProduct, login } from './helpers';
 
-test.skip('offline bill is queued, auto-synced on reconnect and recorded exactly once', async ({ page, context }) => {
+test('offline bill is queued, auto-synced on reconnect and recorded exactly once', async ({ page, context }) => {
   await login(page, 'cashier@liquor.com');
   await addProduct(page, 'Blenders Pride');
 
@@ -48,7 +48,7 @@ test.skip('offline bill is queued, auto-synced on reconnect and recorded exactly
   await expect(page.locator(`tr.bill-row[data-bill-number="${billNo}"]`)).toHaveCount(1);
 });
 
-test.skip('offline bills stay with the cashier who rang them: the next user to sign in does not submit them', async ({ page, context }) => {
+test('offline bills stay with the cashier who rang them: the next user to sign in does not submit them', async ({ page, context }) => {
   await login(page, 'cashier@liquor.com');
   await addProduct(page, 'Blenders Pride');
   await context.setOffline(true);
