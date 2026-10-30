@@ -21,6 +21,10 @@ interface Product {
   categoryName?: string;
 }
 
+interface StockItem {
+  quantity: number;
+}
+
 export function Products() {
   const { user } = useAuth();
   const isManager = user?.role === 'manager' || user?.role === 'owner';
@@ -416,4 +420,3 @@ export function Products() {
     </section>
   );
 }
-

@@ -137,6 +137,8 @@ export function Layout() {
         </main>
       </div>
 
+      <div id="toastHost" className="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
       {/* Sign-out with unsynced bills warning modal */}
       {showSignoutWarning && (
         <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">

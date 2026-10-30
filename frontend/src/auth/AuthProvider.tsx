@@ -20,14 +20,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    try {
-      const u = localStorage.getItem('user');
-      return u ? JSON.parse(u) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const logout = () => {
