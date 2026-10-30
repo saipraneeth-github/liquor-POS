@@ -5,3 +5,7 @@
 ## 2026-10-29 - Prevent N+1 and Promise.all deadlocks on bulk database updates
 **Learning:** When performing updates on database rows sequentially, one might be tempted to use `Promise.all(updates)` to parallelize queries. However, in PostgreSQL, this disrupts deterministic lock ordering (even if inputs are pre-sorted) and severely risks deadlocks during concurrent transactions. Conversely, sequential `for` loops introduce N+1 query performance bottlenecks.
 **Action:** Always prefer a single batched upsert query (e.g., `insert().values(map).onConflictDoUpdate()` with `EXCLUDED.quantity`) over sequential updates or parallel `Promise.all` loops. This maintains lock safety while maximizing query performance.
+
+## $(date +%Y-%m-%d) - Optimize stock updates using bulk CASE WHEN
+**Learning:** Sequential updates for stock decrementing inside a `for (const delta of deltas)` loop for bill processing can cause severe performance issues (N+1 queries) and DB lock contention. Drizzle lacks native batch conditional updates.
+**Action:** Use a single bulk update with SQL `CASE WHEN` to aggregate multiple `update` operations into one statement. By mapping deltas to `sql\`WHEN \${stock.productId} = \${d.productId} THEN \${-d.delta}\`` and wrapping in `CAST(CASE ... END AS integer)`, Drizzle/Postgres can decrement all items in one query. Make sure to track returned `productId`s to enforce full-batch stock availability checks.
