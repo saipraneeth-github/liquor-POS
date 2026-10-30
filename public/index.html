@@ -60,6 +60,7 @@
       const originalText = refreshBtn ? refreshBtn.innerText : 'Refresh List';
       if (refreshBtn) {
         refreshBtn.disabled = true;
+        refreshBtn.setAttribute('aria-busy', 'true');
         refreshBtn.innerText = 'Refreshing...';
       }
 
@@ -93,6 +94,7 @@
       } finally {
         if (refreshBtn) {
           refreshBtn.disabled = false;
+          refreshBtn.removeAttribute('aria-busy');
           refreshBtn.innerText = originalText;
         }
       }
@@ -108,6 +110,7 @@
       const submitBtn = document.getElementById('submitBtn');
       const originalText = submitBtn.innerText;
       submitBtn.disabled = true;
+      submitBtn.setAttribute('aria-busy', 'true');
       submitBtn.innerText = 'Creating...';
 
       try {
@@ -122,6 +125,7 @@
         loadSyndicates();
       } finally {
         submitBtn.disabled = false;
+        submitBtn.removeAttribute('aria-busy');
         submitBtn.innerText = originalText;
       }
     }
