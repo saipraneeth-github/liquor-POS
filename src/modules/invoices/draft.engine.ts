@@ -38,8 +38,9 @@ function within(a: Decimal, b: string | Decimal): boolean {
 }
 
 /**
- * Cases → bottles using the matched product's pack size. The rate is treated as per-case (and divided by the
- * pack size) when cases × rate matches the line amount, or — without an amount — when the rate exceeds the MRP.
+ * Cases → bottles using the matched product's pack size (or the pack size extracted directly from the invoice).
+ * The rate is treated as per-case (and divided by the pack size) when cases × rate matches the line amount,
+ * or — without an amount — when the rate exceeds the MRP.
  */
 export function convertCases(
   line: Pick<ExtractedLine, 'cases' | 'quantity' | 'rate' | 'mrp' | 'amount'>,
@@ -70,7 +71,8 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
   return lines.map((line) => {
     const match = matchLine(line, catalog);
     const product = match.productId ? byId.get(match.productId)! : null;
-    const conv = convertCases(line, product?.packQuantity ?? null);
+    const effectivePackQty = product?.packQuantity ?? line.packQuantity ?? null;
+    const conv = convertCases(line, effectivePackQty);
     const flags = [...line.flags, ...match.flags, ...conv.flags];
     const rawDescription = line.cases !== null && !conv.flags.includes('CASES_CONVERTED')
       ? `${line.description} [${line.cases} cs]`
@@ -80,10 +82,11 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       conv.quantity = null;
       flags.push('VALUE_OUT_OF_RANGE');
     }
+    const effectiveMrp = line.mrp ?? product?.mrp ?? null;
     const validated = validateLine({
       quantity: conv.quantity,
       costPrice: conv.rate,
-      mrp: line.mrp,
+      mrp: effectiveMrp,
       extractedAmount: line.amount,
       catalogMrp: product?.mrp ?? null,
       confidence: line.confidence,
@@ -102,7 +105,7 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       matchConfidence: match.productId ? match.confidence.toFixed(3) : (match.confidence > 0 ? match.confidence.toFixed(3) : null),
       quantity: conv.quantity !== null && conv.quantity > 0 ? conv.quantity : 0,
       costPrice: conv.rate ?? '0.00',
-      mrp: line.mrp ?? '0.00',
+      mrp: effectiveMrp ?? '0.00',
       taxRate: validTaxRate(line.taxRate) ?? product?.taxRate ?? DEFAULT_TAX_RATE,
       extractedAmount: line.amount,
       lineCostTotal: validated.lineCostTotal,

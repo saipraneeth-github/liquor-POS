@@ -1,7 +1,7 @@
 # PROGRESS.md -- where we are and how to resume
 
 > Living handoff file. Update it at the end of every work session. Read `AGENTS.md` for the project itself.
-> Last updated: 2026-10-26 (IST)
+> Last updated: 2026-10-30 (IST)
 
 ## TL;DR
 
@@ -161,3 +161,14 @@ Design:
     - Updated `App.tsx`, `Layout.tsx`, `client.ts` (added `put` and `delete`), and route bindings.
   - Preserved `preview.html` 100% intact as source-of-truth and backup at `/preview`.
   - Full verification: `npm run build` passed (0 errors, Vite bundle 2.7s), Vitest **357/357** passed (24 unit test files, 13 integration test files), Playwright E2E **21/21** passed (12 spec files).
+
+- **2026-10-30** -- Telangana Excise ICDC (Invoice Cum Delivery Challan) Invoice Support:
+  - Implemented specialized high-precision extractor for Telangana State Beverages Corporation Limited (TSBCL) ICDC PDFs:
+    - Stream format tolerance: detect `%PDF-` with leading whitespace bytes (`ICDCB.pdf`) via `findPdfOffset`.
+    - Row-anchor clustering: dual-anchored on Sl.No + 4-digit Excise Brand Code with multi-line brand name reconstruction and cross-page continuation.
+    - Dual quantities: robust parsing for both standard and condensed challan layouts into cases and loose bottles.
+    - Accurate financial totals: extracts Net Invoice Value from `(-)Less this Invoice Value:` label and Special Excise Cess.
+    - Catalog matching by `exciseCode` (or SKU fallback) with confidence 1.0.
+    - Integrated with generic fallback preserving 100% backward compatibility.
+  - Added full test suite in `tests/unit/icdc.test.ts` verifying all 10 sample PDFs in `testing_invoices/` (100% clean extraction, 0 uncaught exceptions).
+  - Full verification: `npm run build` clean, Vitest **371/371** passed (25 unit files, 13 integration files), Playwright E2E **21/21** passed.

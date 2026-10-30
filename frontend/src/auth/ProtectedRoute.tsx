@@ -31,25 +31,20 @@ export function ProtectedRoute() {
   const reqRank = roleRank[reqRole as keyof typeof roleRank];
   const userRank = roleRank[user.role as keyof typeof roleRank];
 
-  const denied = userRank < reqRank;
-
-  if (denied) {
+  if (userRank < reqRank) {
+    // Show toast via the toast host rendered in Layout
     const raw = location.pathname.replace('/', '') || 'this page';
     const routeLabel = raw.charAt(0).toUpperCase() + raw.slice(1);
-    const triggerToast = () => {
+    setTimeout(() => {
       const toastHost = document.getElementById('toastHost');
-      if (toastHost && !toastHost.textContent?.includes(`cannot open ${routeLabel}`)) {
+      if (toastHost) {
         const el = document.createElement('div');
-        el.className = 'toast error bg-red-600 text-white p-3 rounded shadow';
-        el.textContent = `cannot open ${routeLabel}`;
+        el.className = 'toast error';
+        el.textContent = `Your role (${user.role}) cannot open ${routeLabel}.`;
         toastHost.appendChild(el);
-        setTimeout(() => el.remove(), 4000);
+        setTimeout(() => el.remove(), 3000);
       }
-    };
-    triggerToast();
-    setTimeout(triggerToast, 50);
-    setTimeout(triggerToast, 150);
-
+    }, 50);
     return <Navigate to="/" replace />;
   }
 

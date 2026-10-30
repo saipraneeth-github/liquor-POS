@@ -38,6 +38,7 @@ export async function loadCatalog(exec: Tx | typeof db = db): Promise<CatalogEnt
   const rows = await exec
     .select({
       id: products.id, name: products.name, brand: products.brand, barcode: products.barcode, sku: products.sku,
+      exciseCode: products.exciseCode,
       volumeMl: products.volumeMl, packQuantity: products.packQuantity, mrp: products.mrp, isActive: products.isActive,
       taxRate: categories.taxRate,
     })

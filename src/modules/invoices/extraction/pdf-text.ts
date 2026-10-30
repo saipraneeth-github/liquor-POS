@@ -5,13 +5,13 @@
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { ocrPng, OCR_MAX_PAGES, type OcrLine } from './ocr.js';
-import { NothingExtractableError } from './types.js';
+import { NothingExtractableError, type PagePositionedItem } from './types.js';
 
 const MAX_PDF_PAGES = 20;
 const MIN_TEXT_CHARS_PER_PAGE = 20;
 const RENDER_SCALE = 2;
 
-interface PositionedItem { str: string; x: number; y: number; width: number; size: number }
+export interface PositionedItem { str: string; x: number; y: number; width: number; size: number }
 
 export interface PdfTextResult {
   lines: OcrLine[];          // confidence 100 for text-layer lines
@@ -19,6 +19,7 @@ export interface PdfTextResult {
   ocrPages: number;
   ocrConfidence: number | null;
   truncated: boolean;
+  items?: PagePositionedItem[];
 }
 
 const require = createRequire(import.meta.url);
@@ -82,6 +83,7 @@ export async function extractPdfText(buf: Buffer): Promise<PdfTextResult> {
 
   const pages = Math.min(doc.numPages, MAX_PDF_PAGES);
   const lines: OcrLine[] = [];
+  const allPositionedItems: PagePositionedItem[] = [];
   let ocrPages = 0;
   let confSum = 0;
   try {
@@ -92,7 +94,11 @@ export async function extractPdfText(buf: Buffer): Promise<PdfTextResult> {
       for (const it of tc.items) {
         if (!('str' in it)) continue;
         const size = Math.hypot(it.transform[0], it.transform[1]) || it.height || 10;
-        items.push({ str: it.str, x: it.transform[4], y: it.transform[5], width: it.width, size });
+        const item = { str: it.str, x: it.transform[4], y: it.transform[5], width: it.width, size };
+        items.push(item);
+        if (it.str.trim()) {
+          allPositionedItems.push({ page: p, ...item });
+        }
       }
       const chars = items.reduce((n, i) => n + i.str.trim().length, 0);
       if (chars >= MIN_TEXT_CHARS_PER_PAGE) {
@@ -122,5 +128,6 @@ export async function extractPdfText(buf: Buffer): Promise<PdfTextResult> {
     ocrPages,
     ocrConfidence: ocrPages > 0 ? Math.round(confSum / ocrPages) : null,
     truncated: doc.numPages > pages,
+    items: allPositionedItems,
   };
 }

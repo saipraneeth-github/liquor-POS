@@ -1,7 +1,7 @@
 /**
  * match.engine.ts — PURE: invoice line → catalog product.
  *
- * barcode exact → SKU exact → fuzzy name (weighted token Dice; brand tokens count double; OCR-tolerant tokens
+ * barcode exact → SKU exact (or exciseCode exact) → fuzzy name (weighted token Dice; brand tokens count double; OCR-tolerant tokens
  * and volumes). Confidence ≥ 0.85 → MATCHED, 0.60–0.85 → SUGGESTED (a person must confirm), else UNMATCHED.
  * Only active products are candidates.
  */
@@ -18,6 +18,7 @@ export interface CatalogProduct {
   brand: string;
   barcode: string | null;
   sku: string | null;
+  exciseCode?: string | null;
   volumeMl: number | null;
   packQuantity: number | null;
   mrp: string;
@@ -142,7 +143,7 @@ export function matchLine(line: MatchInput, catalog: CatalogProduct[]): MatchRes
   }
   const sku = line.sku?.trim().toLowerCase();
   if (sku) {
-    const p = active.find((c) => c.sku && c.sku.trim().toLowerCase() === sku);
+    const p = active.find((c) => (c.sku && c.sku.trim().toLowerCase() === sku) || (c.exciseCode && c.exciseCode.trim().toLowerCase() === sku));
     if (p) return { productId: p.id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
   }
 

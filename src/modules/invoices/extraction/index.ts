@@ -1,7 +1,7 @@
 /**
- * Extraction orchestrator: bytes â†’ { header, lines, total, warnings, meta }.
+ * Extraction orchestrator: bytes → { header, lines, total, warnings, meta }.
  * Type is sniffed from content; CSV/XLSX go straight to the table engine, PDF text and OCR output go through
- * the text-line engine first. Nothing here touches the database.
+ * the text-line engine first (or the dedicated Telangana ICDC engine for excise challans). Nothing here touches the database.
  */
 import { detectFileType, decodeText } from './detect-type.js';
 import { parseCsvRows, parseXlsxRows } from './tabular.js';
@@ -10,23 +10,32 @@ import { textLinesToRows } from './text-lines.engine.js';
 import { extractHeaderFields } from './header-fields.engine.js';
 import { extractPdfText } from './pdf-text.js';
 import { ocrImage, type OcrLine } from './ocr.js';
+import { isIcdcDocument, extractIcdcDocument } from './icdc.engine.js';
 import {
   NothingExtractableError,
   type ColumnMapping,
+  type ExtractedHeader,
   type ExtractionResult,
   type ExtractionMeta,
   type TableResult,
 } from './types.js';
 
 export * from './types.js';
-export { detectFileType } from './detect-type.js';
+export { detectFileType, findPdfOffset } from './detect-type.js';
 export { terminateOcr } from './ocr.js';
+export {
+  isIcdcDocument,
+  extractIcdcDocument,
+  extractIcdcHeader,
+  extractIcdcTable,
+  extractIcdcTotals,
+} from './icdc.engine.js';
 
 export interface ExtractOptions {
   columnMapping?: ColumnMapping;
 }
 
-/** Text lines (PDF / OCR) â†’ table result, attaching per-line OCR confidence by matching line text. */
+/** Text lines (PDF / OCR) → table result, attaching per-line OCR confidence by matching line text. */
 function tableFromTextLines(lines: OcrLine[], mapping?: ColumnMapping): { table: TableResult; headerText: string[]; tableStart: number } {
   lines = lines.filter((l) => l.text.trim());
   const { rows, headerLineIndex } = textLinesToRows(lines.map((l) => l.text));
@@ -50,8 +59,13 @@ function rowsAsText(rows: string[][]): string[] {
 export async function extractInvoice(buf: Buffer, opts: ExtractOptions = {}): Promise<ExtractionResult> {
   const started = Date.now();
   const detected = detectFileType(buf);
+  if (detected.kind === 'PDF' && detected.offset && detected.offset > 0) {
+    buf = buf.subarray(detected.offset);
+  }
+
   const warnings: string[] = [];
   let table: TableResult;
+  let header: ExtractedHeader | null = null;
   let headerText: string[];
   let tableStart = 0;
   const meta: Partial<ExtractionMeta> = {};
@@ -71,7 +85,7 @@ export async function extractInvoice(buf: Buffer, opts: ExtractOptions = {}): Pr
       try {
         parsed = await parseXlsxRows(buf);
       } catch {
-        throw new NothingExtractableError('The Excel workbook could not be read â€” re-save it as .xlsx or export to CSV');
+        throw new NothingExtractableError('The Excel workbook could not be read — re-save it as .xlsx or export to CSV');
       }
       table = rowsToLines(parsed.rows, opts.columnMapping);
       headerText = rowsAsText(parsed.rows);
@@ -83,8 +97,19 @@ export async function extractInvoice(buf: Buffer, opts: ExtractOptions = {}): Pr
     }
     case 'PDF': {
       const pdf = await extractPdfText(buf);
-      ({ table, headerText, tableStart } = tableFromTextLines(pdf.lines, opts.columnMapping));
-      meta.engine = pdf.ocrPages > 0 ? (pdf.ocrPages < pdf.pages ? 'pdfjs+tesseract' : 'tesseract(pdf)') : 'pdfjs';
+      const isIcdc = Boolean(pdf.items && isIcdcDocument(pdf.lines.map((l) => l.text)));
+      if (isIcdc && pdf.items) {
+        const icdc = extractIcdcDocument(pdf.items, pdf.lines.map((l) => l.text));
+        table = icdc.table;
+        headerText = icdc.headerText;
+        header = icdc.header;
+        tableStart = 0;
+        meta.engine = 'icdc-extractor';
+        if (icdc.specialCess) meta.specialCess = icdc.specialCess;
+      } else {
+        ({ table, headerText, tableStart } = tableFromTextLines(pdf.lines, opts.columnMapping));
+        meta.engine = pdf.ocrPages > 0 ? (pdf.ocrPages < pdf.pages ? 'pdfjs+tesseract' : 'tesseract(pdf)') : 'pdfjs';
+      }
       meta.pages = pdf.pages;
       meta.ocrPages = pdf.ocrPages;
       if (pdf.ocrConfidence !== null) meta.ocrConfidence = pdf.ocrConfidence;
@@ -106,12 +131,12 @@ export async function extractInvoice(buf: Buffer, opts: ExtractOptions = {}): Pr
 
   if (table.lines.length === 0) {
     const hint = detected.kind === 'CSV' || detected.kind === 'EXCEL'
-      ? 'No invoice lines found. The sheet needs a header row with at least Description/Item and two of Qty, Rate, MRP, Amount â€” or send a columnMapping.'
+      ? 'No invoice lines found. The sheet needs a header row with at least Description/Item and two of Qty, Rate, MRP, Amount — or send a columnMapping.'
       : 'No invoice lines could be read from the document. Use a clearer scan/photo, a text PDF, or upload the CSV/Excel version.';
     throw new NothingExtractableError(hint);
   }
 
-  const header = extractHeaderFields(headerText, tableStart);
+  header ??= extractHeaderFields(headerText, tableStart);
   if (table.totalUnreadable) warnings.push('TOTAL_UNREADABLE');
   else if (table.capturedTotal === null) warnings.push('TOTAL_NOT_FOUND');
 

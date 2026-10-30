@@ -25,6 +25,16 @@ export const INVOICE_FIELDS: readonly InvoiceField[] = [
 /** Explicit column mapping override: field → 0-based column index or header text. */
 export type ColumnMapping = Partial<Record<InvoiceField, number | string>>;
 
+/** Positioned text item extracted from a PDF page. */
+export interface PagePositionedItem {
+  page: number;
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  size: number;
+}
+
 /** One invoice line as read from the document, before catalog matching. */
 export interface ExtractedLine {
   lineNumber: number;
@@ -39,6 +49,10 @@ export interface ExtractedLine {
   mrp: string | null;
   amount: string | null;
   taxRate: string | null;
+  /** Units per case (when specified on the invoice, e.g. '12 / 650 ml' → 12). */
+  packQuantity?: number | null;
+  /** Volume in ml (e.g. 650). */
+  volumeMl?: number | null;
   /** OCR confidence for the line (0-100), when the text came from OCR. */
   confidence: number | null;
   /** Extraction-time flags, e.g. UNREADABLE_NUMBER. */
@@ -75,6 +89,7 @@ export interface ExtractionMeta {
   sheetName?: string;
   gstin?: string | null;
   capturedTotal?: string | null;
+  specialCess?: string | null;
   [key: string]: unknown;
 }
 

@@ -5,11 +5,31 @@ export interface DetectedType {
   mimeType: string;
   /** For IMAGE: 'png' | 'jpeg' */
   subtype?: 'png' | 'jpeg' | 'csv' | 'xlsx' | 'pdf';
+  /** Byte offset of the magic header inside the buffer (when preceded by leading whitespace) */
+  offset?: number;
 }
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * Finds the byte offset of '%PDF-' within the first 1024 bytes when preceded only by whitespace or harmless bytes.
+ * Returns -1 if not found.
+ */
+export function findPdfOffset(buf: Buffer): number {
+  if (buf.length < 5) return -1;
+  if (buf.subarray(0, 5).toString('latin1') === '%PDF-') return 0;
+  const scanLimit = Math.min(buf.length, 1024);
+  const idx = buf.subarray(0, scanLimit).indexOf('%PDF-');
+  if (idx !== -1) {
+    const preamble = buf.subarray(0, idx).toString('latin1');
+    if (/^[\s\r\n\t\x00-\x1f]*$/.test(preamble)) {
+      return idx;
+    }
+  }
+  return -1;
+}
 
 /**
  * Identifies the upload by its magic bytes / content — never by the file name or the client's content type.
@@ -18,7 +38,15 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 export function detectFileType(buf: Buffer): DetectedType {
   if (buf.length === 0) throw new UnsupportedFileError('The uploaded file is empty');
 
-  if (buf.subarray(0, 5).toString('latin1') === '%PDF-') return { kind: 'PDF', mimeType: 'application/pdf', subtype: 'pdf' };
+  const pdfOffset = findPdfOffset(buf);
+  if (pdfOffset >= 0) {
+    return {
+      kind: 'PDF',
+      mimeType: 'application/pdf',
+      subtype: 'pdf',
+      ...(pdfOffset > 0 ? { offset: pdfOffset } : {}),
+    };
+  }
   if (buf.length >= 8 && buf.subarray(0, 8).equals(PNG_MAGIC)) return { kind: 'IMAGE', mimeType: 'image/png', subtype: 'png' };
   if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { kind: 'IMAGE', mimeType: 'image/jpeg', subtype: 'jpeg' };
 
