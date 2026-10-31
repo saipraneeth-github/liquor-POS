@@ -927,8 +927,8 @@ function errorState(el, err) { if (el) el.innerHTML = `<div class="state error" 
 function needBranch(el) { if (S.branchId) return true; empty(el, 'Select a branch first (branch selector in the header).'); return false; }
 async function withBtn(btn, label, fn) {
   const old = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; if (label) btn.textContent = label; }
-  try { return await fn(); } finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+  if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); if (label) btn.textContent = label; }
+  try { return await fn(); } finally { if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); btn.textContent = old; } }
 }
 
 /** Inline field error: aria-invalid + described-by message + focus; cleared on the next edit. */
@@ -1099,6 +1099,7 @@ async function doLogin() {
   errEl.textContent = '';
   if (!email || !password) { errEl.textContent = 'Enter your email and password.'; return; }
   btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
   btn.textContent = 'Signing in…';
   try {
     const data = await api('/auth/login', { method: 'POST', body: { email, password } });
@@ -1111,6 +1112,7 @@ async function doLogin() {
       : e.message;
   } finally {
     btn.disabled = false;
+    btn.removeAttribute('aria-busy');
     btn.textContent = 'Sign In';
   }
 }
@@ -1814,6 +1816,7 @@ async function checkout() {
   const btn = $('checkoutBtn');
   S.checkingOut = true;
   btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
   btn.textContent = 'Processing…';
   // A table bill must close its session with the new bill id; that cannot happen from the offline queue,
   // so table bills are refused offline (the cart is kept) instead of leaving the table open to be billed twice.
@@ -1828,6 +1831,7 @@ async function checkout() {
   } finally {
     S.checkingOut = false;
     btn.disabled = !!discountProblem();
+    btn.removeAttribute('aria-busy');
     btn.textContent = 'Checkout & Print';
   }
 }
