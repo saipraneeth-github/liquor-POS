@@ -33,9 +33,12 @@ const PHONE = z.string().trim().transform((v, ctx) => {
 
 const CUST_NAME = z.string().trim().min(1).max(200).refine((s) => !/[<>]/.test(s), 'Customer name must not contain < or >');
 
+const CUST_GSTIN = z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be 15 alphanumeric characters');
+
 export const CreateCustomerSchema = z.object({
   name:          CUST_NAME,
   phone:         PHONE,
+  gstin:         CUST_GSTIN.optional(),
   creditAllowed: z.boolean().optional(),
   creditLimit:   DECIMAL.optional(),
 });
@@ -43,6 +46,7 @@ export const CreateCustomerSchema = z.object({
 export const UpdateCustomerSchema = z.object({
   name:          CUST_NAME.optional(),
   phone:         PHONE.optional(),
+  gstin:         CUST_GSTIN.nullable().optional(),
   creditAllowed: z.boolean().optional(),
   creditLimit:   DECIMAL.optional(),
   isActive:      z.boolean().optional(),
@@ -95,6 +99,7 @@ export async function createCustomer(branchId: string, input: CreateCustomerInpu
       branchId,
       name:          input.name,
       phone:         input.phone,
+      gstin:         input.gstin ?? null,
       creditAllowed: input.creditAllowed ?? false,
       creditLimit:   new Decimal(input.creditLimit ?? '0').toFixed(2),
     }).returning();
@@ -122,6 +127,7 @@ export async function updateCustomer(id: string, input: UpdateCustomerInput): Pr
       const patch: Partial<typeof customers.$inferInsert> = {};
       if (input.name !== undefined)          patch.name = input.name;
       if (input.phone !== undefined)         patch.phone = input.phone;
+  if (input.gstin !== undefined)         patch.gstin = input.gstin;
       if (input.creditAllowed !== undefined) patch.creditAllowed = input.creditAllowed;
       if (input.creditLimit !== undefined)   patch.creditLimit = new Decimal(input.creditLimit).toFixed(2);
       if (input.isActive !== undefined)      patch.isActive = input.isActive;

@@ -36,6 +36,34 @@
       "when": 1792985801027,
       "tag": "0004_unique_daily_closing",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793433216264,
+      "tag": "0005_menu_servings_print",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793434700054,
+      "tag": "0006_saas_tenancy_gst_pour",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793437436362,
+      "tag": "0007_tenant_catalog_billing_audit_print",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793441366585,
+      "tag": "0008_payments_mail_reset_dunning_agent",
+      "breakpoints": true
     }
   ]
 }

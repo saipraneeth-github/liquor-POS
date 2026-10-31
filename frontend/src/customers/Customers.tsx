@@ -41,6 +41,7 @@ export function Customers() {
   // New customer form
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  const [newGstin, setNewGstin] = useState('');
   const [newLimit, setNewLimit] = useState('');
   const [newAllow, setNewAllow] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -130,6 +131,7 @@ export function Customers() {
     const body: any = {
       name: newName.trim(),
       phone: phoneTrimmed,
+      ...(newGstin.trim() ? { gstin: newGstin.trim().toUpperCase() } : {}),
     };
     if (isManager) {
       const limitTrimmed = newLimit.trim();
@@ -142,6 +144,7 @@ export function Customers() {
       showToast('Customer created: ' + res.customer.name, 'success');
       setNewName('');
       setNewPhone('');
+      setNewGstin('');
       setNewLimit('');
       setNewAllow(false);
       setSearch(res.customer.name);
@@ -333,6 +336,17 @@ export function Customers() {
                     placeholder="10-digit mobile"
                     value={newPhone}
                     onChange={(e) => setNewPhone(e.target.value)}
+                  />
+                </label>
+                <label className="field flex flex-col gap-1 text-sm font-medium" htmlFor="custGstin">
+                  GSTIN (optional, for B2B bills)
+                  <input
+                    id="custGstin"
+                    className="input p-2 border rounded font-mono"
+                    maxLength={15}
+                    placeholder="15-character GSTIN"
+                    value={newGstin}
+                    onChange={(e) => setNewGstin(e.target.value)}
                   />
                 </label>
                 {isManager && (

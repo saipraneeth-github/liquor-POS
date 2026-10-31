@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Integration-test harness: boots the real Fastify app against an in-memory PGlite
  * database with all migrations applied. Each test FILE gets its own fresh database
  * (vitest isolates modules per file).
@@ -40,7 +40,7 @@ export async function setupIntegration(): Promise<IntegrationContext> {
 
   await runMigrations();
 
-  const [syndicate] = await db.insert(schema.syndicates).values({ name: 'Test Syndicate' }).returning();
+  const [syndicate] = await db.insert(schema.syndicates).values({ name: 'Test Syndicate', maxBranches: 50 }).returning();
   const [branch] = await db.insert(schema.branches).values({ name: 'Main', code: 'MAIN', syndicateId: syndicate.id }).returning();
   const [other] = await db.insert(schema.branches).values({ name: 'Other', code: 'OTH' }).returning();
 

@@ -23,6 +23,7 @@ export default defineConfig({
     env: {
       DATABASE_URL: process.env.E2E_DATABASE_URL ?? 'pglite://./.pglite-e2e',
       PORT: '3001',
+      LEGACY_PREVIEW: '1',   // the original journeys drive preview.html at "/"; React specs use /login
       NODE_ENV: 'development',
     },
   },

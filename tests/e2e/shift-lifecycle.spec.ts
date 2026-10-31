@@ -19,7 +19,7 @@ test('cashier opens a shift, rings a bill and closes with denominations showing 
   await expect(page.locator('#shiftExpectedLive')).toHaveText('₹1,000.00');
 
   // Ring one Old Monk (MRP ₹450) in cash
-  await addProduct(page, 'Old Monk');
+  await addProduct(page, 'Old Monk XXX');
   await page.click('#pay-CASH');
   await checkoutAndGetBillNo(page);
 

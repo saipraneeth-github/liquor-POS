@@ -9,6 +9,12 @@ import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { productRoutes } from './modules/products/product.routes.js';
+import { menuRoutes } from './modules/menu/menu.routes.js';
+import { printRoutes } from './modules/printing/print.routes.js';
+import { pourRoutes } from './modules/compliance/pour.routes.js';
+import { agentRoutes } from './modules/printing/agent.routes.js';
+import { platformRoutes } from './modules/platform/platform.routes.js';
+import { paymentRoutes, webhookRoutes } from './modules/payments/payment.routes.js';
 import { billingRoutes } from './modules/billing/billing.routes.js';
 import { closingRoutes } from './modules/closing/closing.routes.js';
 import { inventoryRoutes } from './modules/inventory/inventory.routes.js';
@@ -70,8 +76,12 @@ export function buildApp() {
     if (!accept.includes('text/html')) {
       return { name: 'Liquor Counter POS API', version: '0.1.0', health: '/health', preview: '/preview', api: '/api/v1' };
     }
-    // In production, React SPA is served from dist/frontend via fastifyStatic
-    // In dev, fall back to the standalone preview.html
+    // The React app owns "/" once it is built; LEGACY_PREVIEW=1 keeps the standalone preview.html
+    // (used by the original Playwright journeys). Without a build, fall back to preview.html.
+    const spaIndex = path.join(process.cwd(), 'dist/frontend/index.html');
+    if (process.env.LEGACY_PREVIEW !== '1' && fs.existsSync(spaIndex)) {
+      return reply.type('text/html').send(fs.readFileSync(spaIndex, 'utf8'));
+    }
     const previewPath = path.resolve(process.cwd(), 'preview.html');
     if (fs.existsSync(previewPath)) {
       return reply.type('text/html').send(fs.readFileSync(previewPath, 'utf8'));
@@ -107,6 +117,13 @@ export function buildApp() {
 
   fastify.register(authRoutes,      { prefix: '/api/v1' });
   fastify.register(productRoutes,   { prefix: '/api/v1' });
+  fastify.register(menuRoutes,      { prefix: '/api/v1' });
+  fastify.register(printRoutes,     { prefix: '/api/v1' });
+  fastify.register(pourRoutes,      { prefix: '/api/v1' });
+  fastify.register(agentRoutes,     { prefix: '/api/v1' });
+  fastify.register(platformRoutes,  { prefix: '/api/v1' });
+  fastify.register(paymentRoutes,   { prefix: '/api/v1' });
+  fastify.register(webhookRoutes,   { prefix: '/api/v1' });   // own scope: raw body for signature checks
   fastify.register(billingRoutes,   { prefix: '/api/v1' });
   fastify.register(closingRoutes,   { prefix: '/api/v1' });
   fastify.register(inventoryRoutes, { prefix: '/api/v1' });

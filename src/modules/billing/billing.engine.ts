@@ -7,6 +7,9 @@ export interface BillLineInput {
   quantity: number;
   unitPrice: string;   // Decimal string, e.g., "450.00"
   taxRate: string;     // Decimal string, e.g., "18.00"
+  servingId?: string | null;      // peg / glass serving (unitPrice is then the serving price)
+  servingLabel?: string | null;
+  servingMl?: number | null;
 }
 
 export interface BillCalculation {
@@ -14,7 +17,8 @@ export interface BillCalculation {
   subtotal: string;
   taxAmount: string;
   discount: string;
-  total: string;
+  roundOff: string;    // paise added/removed to reach a whole rupee (0.00 unless rounding is on)
+  total: string;       // subtotal - discount + roundOff
 }
 
 export interface BillLineCalculated {
@@ -25,6 +29,9 @@ export interface BillLineCalculated {
   taxAmount: string;
   lineTotal: string;     // unit_price * qty + tax
   linePretax: string;    // unit_price * qty
+  servingId: string | null;
+  servingLabel: string | null;
+  servingMl: number | null;
 }
 
 // ─── BILLING ENGINE ─────────────────────────────────────────────────────────
@@ -36,6 +43,7 @@ export interface BillLineCalculated {
 export function calculateBill(
   lines: BillLineInput[],
   discountAmount: string = '0',
+  roundToRupee = false,
 ): BillCalculation {
   if (lines.length === 0) {
     throw new Error('Bill must contain at least one line item');
@@ -69,11 +77,15 @@ export function calculateBill(
     .reduce((acc, l) => acc.plus(l.linePretax), new Decimal(0))
     .toDecimalPlaces(2);
 
-  const total = subtotal.minus(discount).toDecimalPlaces(2);
+  const payable = subtotal.minus(discount).toDecimalPlaces(2);
 
-  if (total.isNegative()) {
+  if (payable.isNegative()) {
     throw new Error('Discount exceeds bill subtotal');
   }
+
+  // Optional round-off to the nearest rupee; tax below is computed on the pre-rounding net
+  const total = roundToRupee ? payable.toDecimalPlaces(0, Decimal.ROUND_HALF_UP) : payable;
+  const roundOff = total.minus(payable);
 
   // A bill-level discount reduces the GST transaction value, so it is apportioned across
   // lines (pro rata, exact to the paisa) before the tax-inclusive split.
@@ -94,6 +106,9 @@ export function calculateBill(
       taxAmount: lineTaxAmount.toFixed(2),
       lineTotal: p.linePretax.toFixed(2),
       linePretax: p.linePretax.toFixed(2),
+      servingId: p.line.servingId ?? null,
+      servingLabel: p.line.servingLabel ?? null,
+      servingMl: p.line.servingMl ?? null,
     };
   });
 
@@ -106,6 +121,7 @@ export function calculateBill(
     subtotal: subtotal.toFixed(2),
     taxAmount: totalTax.toFixed(2),
     discount: discount.toFixed(2),
+    roundOff: roundOff.toFixed(2),
     total: total.toFixed(2),
   };
 }
@@ -139,25 +155,38 @@ export function allocateDiscount(amounts: Decimal[], discount: Decimal): Decimal
 
 export const DEFAULT_TAX_RATE = '18.00';
 
-/** Tax rate comes from the product's category; fall back to 18% only when uncategorised. */
-export function resolveTaxRate(categoryTaxRate: string | null | undefined): string {
-  return categoryTaxRate == null ? DEFAULT_TAX_RATE : new Decimal(categoryTaxRate).toFixed(2);
+/**
+ * Tax rate: the product's own GST % when set (menu items), else its category rate;
+ * 18% only when neither exists.
+ */
+export function resolveTaxRate(
+  categoryTaxRate: string | null | undefined,
+  productGstRate?: string | null,
+): string {
+  const rate = productGstRate ?? categoryTaxRate;
+  return rate == null ? DEFAULT_TAX_RATE : new Decimal(rate).toFixed(2);
 }
 
 /**
- * Merges duplicate productIds by summing quantities, preserving first-seen order.
+ * Merges duplicate lines (same product and same serving) by summing quantities,
+ * preserving first-seen order.
  */
-export function mergeBillItems<T extends { productId: string; quantity: number }>(
+export function mergeBillItems<T extends { productId: string; quantity: number; servingId?: string | null }>(
   items: T[],
-): { productId: string; quantity: number }[] {
-  const merged = new Map<string, number>();
+): { productId: string; quantity: number; servingId?: string }[] {
+  const merged = new Map<string, { productId: string; quantity: number; servingId?: string }>();
   for (const item of items) {
     if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
       throw new Error(`Invalid quantity ${item.quantity} for product ${item.productId}`);
     }
-    merged.set(item.productId, (merged.get(item.productId) ?? 0) + item.quantity);
+    const key = `${item.productId}|${item.servingId ?? ''}`;
+    const existing = merged.get(key);
+    if (existing) existing.quantity += item.quantity;
+    else merged.set(key, item.servingId
+      ? { productId: item.productId, servingId: item.servingId, quantity: item.quantity }
+      : { productId: item.productId, quantity: item.quantity });
   }
-  return Array.from(merged, ([productId, quantity]) => ({ productId, quantity }));
+  return Array.from(merged.values());
 }
 
 /** CODE-YYYY-000001 */

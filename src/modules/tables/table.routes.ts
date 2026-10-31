@@ -5,6 +5,7 @@
  * POST /api/v1/tables/:branchId          — create a table (manager+)
  * POST /api/v1/tables/:tableId/open      — open/occupy a table
  * POST /api/v1/tables/:tableId/close     — close table and end session
+ * POST /api/v1/tables/:tableId/checkout  — bill the table's KOT items, then close it (cashier+)
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -17,6 +18,7 @@ import {
   closeTable,
   createTable,
 } from './table.service.js';
+import { checkoutTable, CheckoutTableSchema } from './table-checkout.service.js';
 
 const BranchParams = z.object({ branchId: z.string().uuid() });
 const TableParams  = z.object({ tableId: z.string().uuid() });
@@ -81,6 +83,21 @@ export async function tableRoutes(app: FastifyInstance) {
       return reply.status(201).send({ session });
     } catch (err) {
       return sendError(reply, err, 'Open table failed');
+    }
+  });
+
+  // Checkout: KOT items -> paid bill -> table closed
+  app.post('/tables/:tableId/checkout', { preHandler: [requireRole('cashier')] }, async (req, reply) => {
+    const params = TableParams.safeParse(req.params);
+    if (!params.success) return reply.status(404).send({ error: 'Table not found' });
+    const body = CheckoutTableSchema.safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: 'Validation failed', details: body.error.flatten() });
+    const user = getUser(req);
+    if (!(await assertBranchAccess(user, body.data.branchId, reply))) return;
+    try {
+      return reply.status(201).send(await checkoutTable(params.data.tableId, body.data, user));
+    } catch (err) {
+      return sendError(reply, err, 'Table checkout failed');
     }
   });
 

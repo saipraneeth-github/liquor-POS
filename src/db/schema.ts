@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 export const userRoleEnum = pgEnum('user_role', ['owner', 'manager', 'cashier', 'steward']);
 export const billStatusEnum = pgEnum('bill_status', ['OPEN', 'PAID', 'VOIDED']);
 export const taxTypeEnum = pgEnum('tax_type', ['GST', 'VAT_EXCISE']);
+export const menuTypeEnum = pgEnum('menu_type', ['RETAIL', 'KITCHEN', 'BAR']);
 export const stockReasonEnum = pgEnum('stock_reason', ['SALE', 'MANUAL_ADJUST', 'PURCHASE', 'VOID_REVERSAL', 'DAMAGE', 'BREAKAGE', 'COUNTER_SHEET', 'SCHEME_FREE_GOODS']);
 
 // ─── BRANCHES ───────────────────────────────────────────────────────────────
@@ -16,7 +17,11 @@ export const syndicates = pgTable('syndicates', {
   gstin:        text('gstin'),
   pan:          text('pan'),
   contactPhone: text('contact_phone'),
-  isActive:     boolean('is_active').notNull().default(true),
+  plan:         text('plan').notNull().default('TRIAL'),            // SaaS plan: TRIAL | STANDARD | PRO
+  maxBranches:  integer('max_branches').notNull().default(3),       // plan limit enforced on branch creation
+  trialEndsAt:  timestamp('trial_ends_at', { withTimezone: true }), // TRIAL plan: access ends here
+  paidUntil:    timestamp('paid_until', { withTimezone: true }),    // paid plans: access runs to here (+ grace)
+  isActive:     boolean('is_active').notNull().default(true),       // false = tenant suspended (nobody can sign in)
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
@@ -29,6 +34,13 @@ export const branches = pgTable('branches', {
   address:         text('address'),
   gstin:           text('gstin'),
   exciseLicenseNo: text('excise_license_no'),
+  printerHost:     text('printer_host'),                          // ESC/POS network printer (raw TCP)
+  printerPort:     integer('printer_port').notNull().default(9100),
+  paperWidth:      text('paper_width').notNull().default('58mm'), // '58mm' | '80mm'
+  roundOff:        boolean('round_off').notNull().default(false), // round bill totals to the nearest rupee
+  printViaAgent:   boolean('print_via_agent').notNull().default(false),   // send print jobs to the local print agent instead of TCP
+  agentTokenHash:  text('agent_token_hash'),                              // sha256 of the agent's secret token
+  agentLastSeenAt: timestamp('agent_last_seen_at', { withTimezone: true }),
   createdAt:       timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
@@ -60,8 +72,8 @@ export const categories = pgTable('categories', {
 export const products = pgTable('products', {
   id:           uuid('id').primaryKey().defaultRandom(),
   categoryId:   uuid('category_id').references(() => categories.id),
-  barcode:      text('barcode').unique(),
-  sku:          text('sku').unique(),
+  barcode:      text('barcode'),    // unique per tenant (see uq_products_tenant_barcode)
+  sku:          text('sku'),
   name:         text('name').notNull(),
   brand:        text('brand').notNull(),
   volumeMl:     integer('volume_ml'),
@@ -69,8 +81,41 @@ export const products = pgTable('products', {
   packQuantity: integer('pack_quantity'), // e.g., 12, 24, 48 bottles/case
   mrp:          numeric('mrp', { precision: 12, scale: 2 }).notNull(),
   costPrice:    numeric('cost_price', { precision: 12, scale: 2 }),
+  menuType:     menuTypeEnum('menu_type').notNull().default('RETAIL'),   // RETAIL = counter liquor; KITCHEN / BAR = menu items
+  description:  text('description'),
+  isAvailable:  boolean('is_available').notNull().default(true),         // in stock / out of stock switch for menu items
+  gstRate:      numeric('gst_rate', { precision: 5, scale: 2 }),         // per-item GST %; NULL = use category rate
+  trackStock:   boolean('track_stock').notNull().default(true),          // kitchen items are not stock-tracked
+  hsnCode:      text('hsn_code'),                                        // printed on GST invoices
+  syndicateId:  uuid('syndicate_id').references((): AnyPgColumn => syndicates.id),   // owning tenant; NULL = standalone / legacy shared item
   isActive:     boolean('is_active').notNull().default(true),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  // Two bars sell the same branded bottle, so barcode/SKU only need to be unique inside one tenant
+  uqTenantBarcode: uniqueIndex('uq_products_tenant_barcode').on(sql`coalesce(${t.syndicateId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.barcode),
+  uqTenantSku:     uniqueIndex('uq_products_tenant_sku').on(sql`coalesce(${t.syndicateId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.sku),
+}));
+
+// Serving sizes for a drink (30ml / 60ml / full bottle ...), each with its own fixed rate
+export const productServings = pgTable('product_servings', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  label:     text('label').notNull(),                                   // e.g. '60 ml', 'Full bottle'
+  volumeMl:  integer('volume_ml'),                                      // NULL = whole unit (bottle)
+  price:     numeric('price', { precision: 12, scale: 2 }).notNull(),   // tax-inclusive
+  sortOrder: integer('sort_order').notNull().default(0),
+  isActive:  boolean('is_active').notNull().default(true),
+}, (t) => ({
+  uqServingLabel: uniqueIndex('uq_serving_product_label').on(t.productId, t.label),
+}));
+
+export const servingPriceAudit = pgTable('serving_price_audit', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  servingId: uuid('serving_id').notNull().references(() => productServings.id, { onDelete: 'cascade' }),
+  userId:    uuid('user_id').references(() => users.id),
+  oldPrice:  numeric('old_price', { precision: 12, scale: 2 }),
+  newPrice:  numeric('new_price', { precision: 12, scale: 2 }).notNull(),
+  changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow(),
 });
 
 export const userPagePermissions = pgTable('user_page_permissions', {
@@ -90,6 +135,7 @@ export const stock = pgTable('stock', {
   branchId:     uuid('branch_id').notNull().references(() => branches.id),
   productId:    uuid('product_id').notNull().references(() => products.id),
   quantity:     integer('quantity').notNull().default(0),
+  openMl:       integer('open_ml').notNull().default(0),   // ml left in the opened bottle (peg sales)
   reorderLevel: integer('reorder_level').default(5),
 }, (t) => ({
   uniqueBranchProduct: unique('uq_branch_product').on(t.branchId, t.productId),
@@ -103,6 +149,7 @@ export const stockAudit = pgTable('stock_audit', {
   productId:   uuid('product_id').notNull().references(() => products.id),
   userId:      uuid('user_id').references(() => users.id),
   changeQty:   integer('change_qty').notNull(),   // negative for sales
+  changeMl:    integer('change_ml').notNull().default(0),   // ml sold/restored via peg servings
   reason:      stockReasonEnum('reason').notNull(),
   referenceId: uuid('reference_id'),              // bill_id or purchase_id
   createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
@@ -122,6 +169,8 @@ export const bills = pgTable('bills', {
   total:       numeric('total', { precision: 12, scale: 2 }).notNull(),
   paymentMode: text('payment_mode'),   // 'CASH' | 'CARD' | 'UPI' | 'CREDIT'
   customerId:     uuid('customer_id').references((): AnyPgColumn => customers.id),           // set for CREDIT (khata) sales
+  customerGstin:  text('customer_gstin'),                                                      // buyer GSTIN on a B2B invoice
+  roundOff:       numeric('round_off', { precision: 12, scale: 2 }).notNull().default('0'),    // total = subtotal - discount + round_off
   shiftSessionId: uuid('shift_session_id').references((): AnyPgColumn => shiftSessions.id),  // cashier shift the bill was rung in
   clientRef:      text('client_ref').unique(),   // idempotency key for offline-queued bills
   paidAt:      timestamp('paid_at', { withTimezone: true }),
@@ -151,6 +200,9 @@ export const billItems = pgTable('bill_items', {
   taxType:   taxTypeEnum('tax_type').notNull().default('GST'),
   taxAmount: numeric('tax_amount', { precision: 12, scale: 2 }).notNull(),
   lineTotal: numeric('line_total', { precision: 12, scale: 2 }).notNull(),
+  servingId:    uuid('serving_id').references(() => productServings.id),   // peg / glass sales
+  servingLabel: text('serving_label'),
+  servingMl:    integer('serving_ml'),
 });
 
 // ─── PRICE AUDIT ────────────────────────────────────────────────────────────
@@ -328,6 +380,9 @@ export const kotItems = pgTable('kot_items', {
   quantity:    integer('quantity').notNull(),
   unitPrice:   numeric('unit_price', { precision: 12, scale: 2 }).notNull(),   // MRP at order time
   taxRate:     numeric('tax_rate', { precision: 5, scale: 2 }).notNull(),
+  servingId:    uuid('serving_id').references(() => productServings.id),
+  servingLabel: text('serving_label'),
+  servingMl:    integer('serving_ml'),
   status:      kotItemStatusEnum('status').notNull().default('PENDING'),
   notes:       text('notes'),                                                   // e.g., "No ice"
 });
@@ -459,6 +514,7 @@ export const customers = pgTable('customers', {
   creditAllowed: boolean('credit_allowed').notNull().default(false),
   creditLimit:   numeric('credit_limit',   { precision: 12, scale: 2 }).notNull().default('0'),
   currentCredit: numeric('current_credit', { precision: 12, scale: 2 }).notNull().default('0'),  // outstanding balance owed
+  gstin:         text('gstin'),                                                                   // B2B customers: drives CGST+SGST vs IGST
   isActive:      boolean('is_active').notNull().default(true),
   createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (t) => ({
@@ -570,3 +626,123 @@ export const expenses = pgTable('expenses', {
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
+
+// ─── MENU AVAILABILITY PER BRANCH ───────────────────────────────────────────
+
+// A branch can switch a menu item off without touching the shared menu
+export const branchMenuAvailability = pgTable('branch_menu_availability', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  branchId:    uuid('branch_id').notNull().references(() => branches.id),
+  productId:   uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  isAvailable: boolean('is_available').notNull(),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqBranchProduct: uniqueIndex('uq_branch_menu_availability').on(t.branchId, t.productId),
+}));
+
+// ─── POUR COUNTS (peg variance) ─────────────────────────────────────────────
+
+// Physical dip-stick / measure of the open bottle compared with what the system expects
+export const pourCounts = pgTable('pour_counts', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  branchId:   uuid('branch_id').notNull().references(() => branches.id),
+  productId:  uuid('product_id').notNull().references(() => products.id),
+  userId:     uuid('user_id').references(() => users.id),
+  expectedMl: integer('expected_ml').notNull(),
+  countedMl:  integer('counted_ml').notNull(),
+  varianceMl: integer('variance_ml').notNull(),   // counted - expected (negative = short)
+  note:       text('note'),
+  createdAt:  timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// ─── SaaS BACK OFFICE ───────────────────────────────────────────────────────
+
+export const subscriptionInvoices = pgTable('subscription_invoices', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  syndicateId: uuid('syndicate_id').notNull().references(() => syndicates.id),
+  plan:        text('plan').notNull(),
+  amount:      numeric('amount', { precision: 12, scale: 2 }).notNull(),   // plan price incl. GST
+  periodStart: date('period_start').notNull(),
+  periodEnd:   date('period_end').notNull(),
+  status:      text('status').notNull().default('PENDING'),                // PENDING | PAID | VOID
+  paidAt:      timestamp('paid_at', { withTimezone: true }),
+  paymentRef:  text('payment_ref'),                                        // UTR / cheque / gateway reference
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// Who did what on the platform: support sign-ins, plan changes, suspensions, password resets
+export const auditLog = pgTable('audit_log', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  actorId:    uuid('actor_id').references(() => users.id),
+  action:     text('action').notNull(),
+  targetType: text('target_type'),
+  targetId:   text('target_id'),
+  meta:       jsonb('meta'),
+  createdAt:  timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// Print jobs that could not reach the printer are kept and retried
+export const printJobs = pgTable('print_jobs', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  branchId:      uuid('branch_id').notNull().references(() => branches.id),
+  kind:          text('kind').notNull(),                  // 'bill' | 'kot'
+  refId:         uuid('ref_id').notNull(),
+  status:        text('status').notNull().default('PENDING'),   // PENDING | SENT | FAILED
+  attempts:      integer('attempts').notNull().default(0),
+  lastError:     text('last_error'),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow(),
+  target:        text('target').notNull().default('NETWORK'),   // NETWORK (server sends over TCP) | AGENT (picked up by the local print agent)
+  payload:       text('payload'),                               // AGENT jobs: ESC/POS bytes, base64
+  claimedAt:     timestamp('claimed_at', { withTimezone: true }),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow(),
+  sentAt:        timestamp('sent_at', { withTimezone: true }),
+});
+
+// ─── PAYMENTS, E-MAIL, PASSWORD RESET, BILLING REMINDERS ────────────────────
+
+// One row per checkout started for a subscription invoice (provider order id is unique)
+export const paymentOrders = pgTable('payment_orders', {
+  id:                uuid('id').primaryKey().defaultRandom(),
+  syndicateId:       uuid('syndicate_id').notNull().references(() => syndicates.id),
+  invoiceId:         uuid('invoice_id').notNull().references(() => subscriptionInvoices.id),
+  provider:          text('provider').notNull(),                 // 'razorpay' | 'mock'
+  providerOrderId:   text('provider_order_id').notNull().unique(),
+  providerPaymentId: text('provider_payment_id'),
+  amount:            numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  currency:          text('currency').notNull().default('INR'),
+  status:            text('status').notNull().default('CREATED'), // CREATED | PAID | FAILED
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow(),
+  paidAt:            timestamp('paid_at', { withTimezone: true }),
+});
+
+// Every e-mail the system produced; status LOGGED means no SMTP server was configured
+export const emailOutbox = pgTable('email_outbox', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  toEmail:   text('to_email').notNull(),
+  subject:   text('subject').notNull(),
+  body:      text('body').notNull(),
+  kind:      text('kind'),                                       // 'password_reset' | 'billing_due_7' | ...
+  status:    text('status').notNull().default('LOGGED'),         // SENT | LOGGED | FAILED
+  error:     text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+export const passwordResets = pgTable('password_resets', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  userId:    uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),              // sha256 of the emailed token
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt:    timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// Which billing reminders went out for which period, so each is sent once
+export const dunningLog = pgTable('dunning_log', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  syndicateId: uuid('syndicate_id').notNull().references(() => syndicates.id),
+  kind:        text('kind').notNull(),
+  periodKey:   text('period_key').notNull(),
+  sentAt:      timestamp('sent_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqDunning: uniqueIndex('uq_dunning_once').on(t.syndicateId, t.kind, t.periodKey),
+}));

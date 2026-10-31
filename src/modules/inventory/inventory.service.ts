@@ -257,6 +257,7 @@ export async function getStockStatus(branchId: string) {
       packQuantity: products.packQuantity,
       mrp: products.mrp,
       quantity: stock.quantity,
+      openMl: stock.openMl,
       reorderLevel: stock.reorderLevel,
     })
     .from(stock)

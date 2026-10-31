@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
 
 type BillItem = {
   id: string;
@@ -291,6 +292,12 @@ export function Bills() {
               <h2 className="text-lg font-bold" id="modalTitle">
                 {modalType === 'void' ? `Void bill ${selectedBill?.billNumber}` : `Bill ${selectedBill?.billNumber}`}
               </h2>
+              {modalType === 'view' && selectedBill && (
+                <span className="ml-auto mr-3 flex gap-2">
+                  <button type="button" id="printBillBtn" className="px-2.5 py-1 text-xs border rounded hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => printInBrowser('bills', selectedBill.id)}>Print</button>
+                  <button type="button" className="px-2.5 py-1 text-xs border rounded hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => sendToNetworkPrinter('bills', selectedBill.id)}>Send to printer</button>
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setModalType(null)}

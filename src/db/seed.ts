@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { db } from './client.js';
 import {
-  syndicates, branches, users, categories, products, stock, tables, terminals, customers,
+  syndicates, branches, users, categories, products, productServings, stock, tables, terminals, customers,
 } from './schema.js';
 import { TELANGANA_ICDC_PRODUCTS } from './data/telangana-products.js';
 
@@ -22,6 +22,9 @@ export async function seedDatabase(): Promise<void> {
       name: 'Demo Liquor Syndicate',
       gstin: '36ABCDE1234F1Z5',
       contactPhone: '9000000000',
+      plan: 'STANDARD',
+      maxBranches: 3,
+      paidUntil: new Date(Date.now() + 365 * 86_400_000),
     }).returning();
   }
 
@@ -45,7 +48,11 @@ export async function seedDatabase(): Promise<void> {
     { name: 'Counter Cashier', email: 'cashier@liquor.com', passwordHash, role: 'cashier', branchId },
     { name: 'Floor Steward',   email: 'steward@liquor.com', passwordHash, role: 'steward', branchId },
   ]).onConflictDoNothing();
-  console.log(` Users ready: owner@ / manager@ / cashier@ / steward@liquor.com (Password: ${SEED_PASSWORD})`);
+  // Super Admin = platform owner (no branch, no tenant): the SaaS vendor team
+  await db.insert(users).values({
+    name: 'Platform Owner', email: 'superadmin@liquor.com', passwordHash, role: 'owner', branchId: null, syndicateId: null,
+  }).onConflictDoNothing();
+  console.log(` Users ready: superadmin@ / owner@ (Admin) / manager@ / cashier@ / steward@liquor.com (Password: ${SEED_PASSWORD})`);
 
   // 3. Categories
   await db.insert(categories).values([
@@ -71,7 +78,7 @@ export async function seedDatabase(): Promise<void> {
   ];
 
   for (const p of productData) {
-    await db.insert(products).values(p).onConflictDoNothing();
+    await db.insert(products).values({ ...p, syndicateId: syndicate.id }).onConflictDoNothing();
     const [prod] = await db.select().from(products).where(eq(products.barcode, p.barcode)).limit(1);
     await db.insert(stock).values({ branchId, productId: prod.id, quantity: 100, reorderLevel: 10 }).onConflictDoNothing();
   }
@@ -87,6 +94,7 @@ export async function seedDatabase(): Promise<void> {
       sku: tp.sku,
       mrp: tp.mrp,
       costPrice: tp.costPrice,
+      syndicateId: syndicate.id,
     };
     await db.insert(products).values(pVal).onConflictDoNothing();
     const [prod] = await db.select().from(products).where(eq(products.sku, tp.sku)).limit(1);
@@ -95,6 +103,36 @@ export async function seedDatabase(): Promise<void> {
     }
   }
   console.log(` Products & stock seeded (${productData.length + TELANGANA_ICDC_PRODUCTS.length} total catalog products)`);
+
+  // 4b. Demo menu: two dishes and one bar bottle sold by the peg
+  const demoCat = async (name: string, taxRate: string) => {
+    await db.insert(categories).values({ name, taxRate }).onConflictDoNothing();
+    const [c] = await db.select().from(categories).where(eq(categories.name, name)).limit(1);
+    return c.id;
+  };
+  const starters = await demoCat('Starters', '5.00');
+  const mains = await demoCat('Main Course', '5.00');
+  const whisky = await demoCat('Whisky', '18.00');
+  const demoItems = [
+    { name: 'Paneer Tikka', menuType: 'KITCHEN' as const, categoryId: starters, mrp: '240.00', gstRate: '5.00', trackStock: false, hsnCode: '9963', description: 'Smoky, 6 pieces', volumeMl: null },
+    { name: 'Butter Chicken', menuType: 'KITCHEN' as const, categoryId: mains, mrp: '320.00', gstRate: '5.00', trackStock: false, hsnCode: '9963', description: 'Creamy tomato gravy', volumeMl: null },
+    { name: 'House Blend Whisky 750ml', menuType: 'BAR' as const, categoryId: whisky, mrp: '2400.00', gstRate: '18.00', trackStock: true, hsnCode: '22083020', description: 'Sold by the peg or the bottle', volumeMl: 750 },
+  ];
+  for (const item of demoItems) {
+    const [exists] = await db.select({ id: products.id }).from(products).where(eq(products.name, item.name)).limit(1);
+    if (exists) continue;
+    const [created] = await db.insert(products).values({ ...item, brand: item.name.split(' ')[0], syndicateId: syndicate.id }).returning();
+    if (item.menuType === 'BAR') {
+      await db.insert(productServings).values([
+        { productId: created.id, label: '30 ml', volumeMl: 30, price: '140.00', sortOrder: 0 },
+        { productId: created.id, label: '60 ml', volumeMl: 60, price: '260.00', sortOrder: 1 },
+        { productId: created.id, label: '90 ml', volumeMl: 90, price: '380.00', sortOrder: 2 },
+        { productId: created.id, label: 'Full bottle', volumeMl: null, price: '2400.00', sortOrder: 3 },
+      ]);
+      await db.insert(stock).values({ branchId, productId: created.id, quantity: 6, reorderLevel: 2 }).onConflictDoNothing();
+    }
+  }
+  console.log(' Demo kitchen + bar menu seeded');
 
   // 5. Tables
   const existingTables = await db.select().from(tables).where(eq(tables.branchId, branchId));

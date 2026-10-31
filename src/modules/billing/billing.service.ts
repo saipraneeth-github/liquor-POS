@@ -8,6 +8,7 @@ import {
   stockAudit,
   branches,
   products,
+  productServings,
   categories,
   customers,
   creditTransactions,
@@ -16,6 +17,8 @@ import {
 import { eq, inArray, and, gte, lt, ne, desc, sql } from 'drizzle-orm';
 import { calculateBill, mergeBillItems, resolveTaxRate, formatBillNumber } from './billing.engine.js';
 import { checkStockAvailability, computeStockDeltas, computeVoidStockDeltas } from '../stock/stock.engine.js';
+import { deductMl, restoreMl, splitUnitsAndMl } from '../menu/serving.engine.js';
+import { assertBranchCanSell } from '../menu/menu-access.js';
 import { assertCreditAvailable, applyCreditPurchase, applyCreditReversal } from '../customers/credit.engine.js';
 import { emitDomainEvent, type Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
@@ -32,9 +35,12 @@ export const CreateBillSchema = z.object({
   paymentMode: z.enum(PAYMENT_MODES),
   discount:    z.string().regex(/^\d+(\.\d{1,2})?$/).optional().default('0'),
   customerId:  z.string().uuid().optional(),
+  roundOff:    z.boolean().optional(),   // overrides the branch setting for this bill
+  customerGstin: z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be 15 alphanumeric characters').optional(),
   clientRef:   z.string().trim().min(1).max(64).optional(),
   items: z.array(z.object({
     productId: z.string().uuid(),
+    servingId: z.string().uuid().optional(),   // peg / glass serving; omit for the product's own rate
     quantity:  z.number().int().positive().max(10_000),
   })).min(1).max(500),
 }).refine((d) => d.paymentMode !== 'CREDIT' || !!d.customerId, {
@@ -126,6 +132,11 @@ export async function createBill(
       mrp:      products.mrp,
       isActive: products.isActive,
       taxRate:  categories.taxRate,
+      gstRate:     products.gstRate,
+      isAvailable: products.isAvailable,
+      trackStock:  products.trackStock,
+      volumeMl:    products.volumeMl,
+      syndicateId: products.syndicateId,
     })
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
@@ -141,26 +152,64 @@ export async function createBill(
     throw new BusinessRuleError(`Inactive products cannot be billed: ${inactive.map((p) => p.name).join(', ')}`);
   }
 
-  // 2. Price from DB (MRP, tax-inclusive) — never from the client
+  await assertBranchCanSell(db, input.branchId, productRows);
+  const [branchSettings] = await db.select({ roundOff: branches.roundOff }).from(branches).where(eq(branches.id, input.branchId)).limit(1);
+
+  // Servings (peg / glass / full bottle) must belong to their product and be active
+  const servingIds = [...new Set(items.flatMap((i) => (i.servingId ? [i.servingId] : [])))];
+  const servingRows = servingIds.length
+    ? await db.select().from(productServings).where(inArray(productServings.id, servingIds))
+    : [];
+  const servingMap = new Map(servingRows.map((s) => [s.id, s]));
+  for (const item of items) {
+    if (!item.servingId) continue;
+    const s = servingMap.get(item.servingId);
+    if (!s || s.productId !== item.productId || !s.isActive) {
+      throw new BusinessRuleError(`Serving not available for product ${item.productId}`);
+    }
+    if (s.volumeMl && !productMap.get(item.productId)!.volumeMl) {
+      throw new BusinessRuleError(`Product ${item.productId} has no bottle size, so it cannot be sold by the peg`);
+    }
+  }
+
+  // 2. Price from DB (serving rate or MRP, tax-inclusive) — never from the client
   const calculation = calculateBill(
     items.map((item) => {
       const product = productMap.get(item.productId)!;
+      const serving = item.servingId ? servingMap.get(item.servingId)! : undefined;
       return {
         productId: item.productId,
         quantity:  item.quantity,
-        unitPrice: product.mrp,
-        taxRate:   resolveTaxRate(product.taxRate),
+        unitPrice: serving?.price ?? product.mrp,
+        taxRate:   resolveTaxRate(product.taxRate, product.gstRate),
+        servingId:    serving?.id ?? null,
+        servingLabel: serving?.label ?? null,
+        servingMl:    serving?.volumeMl ?? null,
       };
     }),
     input.discount,
+    input.roundOff ?? branchSettings?.roundOff ?? false,
   );
 
+  // Stock only moves for stock-tracked products (kitchen items are not). Whole units deduct
+  // bottles; peg servings deduct ml from the open bottle.
+  const { units, ml: mlByProduct } = splitUnitsAndMl(
+    items
+      .filter((i) => productMap.get(i.productId)!.trackStock)
+      .map((i) => ({
+        productId: i.productId,
+        quantity:  i.quantity,
+        servingMl: i.servingId ? servingMap.get(i.servingId)!.volumeMl : null,
+      })),
+  );
+  const unitItems = [...units].map(([productId, quantity]) => ({ productId, quantity }));
+
   // 3. Friendly stock pre-check (the in-transaction guarded UPDATE is authoritative)
-  const stockEntries = await db
+  const stockEntries = unitItems.length === 0 ? [] : await db
     .select({ productId: stock.productId, quantity: stock.quantity })
     .from(stock)
-    .where(and(eq(stock.branchId, input.branchId), inArray(stock.productId, productIds)));
-  const shortages = checkStockAvailability(items, new Map(stockEntries.map((s) => [s.productId, s.quantity])));
+    .where(and(eq(stock.branchId, input.branchId), inArray(stock.productId, unitItems.map((u) => u.productId))));
+  const shortages = checkStockAvailability(unitItems, new Map(stockEntries.map((s) => [s.productId, s.quantity])));
   if (shortages.length > 0) {
     throw new BusinessRuleError(
       `Insufficient stock: ${shortages
@@ -213,6 +262,8 @@ export async function createBill(
         subtotal:       calculation.subtotal,
         taxAmount:      calculation.taxAmount,
         discount:       calculation.discount,
+        roundOff:       calculation.roundOff,
+        customerGstin:  input.customerGstin ?? customer?.gstin ?? null,
         total:          calculation.total,
         paymentMode:    input.paymentMode,
         customerId:     customer?.id ?? null,   // only validated (CREDIT) customers are linked
@@ -230,11 +281,14 @@ export async function createBill(
           taxRate:   line.taxRate,
           taxAmount: line.taxAmount,
           lineTotal: line.lineTotal,
+          servingId:    line.servingId,
+          servingLabel: line.servingLabel,
+          servingMl:    line.servingMl,
         })),
       ).returning();
 
       // Guarded, atomic stock deduction (sorted to keep lock order stable)
-      const deltas = computeStockDeltas(items).sort((a, b) => a.productId.localeCompare(b.productId));
+      const deltas = computeStockDeltas(unitItems).sort((a, b) => a.productId.localeCompare(b.productId));
       if (deltas.length > 0) {
         // ⚡ Bolt Optimization: Batch update stock with CASE WHEN
         // Replaces O(N) sequential database updates with a single query.
@@ -263,16 +317,42 @@ export async function createBill(
         }
       }
 
-      await tx.insert(stockAudit).values(
-        deltas.map((d) => ({
+      if (deltas.length > 0) {
+        await tx.insert(stockAudit).values(
+          deltas.map((d) => ({
+            branchId:    input.branchId,
+            productId:   d.productId,
+            userId:      cashier.sub,
+            changeQty:   d.delta,
+            reason:      'SALE' as const,
+            referenceId: bill.id,
+          })),
+        );
+      }
+
+      // Peg sales: draw ml from the open bottle, opening sealed bottles as needed
+      for (const [productId, totalMl] of [...mlByProduct].sort(([a], [b]) => a.localeCompare(b))) {
+        const product = productMap.get(productId)!;
+        const [row] = await tx
+          .select({ quantity: stock.quantity, openMl: stock.openMl })
+          .from(stock)
+          .where(and(eq(stock.branchId, input.branchId), eq(stock.productId, productId)))
+          .for('update');
+        const result = row ? deductMl(row, totalMl, product.volumeMl!) : null;
+        if (!result) throw new BusinessRuleError(`Insufficient stock: ${product.name} (${totalMl} ml requested)`);
+        await tx.update(stock)
+          .set({ quantity: result.state.quantity, openMl: result.state.openMl })
+          .where(and(eq(stock.branchId, input.branchId), eq(stock.productId, productId)));
+        await tx.insert(stockAudit).values({
           branchId:    input.branchId,
-          productId:   d.productId,
+          productId,
           userId:      cashier.sub,
-          changeQty:   d.delta,
+          changeQty:   -result.bottlesOpened,
+          changeMl:    -totalMl,
           reason:      'SALE' as const,
           referenceId: bill.id,
-        })),
-      );
+        });
+      }
 
       if (customer) {
         const balanceAfter = applyCreditPurchase(customer.currentCredit, calculation.total);
@@ -326,8 +406,46 @@ export async function voidBill(
 
     const items = await tx.select().from(billItems).where(eq(billItems.billId, billId));
 
+    // Only stock-tracked products were deducted at sale time
+    const soldProducts = await tx
+      .select({ id: products.id, trackStock: products.trackStock, volumeMl: products.volumeMl })
+      .from(products)
+      .where(inArray(products.id, [...new Set(items.map((i) => i.productId))]));
+    const tracked = new Map(soldProducts.map((p) => [p.id, p]));
+    const trackedItems = items.filter((i) => tracked.get(i.productId)?.trackStock);
+    const { units: voidUnits, ml: voidMl } = splitUnitsAndMl(
+      trackedItems.map((i) => ({ productId: i.productId, quantity: i.quantity, servingMl: i.servingMl })),
+    );
+
     // Reverse stock atomically; recreate a missing stock row
-    const deltas = computeVoidStockDeltas(items).sort((a, b) => a.productId.localeCompare(b.productId));
+    const deltas = computeVoidStockDeltas([...voidUnits].map(([productId, quantity]) => ({ productId, quantity })))
+      .sort((a, b) => a.productId.localeCompare(b.productId));
+
+    for (const [productId, totalMl] of [...voidMl].sort(([a], [b]) => a.localeCompare(b))) {
+      const bottleMl = tracked.get(productId)!.volumeMl!;
+      const [row] = await tx
+        .select({ quantity: stock.quantity, openMl: stock.openMl })
+        .from(stock)
+        .where(and(eq(stock.branchId, bill.branchId), eq(stock.productId, productId)))
+        .for('update');
+      const restored = restoreMl(row ?? { quantity: 0, openMl: 0 }, totalMl, bottleMl);
+      await tx.insert(stock)
+        .values({ branchId: bill.branchId, productId, quantity: restored.quantity, openMl: restored.openMl })
+        .onConflictDoUpdate({
+          target: [stock.branchId, stock.productId],
+          set: { quantity: restored.quantity, openMl: restored.openMl },
+        });
+      await tx.insert(stockAudit).values({
+        branchId:    bill.branchId,
+        productId,
+        userId:      user.sub,
+        changeQty:   restored.quantity - (row?.quantity ?? 0),
+        changeMl:    totalMl,
+        reason:      'VOID_REVERSAL' as const,
+        referenceId: billId,
+      });
+    }
+
     if (deltas.length > 0) {
       await tx
         .insert(stock)

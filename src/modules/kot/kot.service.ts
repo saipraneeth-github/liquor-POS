@@ -4,12 +4,13 @@
  */
 
 import { db } from '../../db/client.js';
-import { kotOrders, kotItems, tableSessions, products, categories } from '../../db/schema.js';
+import { kotOrders, kotItems, tableSessions, products, productServings, categories } from '../../db/schema.js';
 import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
 import { canTransitionKotItem, consolidateKotOrders, type KotItemStatus, type KotOrder } from './kot.engine.js';
 import { resolveTaxRate } from '../billing/billing.engine.js';
 import { BusinessRuleError, NotFoundError } from '../../lib/errors.js';
+import { assertBranchCanSell } from '../menu/menu-access.js';
 
 export interface CreateKotInput {
   tableSessionId: string;
@@ -19,6 +20,7 @@ export interface CreateKotInput {
   notes?: string;
   items: Array<{
     productId: string;
+    servingId?: string;
     quantity: number;
     notes?: string;
   }>;
@@ -44,13 +46,24 @@ export async function createKotOrder(input: CreateKotInput) {
 
     const productIds = [...new Set(input.items.map((i) => i.productId))];
     const productRows = await tx
-      .select({ id: products.id, mrp: products.mrp, isActive: products.isActive, taxRate: categories.taxRate })
+      .select({
+        id: products.id, name: products.name, mrp: products.mrp, isActive: products.isActive,
+        taxRate: categories.taxRate, gstRate: products.gstRate, isAvailable: products.isAvailable,
+        syndicateId: products.syndicateId,
+      })
       .from(products)
       .leftJoin(categories, eq(products.categoryId, categories.id))
       .where(inArray(products.id, productIds));
     const productMap = new Map(productRows.map((p) => [p.id, p]));
     const missing = productIds.filter((id) => !productMap.get(id)?.isActive);
     if (missing.length > 0) throw new BusinessRuleError(`Unknown or inactive products: ${missing.join(', ')}`);
+    await assertBranchCanSell(tx, input.branchId, productRows);
+
+    const servingIds = [...new Set(input.items.flatMap((i) => (i.servingId ? [i.servingId] : [])))];
+    const servingRows = servingIds.length
+      ? await tx.select().from(productServings).where(inArray(productServings.id, servingIds))
+      : [];
+    const servingMap = new Map(servingRows.map((s) => [s.id, s]));
 
     const [order] = await tx
       .insert(kotOrders)
@@ -65,12 +78,19 @@ export async function createKotOrder(input: CreateKotInput) {
 
     const itemRows = input.items.map((i) => {
       const product = productMap.get(i.productId)!;
+      const serving = i.servingId ? servingMap.get(i.servingId) : undefined;
+      if (i.servingId && (!serving || serving.productId !== i.productId || !serving.isActive)) {
+        throw new BusinessRuleError(`Serving not available for ${product.name}`);
+      }
       return {
         kotOrderId: order.id,
         productId:  i.productId,
         quantity:   i.quantity,
-        unitPrice:  product.mrp,
-        taxRate:    resolveTaxRate(product.taxRate),
+        unitPrice:  serving?.price ?? product.mrp,
+        taxRate:    resolveTaxRate(product.taxRate, product.gstRate),
+        servingId:    serving?.id ?? null,
+        servingLabel: serving?.label ?? null,
+        servingMl:    serving?.volumeMl ?? null,
         notes:      i.notes ?? null,
       };
     });
@@ -161,6 +181,8 @@ export async function getKotOrdersForSession(tableSessionId: string, branchId: s
       quantity:   i.quantity,
       unitPrice:  new Decimal(i.unitPrice),
       taxRate:    new Decimal(i.taxRate),
+      servingId:    i.servingId,
+      servingLabel: i.servingLabel,
       status:     i.status as KotItemStatus,
       notes:      i.notes,
     })),

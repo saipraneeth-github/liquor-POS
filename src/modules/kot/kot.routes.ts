@@ -27,6 +27,7 @@ const CreateKotSchema = z.object({
   notes:          z.string().max(500).optional(),
   items: z.array(z.object({
     productId: z.string().uuid(),
+    servingId: z.string().uuid().optional(),
     quantity:  z.number().int().positive().max(1000),
     notes:     z.string().max(200).optional(),
   })).min(1).max(200),

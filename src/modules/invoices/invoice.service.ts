@@ -4,10 +4,10 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { Decimal } from 'decimal.js';
-import { and, eq, ne, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import {
-  categories, invoiceAttachments, products, supplierInvoiceItems, supplierInvoices,
+  branches, categories, invoiceAttachments, products, supplierInvoiceItems, supplierInvoices,
 } from '../../db/schema.js';
 import type { Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, isUniqueViolation } from '../../lib/errors.js';
@@ -53,7 +53,13 @@ export function placeholderNumber(): string {
 }
 
 /** Active catalog with category GST rate, for matching. */
-export async function loadCatalog(exec: Tx | typeof db = db): Promise<CatalogEntry[]> {
+export async function loadCatalog(exec: Tx | typeof db = db, branchId?: string): Promise<CatalogEntry[]> {
+  // A branch only matches against its own business's catalog (plus unowned legacy items)
+  let scope: SQL | undefined;
+  if (branchId) {
+    const [branch] = await exec.select({ syndicateId: branches.syndicateId }).from(branches).where(eq(branches.id, branchId)).limit(1);
+    scope = branch?.syndicateId ? or(isNull(products.syndicateId), eq(products.syndicateId, branch.syndicateId)) : isNull(products.syndicateId);
+  }
   const rows = await exec
     .select({
       id: products.id, name: products.name, brand: products.brand, barcode: products.barcode, sku: products.sku,
@@ -63,7 +69,7 @@ export async function loadCatalog(exec: Tx | typeof db = db): Promise<CatalogEnt
     })
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
-    .where(eq(products.isActive, true));
+    .where(and(eq(products.isActive, true), scope));
   return rows;
 }
 
@@ -193,7 +199,7 @@ export async function createDraftFromUpload(input: UploadInput) {
     .where(and(eq(invoiceAttachments.sha256, sha256), eq(supplierInvoices.branchId, input.branchId)))
     .limit(1);
 
-  const lines = buildDraftLines(extraction.table.lines, await loadCatalog());
+  const lines = buildDraftLines(extraction.table.lines, await loadCatalog(db, input.branchId));
   const f = input.fields;
   const invoiceNumber = f.invoiceNumber?.trim() || extraction.header.invoiceNumber?.trim() || null;
   if (invoiceNumber && !isPlaceholderNumber(invoiceNumber)) {
@@ -277,7 +283,7 @@ export async function createManualDraft(branchId: string, user: JwtPayload, inpu
     const existing = await findLiveDuplicate(db, branchId, input.invoiceNumber);
     if (existing) throw new DuplicateInvoiceError(existing.id, input.invoiceNumber, existing.invoiceDate ?? existing.createdAt);
   }
-  const lines = linesFromInput(input.items, await loadCatalog());
+  const lines = linesFromInput(input.items, await loadCatalog(db, branchId));
   const inv = validateInvoice({
     invoiceNumber: input.invoiceNumber ?? null, invoiceDate: input.invoiceDate ?? null, supplierName: input.supplierName,
     capturedTotal: input.totalAmount ?? null, lineTotals: lines.map((l) => l.lineCostTotal),

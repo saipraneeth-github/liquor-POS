@@ -8,3 +8,20 @@
 }
 
 @custom-variant dark (&:is(.dark *));
+
+.input-base {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  background: transparent;
+}
+.dark .input-base { border-color: #4b5563; }
+
+/* Tailwind 4 draws plain `border` in currentColor (black); keep borders soft unless a colour is given */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+}

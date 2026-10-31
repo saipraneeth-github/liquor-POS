@@ -1,10 +1,11 @@
 const API_BASE = '/api/v1';
 
 class ApiClient {
-  private getHeaders() {
+  // Content-Type only when a body is sent: Fastify rejects an empty body declared as JSON (400)
+  private getHeaders(hasBody = true) {
     const token = localStorage.getItem('token');
     return {
-      'Content-Type': 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     };
   }
@@ -18,7 +19,7 @@ class ApiClient {
   async post<T>(url: string, data?: unknown): Promise<T> {
     const res = await fetch(`${API_BASE}${url}`, {
       method: 'POST',
-      headers: this.getHeaders(),
+      headers: this.getHeaders(data !== undefined),
       body: data ? JSON.stringify(data) : undefined,
     });
     if (!res.ok) throw new Error(await res.text());
@@ -48,7 +49,7 @@ class ApiClient {
   async delete<T>(url: string): Promise<T> {
     const res = await fetch(`${API_BASE}${url}`, {
       method: 'DELETE',
-      headers: this.getHeaders(),
+      headers: this.getHeaders(false),
     });
     if (!res.ok) throw new Error(await res.text());
     return res.json();

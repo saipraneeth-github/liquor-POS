@@ -46,7 +46,7 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
 
       const prevItems = await tx.select().from(supplierInvoiceItems).where(eq(supplierInvoiceItems.invoiceId, id));
       const prevById = new Map(prevItems.map((i) => [i.id, i]));
-      const catalog = await loadCatalog(tx);
+      const catalog = await loadCatalog(tx, current.branchId);
       const refIds = [...new Set(input.items.map((i) => i.productId).filter((p): p is string => !!p))];
       const refRows = refIds.length ? await tx.select({ id: products.id, name: products.name, mrp: products.mrp }).from(products).where(inArray(products.id, refIds)) : [];
       const refMap = new Map(refRows.map((p) => [p.id, p]));

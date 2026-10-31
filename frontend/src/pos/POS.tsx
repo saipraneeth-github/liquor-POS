@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
+
+type Serving = { id: string; label: string; volumeMl: number | null; price: string };
 
 type Product = {
   id: string;
@@ -9,9 +12,13 @@ type Product = {
   mrp: string;          // decimal string e.g. "1050.00"
   barcode: string;
   categoryId: string;
+  isAvailable?: boolean;
+  servings?: Serving[]; // peg / glass / bottle rates (bar items)
 };
 
-type CartItem = Product & { qty: number };
+type CartItem = Product & { qty: number; servingId?: string; servingLabel?: string; price: string };
+
+const cartKey = (c: { id: string; servingId?: string }) => c.id + '|' + (c.servingId ?? '');
 
 type QueuedBill = {
   clientRef: string;
@@ -19,7 +26,8 @@ type QueuedBill = {
   queuedAt: string;
   body: {
     branchId: string;
-    items: { productId: string; quantity: number }[];
+    items: { productId: string; servingId?: string; quantity: number }[];
+    customerGstin?: string;
     paymentMode: 'CASH' | 'CARD' | 'UPI' | 'CREDIT';
     discount: string;
     clientRef: string;
@@ -50,8 +58,11 @@ export function POS() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [queuedCount, setQueuedCount] = useState(0);
   const [lastSync, setLastSync] = useState('');
+  const [servingPicker, setServingPicker] = useState<Product | null>(null);
+  const [buyerGstin, setBuyerGstin] = useState('');
   const [checkoutModal, setCheckoutModal] = useState<{
     title: string;
+    billId?: string;
     billNumber: string;
     total: string;
     offline: boolean;
@@ -150,24 +161,38 @@ export function POS() {
       (p.brand ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, serving?: Serving) => {
+    const line: CartItem = {
+      ...product,
+      qty: 1,
+      price: serving?.price ?? product.mrp,
+      servingId: serving?.id,
+      servingLabel: serving?.label,
+    };
     setCart((prev) => {
-      const existing = prev.find((item) => item.id === product.id);
-      if (existing) return prev.map((item) => item.id === product.id ? { ...item, qty: item.qty + 1 } : item);
-      return [...prev, { ...product, qty: 1 }];
+      const existing = prev.find((item) => cartKey(item) === cartKey(line));
+      if (existing) return prev.map((item) => cartKey(item) === cartKey(line) ? { ...item, qty: item.qty + 1 } : item);
+      return [...prev, line];
     });
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + parseFloat(item.mrp) * item.qty, 0);
+  const pickProduct = (product: Product) => {
+    if (product.isAvailable === false) return;
+    if (product.servings && product.servings.length > 0) setServingPicker(product);
+    else addToCart(product);
+  };
+
+  const cartTotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.qty, 0);
 
   const checkout = async () => {
     const clientRef = genUUID();
     const body: QueuedBill['body'] = {
       branchId,
-      items: cart.map((c) => ({ productId: c.id, quantity: c.qty })),
+      items: cart.map((c) => ({ productId: c.id, ...(c.servingId ? { servingId: c.servingId } : {}), quantity: c.qty })),
       paymentMode: 'CASH',
       discount: '0.00',
       clientRef,
+      ...(buyerGstin.trim() ? { customerGstin: buyerGstin.trim().toUpperCase() } : {}),
     };
 
     try {
@@ -182,7 +207,13 @@ export function POS() {
       if (!res.ok && res.status !== 200) throw new Error('checkout failed');
       const data = await res.json();
       setCart([]);
-      setCheckoutModal({ title: 'Bill Generated', billNumber: data.billNumber, total: data.total, offline: false });
+      setBuyerGstin('');
+      setCheckoutModal({ title: 'Bill Generated', billId: data.id, billNumber: data.billNumber, total: data.total, offline: false });
+      // Best effort: kick the receipt out to the branch's network printer if one is set up
+      fetch('/api/v1/print/bills/' + data.id + '/send?queue=true', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      }).catch(() => { /* no printer reachable — the Print button still works */ });
     } catch {
       // Queue for offline sync
       const queued: QueuedBill = { clientRef, ownerSub: sub, queuedAt: new Date().toISOString(), body };
@@ -225,13 +256,18 @@ export function POS() {
           {filteredProducts.map((p) => (
             <button
               key={p.id}
-              className="pos-product p-4 bg-white dark:bg-gray-800 rounded shadow hover:shadow-md transition text-center"
-              onClick={() => addToCart(p)}
+              className={`pos-product p-4 bg-white dark:bg-gray-800 rounded shadow hover:shadow-md transition text-center ${p.isAvailable === false ? 'opacity-50 cursor-not-allowed' : ''}`}
+              onClick={() => pickProduct(p)}
+              disabled={p.isAvailable === false}
             >
               <div className="text-2xl mb-2">🥃</div>
               <div className="font-semibold truncate">{p.name}</div>
               <div className="text-sm text-gray-500">
-                ₹{parseFloat(p.mrp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                {p.isAvailable === false
+                  ? 'Out of stock'
+                  : p.servings && p.servings.length > 0
+                  ? 'From ₹' + Math.min(...p.servings.map((s) => parseFloat(s.price))).toLocaleString('en-IN')
+                  : '₹' + parseFloat(p.mrp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </div>
             </button>
           ))}
@@ -243,11 +279,14 @@ export function POS() {
         <div className="p-4 font-bold border-b dark:border-gray-700">Current Order</div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2" id="cartItems">
           {cart.map((item) => (
-            <div key={item.id} className="flex justify-between items-center text-sm border-b pb-2 dark:border-gray-700 cart-line">
-              <span className="truncate flex-1">{item.name}</span>
+            <div key={cartKey(item)} className="flex justify-between items-center text-sm border-b pb-2 dark:border-gray-700 cart-line">
+              <span className="truncate flex-1">
+                {item.name}
+                {item.servingLabel && <span className="text-xs text-gray-500"> · {item.servingLabel}</span>}
+              </span>
               <span className="w-12 text-right">x{item.qty}</span>
               <span className="w-20 text-right">
-                ₹{(parseFloat(item.mrp) * item.qty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                ₹{(parseFloat(item.price) * item.qty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </span>
             </div>
           ))}
@@ -258,6 +297,14 @@ export function POS() {
             <span>₹{cartTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </div>
           {/* lastSync shown inline for E2E assertions */}
+          <input
+            id="posBuyerGstin"
+            className="w-full p-2 mb-2 border rounded text-xs font-mono dark:bg-gray-700 dark:border-gray-600"
+            placeholder="Buyer GSTIN (optional, B2B)"
+            maxLength={15}
+            value={buyerGstin}
+            onChange={(e) => setBuyerGstin(e.target.value)}
+          />
           <div id="lastSync" className="text-xs text-gray-500 mb-2">{lastSync}</div>
           <button
             id="checkoutBtn"
@@ -269,6 +316,29 @@ export function POS() {
           </button>
         </div>
       </div>
+
+      {/* Serving (peg / glass / bottle) picker */}
+      {servingPicker && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" id="servingPicker" onClick={() => setServingPicker(null)}>
+          <div className="bg-white dark:bg-gray-800 p-5 rounded shadow-lg max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-3">{servingPicker.name}</h2>
+            <div className="grid grid-cols-2 gap-2">
+              {servingPicker.servings!.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className="serving-option p-3 border rounded hover:bg-purple-50 dark:hover:bg-purple-900/20 text-center"
+                  onClick={() => { addToCart(servingPicker, s); setServingPicker(null); }}
+                >
+                  <div className="font-semibold">{s.label}</div>
+                  <div className="text-sm text-gray-500">₹{parseFloat(s.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                </button>
+              ))}
+            </div>
+            <button type="button" className="mt-3 w-full text-sm text-gray-500" onClick={() => setServingPicker(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* Post-checkout modal */}
       {checkoutModal && (
@@ -283,6 +353,16 @@ export function POS() {
                 ? 'Queued — will sync automatically when back online'
                 : `₹${parseFloat(checkoutModal.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })} collected via CASH`}
             </div>
+            {!checkoutModal.offline && checkoutModal.billId && (
+              <div className="flex gap-2 mb-3">
+                <button type="button" id="printBillBtn" onClick={() => printInBrowser('bills', checkoutModal.billId!)} className="flex-1 border p-2 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                  Print bill
+                </button>
+                <button type="button" onClick={() => sendToNetworkPrinter('bills', checkoutModal.billId!)} className="flex-1 border p-2 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                  Send to printer
+                </button>
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 id="newBillBtn"

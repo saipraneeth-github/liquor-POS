@@ -1,8 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { branches, users } from '../db/schema.js';
+import { branches, syndicates, users } from '../db/schema.js';
 import type { JwtPayload, UserRole } from '../modules/auth/auth.service.js';
+import { ACCESS_MESSAGE, accessState } from '../modules/platform/access.engine.js';
 
 // ─── RBAC ROLE HIERARCHY ─────────────────────────────────────────────────────
 
@@ -23,7 +24,11 @@ export function roleRank(role: string): number {
  * Returns a Fastify preHandler that requires the user to be authenticated
  * and have at least `minRole` rank.
  */
-export function requireRole(minRole: UserRole) {
+/**
+ * `allowLocked`: let a tenant whose trial ended or whose payment is overdue through, so its Admin can still
+ * reach the billing screens and pay. A suspended tenant is never let through.
+ */
+export function requireRole(minRole: UserRole, opts: { allowLocked?: boolean } = {}) {
   return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     try {
       await request.jwtVerify();
@@ -37,14 +42,37 @@ export function requireRole(minRole: UserRole) {
     const claims = request.user as JwtPayload;
     const [account] = claims?.sub && UUID_RE.test(claims.sub)
       ? await db
-          .select({ role: users.role, branchId: users.branchId, syndicateId: users.syndicateId, isActive: users.isActive })
+          .select({
+            role: users.role, branchId: users.branchId, syndicateId: users.syndicateId, isActive: users.isActive,
+            tenantActive: syndicates.isActive,   // NULL when the account has no tenant (platform owner)
+            tenantPlan: syndicates.plan,
+            tenantTrialEndsAt: syndicates.trialEndsAt,
+            tenantPaidUntil: syndicates.paidUntil,
+          })
           .from(users)
+          .leftJoin(branches, eq(users.branchId, branches.id))
+          .leftJoin(syndicates, eq(syndicates.id, sql`coalesce(${users.syndicateId}, ${branches.syndicateId})`))
           .where(eq(users.id, claims.sub))
           .limit(1)
       : [];
     if (!account || !account.isActive) {
       reply.code(401).send({ error: 'Unauthorized: account is inactive or no longer exists' });
       return;
+    }
+    // A suspended tenant (unpaid / offboarded) loses access for every one of its users at once
+    if (account.tenantActive !== null) {
+      const state = accessState({
+        isActive: account.tenantActive,
+        plan: account.tenantPlan ?? 'TRIAL',
+        trialEndsAt: account.tenantTrialEndsAt,
+        paidUntil: account.tenantPaidUntil,
+      });
+      (request as unknown as { tenantAccess?: string }).tenantAccess = state;
+      const lockedButPayable = state === 'TRIAL_EXPIRED' || state === 'OVERDUE';
+      if (state !== 'OK' && !(opts.allowLocked && lockedButPayable)) {
+        reply.code(403).send({ error: ACCESS_MESSAGE[state], code: state });
+        return;
+      }
     }
     const payload: JwtPayload = {
       ...claims,

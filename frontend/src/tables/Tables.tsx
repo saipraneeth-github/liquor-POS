@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { printInBrowser, sendToNetworkPrinter, errorMessage } from '../lib/print';
 
 type Table = {
   id: string;
@@ -12,16 +13,21 @@ type Table = {
   sessionOpenedAt?: string | null;
 };
 
+type Serving = { id: string; label: string; price: string };
+
 type Product = {
   id: string;
   name: string;
   mrp: string;
+  isAvailable?: boolean;
+  servings?: Serving[];
 };
 
 type KotItem = {
   id: string;
   productId: string;
   quantity: number;
+  servingLabel?: string | null;
   status: 'PENDING' | 'PREPARING' | 'SERVED' | 'CANCELLED';
 };
 
@@ -61,12 +67,15 @@ export function Tables() {
   const [loading, setLoading] = useState(false);
 
   // Modals
-  const [activeModal, setActiveModal] = useState<'actions' | 'newKot' | 'viewKots' | 'closeConfirm' | null>(null);
+  const [activeModal, setActiveModal] = useState<'actions' | 'newKot' | 'viewKots' | 'closeConfirm' | 'checkout' | null>(null);
+  const [checkout, setCheckout] = useState({ paymentMode: 'CASH', discount: '', gstin: '', roundOff: 'default' });
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutDone, setCheckoutDone] = useState<{ billId: string; billNumber: string; total: string } | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
 
   // New KOT Form State
   const [kotDest, setKotDest] = useState<'BAR' | 'KITCHEN'>('BAR');
-  const [kotItems, setKotItems] = useState<{ productId: string; quantity: number }[]>([
+  const [kotItems, setKotItems] = useState<{ productId: string; servingId?: string; quantity: number }[]>([
     { productId: '', quantity: 1 }
   ]);
   const [kotNotes, setKotNotes] = useState('');
@@ -151,14 +160,16 @@ export function Tables() {
 
     setKotSubmitting(true);
     try {
-      await api.post('/kot', {
+      const created = await api.post<{ kotOrder: { id: string } }>('/kot', {
         tableSessionId: selectedTable.currentSessionId,
         branchId,
         destination: kotDest,
-        items: validItems,
+        items: validItems.map((i) => ({ productId: i.productId, quantity: i.quantity, ...(i.servingId ? { servingId: i.servingId } : {}) })),
         ...(kotNotes ? { notes: kotNotes } : {}),
       });
       showToast(`KOT sent to ${kotDest.toLowerCase()} for ${selectedTable.name}`, 'success');
+      // Best effort: print the ticket on the branch's network printer when one is configured
+      api.post(`/print/kot/${created.kotOrder.id}/send?queue=true`).catch(() => { /* no printer — use the Print button */ });
       setActiveModal(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'KOT failed';
@@ -196,6 +207,37 @@ export function Tables() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Update failed';
       showToast(`Update failed: ${msg}`, 'error');
+    }
+  };
+
+  const openCheckout = () => {
+    setCheckout({ paymentMode: 'CASH', discount: '', gstin: '', roundOff: 'default' });
+    setCheckoutDone(null);
+    setActiveModal('checkout');
+  };
+
+  /** Bills every non-cancelled KOT item of the session (servings, GST, stock), then frees the table. */
+  const handleCheckout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTable) return;
+    setCheckoutBusy(true);
+    try {
+      const res = await api.post<{ bill: { id: string; billNumber: string; total: string } }>(`/tables/${selectedTable.id}/checkout`, {
+        branchId,
+        paymentMode: checkout.paymentMode,
+        ...(checkout.discount ? { discount: checkout.discount } : {}),
+        ...(checkout.gstin.trim() ? { customerGstin: checkout.gstin.trim().toUpperCase() } : {}),
+        ...(checkout.roundOff === 'default' ? {} : { roundOff: checkout.roundOff === 'round' }),
+      });
+      setCheckoutDone({ billId: res.bill.id, billNumber: res.bill.billNumber, total: res.bill.total });
+      showToast(`${selectedTable.name} billed: ${res.bill.billNumber}`, 'success');
+      // Best effort: print on the branch's network printer when one is configured
+      api.post(`/print/bills/${res.bill.id}/send?queue=true`).catch(() => { /* use the Print button */ });
+      await loadTables();
+    } catch (err: unknown) {
+      showToast(errorMessage(err), 'error');
+    } finally {
+      setCheckoutBusy(false);
     }
   };
 
@@ -376,6 +418,7 @@ export function Tables() {
                 {activeModal === 'newKot' && `New KOT - ${selectedTable?.name}`}
                 {activeModal === 'viewKots' && `KOTs - ${selectedTable?.name}`}
                 {activeModal === 'closeConfirm' && `Close ${selectedTable?.name} without billing?`}
+                {activeModal === 'checkout' && `Checkout - ${selectedTable?.name}`}
               </h2>
               <button
                 type="button"
@@ -416,13 +459,10 @@ export function Tables() {
                         <button
                           type="button"
                           id="tblActBill"
-                          onClick={() => {
-                            showToast('Direct to POS', 'info');
-                            setActiveModal(null);
-                          }}
-                          className="px-4 py-2 border rounded font-medium hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                          onClick={openCheckout}
+                          className="px-4 py-2 bg-emerald-600 text-white rounded font-medium hover:bg-emerald-700 text-sm"
                         >
-                          Bill at POS
+                          Checkout &amp; bill
                         </button>
                         <button
                           type="button"
@@ -434,6 +474,59 @@ export function Tables() {
                         </button>
                       </>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* Checkout: KOT items -> bill */}
+              {activeModal === 'checkout' && !checkoutDone && (
+                <form onSubmit={handleCheckout} className="space-y-4" id="checkoutForm">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Every KOT item on this table (except cancelled ones) goes on one GST bill at the menu rates. The table is freed afterwards.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block text-xs font-semibold text-gray-500">
+                      Payment
+                      <select id="coPayment" className="mt-1 w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={checkout.paymentMode} onChange={(e) => setCheckout({ ...checkout, paymentMode: e.target.value })}>
+                        <option value="CASH">Cash</option>
+                        <option value="CARD">Card</option>
+                        <option value="UPI">UPI</option>
+                      </select>
+                    </label>
+                    <label className="block text-xs font-semibold text-gray-500">
+                      Discount (₹)
+                      <input id="coDiscount" className="mt-1 w-full p-2 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600 dark:text-white" inputMode="decimal" placeholder="0" value={checkout.discount} onChange={(e) => setCheckout({ ...checkout, discount: e.target.value })} />
+                    </label>
+                  </div>
+                  <label className="block text-xs font-semibold text-gray-500">
+                    Round-off
+                    <select id="coRound" className="mt-1 w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={checkout.roundOff} onChange={(e) => setCheckout({ ...checkout, roundOff: e.target.value })}>
+                      <option value="default">Branch default</option>
+                      <option value="round">Round to the nearest rupee</option>
+                      <option value="exact">Exact amount</option>
+                    </select>
+                  </label>
+                  <label className="block text-xs font-semibold text-gray-500">
+                    Buyer GSTIN (optional, for a B2B invoice)
+                    <input id="coGstin" className="mt-1 w-full p-2 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600 dark:text-white" maxLength={15} value={checkout.gstin} onChange={(e) => setCheckout({ ...checkout, gstin: e.target.value })} />
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setActiveModal('actions')} className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Back</button>
+                    <button type="submit" id="coConfirm" disabled={checkoutBusy} className="px-4 py-2 bg-emerald-600 text-white rounded text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
+                      {checkoutBusy ? 'Billing…' : 'Confirm & bill'}
+                    </button>
+                  </div>
+                </form>
+              )}
+              {activeModal === 'checkout' && checkoutDone && (
+                <div className="space-y-4 text-center" id="checkoutDone">
+                  <div className="text-xs text-gray-500">Bill</div>
+                  <div className="text-2xl font-mono text-purple-600" id="coBillNo">{checkoutDone.billNumber}</div>
+                  <div className="text-lg font-semibold">₹{parseFloat(checkoutDone.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  <div className="flex gap-2 justify-center">
+                    <button type="button" id="coPrint" onClick={() => printInBrowser('bills', checkoutDone.billId)} className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Print bill</button>
+                    <button type="button" onClick={() => sendToNetworkPrinter('bills', checkoutDone.billId)} className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Send to printer</button>
+                    <button type="button" id="coDone" onClick={() => { setActiveModal(null); setSelectedTable(null); setCheckoutDone(null); }} className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-semibold">Done</button>
                   </div>
                 </div>
               )}
@@ -493,16 +586,32 @@ export function Tables() {
                           onChange={(e) => {
                             const val = e.target.value;
                             setKotItems((prev) =>
-                              prev.map((it, i) => (i === idx ? { ...it, productId: val } : it))
+                              prev.map((it, i) => (i === idx ? { ...it, productId: val, servingId: undefined } : it))
                             );
                           }}
                         >
-                          {products.map((p) => (
+                          {products.filter((p) => p.isAvailable !== false).map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name}
                             </option>
                           ))}
                         </select>
+                        {(products.find((p) => p.id === item.productId)?.servings ?? []).length > 0 && (
+                          <select
+                            className="kot-serving w-36 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            aria-label="Serving"
+                            value={item.servingId ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setKotItems((prev) => prev.map((it, i) => (i === idx ? { ...it, servingId: val || undefined } : it)));
+                            }}
+                          >
+                            <option value="">Bottle rate</option>
+                            {products.find((p) => p.id === item.productId)!.servings!.map((s) => (
+                              <option key={s.id} value={s.id}>{s.label} — ₹{parseFloat(s.price)}</option>
+                            ))}
+                          </select>
+                        )}
                         <input
                           type="number"
                           min={1}
@@ -574,8 +683,11 @@ export function Tables() {
                       <div key={o.id} className="p-3 border rounded-lg dark:border-gray-700 space-y-2">
                         <div className="flex justify-between items-center font-bold text-sm">
                           <span>KOT #{idx + 1} ({o.destination})</span>
-                          <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
-                            {o.status}
+                          <span className="flex items-center gap-2">
+                            <button type="button" className="text-xs text-purple-600 hover:underline cursor-pointer" onClick={() => printInBrowser('kot', o.id)}>Print KOT</button>
+                            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
+                              {o.status}
+                            </span>
                           </span>
                         </div>
                         <div className="divide-y dark:divide-gray-700">
@@ -584,7 +696,7 @@ export function Tables() {
                             const allowed = [i.status, ...nextOptions];
                             return (
                               <div key={i.id} className="py-2 flex justify-between items-center text-sm">
-                                <span>{productName(i.productId)} x {i.quantity}</span>
+                                <span>{productName(i.productId)}{i.servingLabel ? ` (${i.servingLabel})` : ''} x {i.quantity}</span>
                                 <select
                                   id={`ks-${i.id}`}
                                   value={i.status}

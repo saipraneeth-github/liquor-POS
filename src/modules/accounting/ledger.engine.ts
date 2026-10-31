@@ -121,7 +121,8 @@ export interface BillPostingInput {
   subtotal: string;      // MRP-inclusive gross (sum of qty × MRP)
   taxAmount: string;     // GST contained inside the subtotal
   discount: string;      // flat discount after tax
-  total: string;         // subtotal - discount (amount received / receivable)
+  total: string;         // subtotal - discount + roundOff (amount received / receivable)
+  roundOff?: string;     // rounding to a whole rupee (+ = customer paid more)
   paymentMode: string | null;
 }
 
@@ -131,21 +132,26 @@ export interface BillPostingInput {
  *   Dr DISCOUNT_ALLOWED               discount (if > 0)
  *       Cr SALES                      subtotal - taxAmount
  *       Cr OUTPUT_GST                 taxAmount
- * Balances because total + discount = subtotal = (subtotal - tax) + tax.
+ *   Dr|Cr ROUND_OFF                   |roundOff| (only when rounding is on)
+ * Balances because total + discount - roundOff = subtotal = (subtotal - tax) + tax.
  */
 export function billPaidLines(bill: BillPostingInput): PostingLine[] {
   const subtotal = new Decimal(bill.subtotal);
   const tax = new Decimal(bill.taxAmount);
   const discount = new Decimal(bill.discount);
   const total = new Decimal(bill.total);
-  if (!total.equals(subtotal.minus(discount))) {
-    throw new Error(`Bill total ${bill.total} != subtotal ${bill.subtotal} - discount ${bill.discount}`);
+  const roundOff = new Decimal(bill.roundOff ?? '0');
+  if (!total.equals(subtotal.minus(discount).plus(roundOff))) {
+    throw new Error(`Bill total ${bill.total} != subtotal ${bill.subtotal} - discount ${bill.discount} + round-off ${roundOff.toFixed(2)}`);
   }
   return buildVoucher<string>([
     dr(paymentLedgerCode(bill.paymentMode), total),
     dr('DISCOUNT_ALLOWED', discount),
     cr('SALES', subtotal.minus(tax)),
     cr('OUTPUT_GST', tax),
+    // Customer paid more than the bill (round up) = income; paid less (round down) = expense
+    ...(roundOff.isPositive() && !roundOff.isZero() ? [cr('ROUND_OFF', roundOff)] : []),
+    ...(roundOff.isNegative() ? [dr('ROUND_OFF', roundOff.abs())] : []),
   ]);
 }
 

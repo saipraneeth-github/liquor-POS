@@ -5,10 +5,13 @@ import { eq, inArray } from 'drizzle-orm';
 import type { JwtPayload } from '../auth/auth.service.js';
 import { canAccessBranch, getAccessibleBranchIds, getOwnedSyndicateId, isPlatformOwner } from '../../middleware/auth.guard.js';
 import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
+import { assertWithinBranchLimit, branchCountOf } from '../platform/platform.service.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
 const GSTIN = z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be 15 alphanumeric characters');
+
+const PRINTER_HOST = z.string().trim().max(253).regex(/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/, 'Printer host must be a hostname or IP address');
 
 const BRANCH_NAME = z.string().trim().min(1).max(200).refine((s) => !/[<>]/.test(s), 'Branch name must not contain < or >');
 
@@ -29,10 +32,25 @@ export const UpdateBranchSchema = z.object({
   gstin:           GSTIN.nullable().optional(),
   exciseLicenseNo: z.string().trim().max(100).nullable().optional(),
   parentBranchId:  z.string().uuid().nullable().optional(),
+  roundOff:        z.boolean().optional(),
+  printViaAgent:   z.boolean().optional(),                            // print through the local print agent
+  printerHost:     PRINTER_HOST.nullable().optional(),                // ESC/POS network printer
+  printerPort:     z.number().int().min(1).max(65535).optional(),
+  paperWidth:      z.enum(['58mm', '80mm']).optional(),
 }).refine((d) => Object.keys(d).length > 0, 'At least one field is required');
 
 export type CreateBranchInput = z.infer<typeof CreateBranchSchema>;
 export type UpdateBranchInput = z.infer<typeof UpdateBranchSchema>;
+
+/** Branch as sent to the browser: never the token hash; says whether an agent is set up and online. */
+export function publicBranch<T extends { agentTokenHash: string | null; agentLastSeenAt: Date | null }>(row: T) {
+  const { agentTokenHash, ...rest } = row;
+  return {
+    ...rest,
+    hasAgentToken: !!agentTokenHash,
+    agentOnline: !!row.agentLastSeenAt && Date.now() - row.agentLastSeenAt.getTime() < 30_000,
+  };
+}
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -68,9 +86,11 @@ async function assertValidParent(user: JwtPayload, parentBranchId: string, syndi
 
 export async function listBranches(user: JwtPayload) {
   const scope = await getAccessibleBranchIds(user);
-  if (scope === 'ALL') return db.select().from(branches).orderBy(branches.code);
   if (scope.length === 0) return [];
-  return db.select().from(branches).where(inArray(branches.id, scope)).orderBy(branches.code);
+  const rows = scope === 'ALL'
+    ? await db.select().from(branches).orderBy(branches.code)
+    : await db.select().from(branches).where(inArray(branches.id, scope)).orderBy(branches.code);
+  return rows.map(publicBranch);
 }
 
 export async function createBranch(user: JwtPayload, input: CreateBranchInput) {
@@ -92,6 +112,12 @@ export async function createBranch(user: JwtPayload, input: CreateBranchInput) {
 
   if (input.parentBranchId) await assertValidParent(user, input.parentBranchId, syndicateId);
 
+  // Plan limit: a tenant cannot add branches beyond what its plan allows
+  if (syndicateId) {
+    const { count, max } = await branchCountOf(syndicateId);
+    assertWithinBranchLimit(count, max);
+  }
+
   try {
     const [row] = await db.insert(branches).values({
       name: input.name,
@@ -102,7 +128,7 @@ export async function createBranch(user: JwtPayload, input: CreateBranchInput) {
       parentBranchId: input.parentBranchId ?? null,
       syndicateId,
     }).returning();
-    return row;
+    return publicBranch(row);
   } catch (err) {
     if (isUniqueViolation(err)) throw new ConflictError(`Branch code ${input.code} already exists`);
     throw err;
@@ -117,5 +143,5 @@ export async function updateBranch(user: JwtPayload, branchId: string, patch: Up
   if (patch.parentBranchId) await assertValidParent(user, patch.parentBranchId, existing.syndicateId ?? null, branchId);
 
   const [row] = await db.update(branches).set(patch).where(eq(branches.id, branchId)).returning();
-  return row;
+  return publicBranch(row);
 }

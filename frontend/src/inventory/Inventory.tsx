@@ -8,6 +8,7 @@ interface StockRow {
   brand?: string;
   volumeMl?: number;
   quantity: number;
+  openMl?: number;
   reorderLevel: number;
   mrp: string;
 }
@@ -169,8 +170,10 @@ export function Inventory() {
   const [editDupMsg, setEditDupMsg] = useState<string>('');
   const editDupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Secondary details expansion toggle (per row index)
-  const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
+  const [onlyIssues, setOnlyIssues] = useState(false);
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
+  const [showBreakage, setShowBreakage] = useState(false);
 
   // Add Missing Product Modal State
   const [createProductModal, setCreateProductModal] = useState<CreateProductModalState | null>(null);
@@ -694,10 +697,6 @@ export function Inventory() {
     setActiveInvoice({ ...activeInvoice, items });
   };
 
-  const toggleRowExpanded = (idx: number) => {
-    setExpandedRows((prev) => ({ ...prev, [idx]: !prev[idx] }));
-  };
-
   // ── Save, Review & Approve ────────────────────────────────────────────────
 
   const saveDraft = async (silent = false): Promise<boolean> => {
@@ -815,6 +814,13 @@ export function Inventory() {
   const outCount = stockRows.filter((r) => r.quantity <= 0).length;
   const totalBottlesStock = stockRows.reduce((sum, r) => sum + r.quantity, 0);
 
+  const q = stockSearch.trim().toLowerCase();
+  const visibleStock = stockRows.filter((r) => {
+    if (stockFilter === 'out' && r.quantity > 0) return false;
+    if (stockFilter === 'low' && !(r.quantity > 0 && r.quantity <= r.reorderLevel)) return false;
+    return !q || r.name.toLowerCase().includes(q) || (r.brand || '').toLowerCase().includes(q);
+  });
+
   // Active Draft Metrics
   const draftTotalBottles = activeInvoice?.items.reduce((s, it) => s + (it.quantity || 0), 0) || 0;
   const draftLinesCostTotal =
@@ -886,69 +892,22 @@ export function Inventory() {
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'upload' && (
         <div className="space-y-6">
-          {/* Visual Step Indicator */}
-          <div className="bg-white rounded-xl shadow-sm border p-4">
-            <div className="flex items-center justify-between max-w-2xl mx-auto">
-              {/* Step 1 */}
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm ${
-                    wizardStep === 1
-                      ? 'bg-blue-600 text-white ring-4 ring-blue-100'
-                      : wizardStep > 1
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-gray-100 text-gray-500'
+          {/* Step indicator */}
+          <ol className="flex items-center gap-2 text-sm">
+            {([['Upload', 1], ['Review items', 2], ['Confirm', 3]] as const).map(([label, n], i) => (
+              <li key={n} className="flex items-center gap-2">
+                {i > 0 && <span className={`h-px w-8 sm:w-14 ${wizardStep >= n ? 'bg-emerald-500' : 'bg-gray-300'}`} />}
+                <span
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                    wizardStep === n ? 'bg-blue-600 text-white' : wizardStep > n ? 'bg-emerald-500 text-white' : 'bg-gray-200 text-gray-500'
                   }`}
                 >
-                  {wizardStep > 1 ? '✓' : '1'}
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-gray-900">Choose Bill</div>
-                  <div className="text-xs text-gray-500">Photo, PDF or Excel</div>
-                </div>
-              </div>
-
-              <div className={`h-1 flex-1 mx-4 rounded ${wizardStep >= 2 ? 'bg-emerald-600' : 'bg-gray-200'}`} />
-
-              {/* Step 2 */}
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm ${
-                    wizardStep === 2
-                      ? 'bg-blue-600 text-white ring-4 ring-blue-100'
-                      : wizardStep > 2
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  {wizardStep > 2 ? '✓' : '2'}
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-gray-900">Check Items</div>
-                  <div className="text-xs text-gray-500">Verify bottles &amp; rates</div>
-                </div>
-              </div>
-
-              <div className={`h-1 flex-1 mx-4 rounded ${wizardStep >= 3 ? 'bg-emerald-600' : 'bg-gray-200'}`} />
-
-              {/* Step 3 */}
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm ${
-                    wizardStep === 3
-                      ? 'bg-emerald-600 text-white ring-4 ring-emerald-100'
-                      : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  3
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-gray-900">Add to Stock</div>
-                  <div className="text-xs text-gray-500">Confirm &amp; inward</div>
-                </div>
-              </div>
-            </div>
-          </div>
+                  {wizardStep > n ? '✓' : n}
+                </span>
+                <span className={wizardStep === n ? 'font-semibold text-gray-900' : 'text-gray-500'}>{label}</span>
+              </li>
+            ))}
+          </ol>
 
           {/* ── STEP 1: Upload / Enter Bill ──────────────────────────────────── */}
           {wizardStep === 1 && !activeInvoice && (
@@ -1290,164 +1249,134 @@ export function Inventory() {
                 </div>
               </div>
 
-              {/* Items Table */}
+              {/* Items */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                    <span>📋</span> Bill Line Items
-                    {unmatchedItemCount > 0 && (
-                      <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-bold">
-                        {unmatchedItemCount} product{unmatchedItemCount > 1 ? 's' : ''} need selection
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-gray-900">Line items</h3>
+                    {unmatchedItemCount > 0 ? (
+                      <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full">
+                        {unmatchedItemCount} to match
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full">
+                        All matched
                       </span>
                     )}
-                  </h3>
-                  <div className="text-xs text-gray-500">
-                    Calculated Total: <b className="text-gray-900">₹{draftLinesCostTotal}</b>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-gray-500">
+                    {unmatchedItemCount > 0 && (
+                      <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                        <input type="checkbox" checked={onlyIssues} onChange={(e) => setOnlyIssues(e.target.checked)} />
+                        Show only unmatched
+                      </label>
+                    )}
+                    <span>
+                      Calculated <b className="text-gray-900 font-mono">₹{draftLinesCostTotal}</b>
+                    </span>
                   </div>
                 </div>
 
                 <div className="overflow-x-auto border rounded-xl">
-                  <table className="w-full text-left bg-white text-sm" id="invEditTable">
+                  <table className="w-full text-left text-sm" id="invEditTable">
                     <thead>
-                      <tr className="border-b text-xs text-gray-600 bg-gray-50/80 uppercase tracking-wider">
-                        <th className="py-3 px-3 w-10">#</th>
-                        <th className="py-3 px-3">Description on Bill</th>
-                        <th className="py-3 px-3" style={{ minWidth: '260px' }}>
-                          Matched Store Liquor
-                        </th>
-                        <th className="py-3 px-3 text-right w-24">Bottles</th>
-                        <th className="py-3 px-3 text-right w-28">Buy Price (₹)</th>
-                        <th className="py-3 px-3 text-right w-28">Sale MRP (₹)</th>
-                        <th className="py-3 px-3 text-right w-32">Total (₹)</th>
-                        <th className="py-3 px-2 text-center w-16">Details</th>
+                      <tr className="border-b text-[11px] text-gray-500 bg-gray-50 uppercase tracking-wider">
+                        <th className="py-2.5 px-3 w-8">#</th>
+                        <th className="py-2.5 px-3">Item &amp; catalog match</th>
+                        <th className="py-2.5 px-2 text-right w-20">Qty</th>
+                        <th className="py-2.5 px-2 text-right w-24">Cost ₹</th>
+                        <th className="py-2.5 px-2 text-right w-24">MRP ₹</th>
+                        <th className="py-2.5 px-3 text-right w-28">Total</th>
                       </tr>
                     </thead>
                     <tbody id="invEditLines" className="divide-y divide-gray-100">
-                      {activeInvoice.items.map((it, idx) => (
-                        <tr
-                          key={it.id || idx}
-                          className="inv-edit-row hover:bg-gray-50/60 transition-colors"
-                          data-item-id={it.id || ''}
-                          data-match-status={it.matchStatus}
-                        >
-                          <td className="py-3 px-3 text-xs text-gray-400 font-mono">{idx + 1}</td>
-
-                          {/* Raw description */}
-                          <td className="py-3 px-3">
-                            <input
-                              className="input input-sm ie-desc p-1.5 border rounded text-xs w-full bg-white font-medium"
-                              value={it.rawDescription}
-                              onChange={(e) => handleLineDescChange(idx, e.target.value)}
-                            />
-                            {expandedRows[idx] && (
-                              <div className="mt-1 text-[11px] text-gray-400 space-y-0.5">
-                                {it.barcode && <div>Barcode: {it.barcode}</div>}
-                                {it.extractedAmount && <div>Extracted total: ₹{it.extractedAmount}</div>}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Catalog Match Selector + Add New Product Action */}
-                          <td className="py-3 px-3">
-                            <select
-                              className="input input-sm ie-prod p-1.5 border rounded text-xs w-full bg-white font-medium"
-                              value={it.productId || ''}
-                              onChange={(e) => {
-                                if (e.target.value === '__NEW__') {
-                                  openAddProductModalForLine(idx);
-                                  return;
-                                }
-                                handleProductChange(idx, e.target.value);
-                              }}
-                            >
-                              <option value="">— Select Store Liquor —</option>
-                              <option value="__NEW__" className="font-bold text-blue-600 bg-blue-50">
-                                ➕ Add New Product to Catalog…
-                              </option>
-                              {products.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} (MRP ₹{parseFloat(p.mrp).toFixed(2)})
-                                </option>
-                              ))}
-                            </select>
-
-                            <div className="mt-1.5 flex items-center justify-between gap-1">
-                              <span className="ie-match-badge">
+                      {activeInvoice.items.map((it, idx) => {
+                        const matched = !!it.productId;
+                        if (onlyIssues && matched) return null;
+                        return (
+                          <tr
+                            key={it.id || idx}
+                            className={`inv-edit-row align-top ${matched ? 'hover:bg-gray-50/60' : 'bg-amber-50/40'}`}
+                            data-item-id={it.id || ''}
+                            data-match-status={it.matchStatus}
+                          >
+                            <td className="py-3 px-3 text-xs text-gray-400 font-mono">{idx + 1}</td>
+                            <td className="py-3 px-3 space-y-1.5">
+                              <input
+                                className="ie-desc w-full px-1 py-0.5 -mx-1 rounded text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-400 focus:bg-white outline-none"
+                                value={it.rawDescription}
+                                onChange={(e) => handleLineDescChange(idx, e.target.value)}
+                                title="Description as printed on the bill"
+                              />
+                              <div className="flex items-center gap-2">
                                 <span
-                                  className={`text-[11px] px-2 py-0.5 rounded font-bold ${
-                                    it.matchStatus === 'MATCHED' || it.matchStatus === 'MANUAL'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : it.matchStatus === 'SUGGESTED'
-                                      ? 'bg-amber-100 text-amber-800'
-                                      : 'bg-red-100 text-red-800'
+                                  className={`ie-match-badge shrink-0 w-2 h-2 rounded-full ${
+                                    matched ? 'bg-emerald-500' : it.matchStatus === 'SUGGESTED' ? 'bg-amber-400' : 'bg-red-500'
                                   }`}
+                                  title={matched ? 'Matched' : it.matchStatus === 'SUGGESTED' ? 'Suggested' : 'Needs selection'}
+                                />
+                                <select
+                                  className="ie-prod flex-1 min-w-0 p-1.5 border rounded-md text-xs bg-white text-gray-700"
+                                  value={it.productId || ''}
+                                  onChange={(e) => {
+                                    if (e.target.value === '__NEW__') {
+                                      openAddProductModalForLine(idx);
+                                      return;
+                                    }
+                                    handleProductChange(idx, e.target.value);
+                                  }}
                                 >
-                                  {it.matchStatus === 'MATCHED' || it.matchStatus === 'MANUAL'
-                                    ? '✓ Matched'
-                                    : it.matchStatus === 'SUGGESTED'
-                                    ? '⚡ Suggested'
-                                    : '⚠️ Needs Selection'}
-                                </span>
-                              </span>
-
-                              <button
-                                type="button"
-                                className="text-[11px] text-blue-600 hover:text-blue-800 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
-                                title="Add this item as a new product in your store catalog"
-                                onClick={() => openAddProductModalForLine(idx)}
-                              >
-                                <span>➕</span> Add to catalog
-                              </button>
-                            </div>
-                          </td>
-
-                          {/* Bottles */}
-                          <td className="py-3 px-3 text-right">
-                            <input
-                              className="input input-sm ie-qty p-1.5 border rounded text-right font-mono text-sm w-20 font-bold bg-white"
-                              type="number"
-                              min="1"
-                              value={it.quantity}
-                              onChange={(e) => handleLineQtyChange(idx, e.target.value)}
-                            />
-                          </td>
-
-                          {/* Cost per bottle */}
-                          <td className="py-3 px-3 text-right">
-                            <input
-                              className="input input-sm ie-cost p-1.5 border rounded text-right font-mono text-sm w-24 bg-white"
-                              value={it.costPrice}
-                              onChange={(e) => handleLineCostChange(idx, e.target.value)}
-                            />
-                          </td>
-
-                          {/* MRP */}
-                          <td className="py-3 px-3 text-right">
-                            <input
-                              className="input input-sm ie-mrp p-1.5 border rounded text-right font-mono text-sm w-24 bg-white"
-                              value={it.mrp}
-                              onChange={(e) => handleLineMrpChange(idx, e.target.value)}
-                            />
-                          </td>
-
-                          {/* Line total */}
-                          <td className="py-3 px-3 text-right font-mono font-bold text-gray-900">
-                            <span className="ie-linetotal">₹{parseFloat(it.lineCostTotal).toFixed(2)}</span>
-                          </td>
-
-                          {/* Expandable toggle */}
-                          <td className="py-3 px-2 text-center">
-                            <button
-                              type="button"
-                              className="text-xs text-gray-400 hover:text-gray-700 p-1 cursor-pointer"
-                              title="Show secondary details"
-                              onClick={() => toggleRowExpanded(idx)}
-                            >
-                              {expandedRows[idx] ? '▲' : '▼'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                                  <option value="">Select catalog product…</option>
+                                  <option value="__NEW__">＋ Add new product…</option>
+                                  {products.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} · ₹{parseFloat(p.mrp).toFixed(0)}
+                                    </option>
+                                  ))}
+                                </select>
+                                {!matched && (
+                                  <button
+                                    type="button"
+                                    className="shrink-0 text-xs text-blue-600 hover:underline cursor-pointer"
+                                    onClick={() => openAddProductModalForLine(idx)}
+                                  >
+                                    + New
+                                  </button>
+                                )}
+                              </div>
+                              {(it.flags || []).length > 0 && (
+                                <div className="text-[11px] text-amber-700">⚠ {it.flags.join(', ')}</div>
+                              )}
+                            </td>
+                            <td className="py-3 px-2 text-right">
+                              <input
+                                className="ie-qty w-16 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
+                                type="number"
+                                min="1"
+                                value={it.quantity}
+                                onChange={(e) => handleLineQtyChange(idx, e.target.value)}
+                              />
+                            </td>
+                            <td className="py-3 px-2 text-right">
+                              <input
+                                className="ie-cost w-20 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
+                                value={it.costPrice}
+                                onChange={(e) => handleLineCostChange(idx, e.target.value)}
+                              />
+                            </td>
+                            <td className="py-3 px-2 text-right">
+                              <input
+                                className="ie-mrp w-20 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
+                                value={it.mrp}
+                                onChange={(e) => handleLineMrpChange(idx, e.target.value)}
+                              />
+                            </td>
+                            <td className="py-3 px-3 text-right font-mono font-semibold text-gray-900">
+                              <span className="ie-linetotal">₹{parseFloat(it.lineCostTotal).toFixed(2)}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1765,116 +1694,128 @@ export function Inventory() {
       {/* TAB 3: CURRENT STORE STOCK & BREAKAGE                                  */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'stock' && (
-        <div className="space-y-6">
-          {/* Top Stock Metrics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4" id="stockStats">
-            <div className="p-4 bg-white rounded-xl shadow-sm border">
-              <div className="text-xs text-gray-500 font-medium">SKUs in Store</div>
-              <div className="text-2xl font-bold font-mono mt-1 text-gray-900">{stockRows.length}</div>
-            </div>
-            <div className="p-4 bg-white rounded-xl shadow-sm border">
-              <div className="text-xs text-gray-500 font-medium">Total Bottles on Hand</div>
-              <div className="text-2xl font-bold font-mono mt-1 text-gray-900">
-                {totalBottlesStock.toLocaleString('en-IN')}
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-xl shadow-sm border">
-              <div className="text-xs text-amber-600 font-medium">⚠️ Low Stock Alerts</div>
-              <div className="text-2xl font-bold font-mono mt-1 text-amber-600">{lowCount}</div>
-            </div>
-            <div className="p-4 bg-white rounded-xl shadow-sm border">
-              <div className="text-xs text-red-600 font-medium">🚫 Out of Stock</div>
-              <div className="text-2xl font-bold font-mono mt-1 text-red-600">{outCount}</div>
-            </div>
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3" id="stockStats">
+            {[
+              { k: 'all', label: 'Products', val: stockRows.length, cls: 'text-gray-900' },
+              { k: 'bottles', label: 'Bottles on hand', val: totalBottlesStock.toLocaleString('en-IN'), cls: 'text-gray-900' },
+              { k: 'low', label: 'Low stock', val: lowCount, cls: 'text-amber-600' },
+              { k: 'out', label: 'Out of stock', val: outCount, cls: 'text-red-600' },
+            ].map((s) => (
+              <button
+                key={s.k}
+                type="button"
+                disabled={s.k === 'bottles'}
+                onClick={() => setStockFilter(s.k === 'low' || s.k === 'out' ? (stockFilter === s.k ? 'all' : s.k) : 'all')}
+                className={`text-left p-4 bg-white rounded-xl border transition-colors ${
+                  stockFilter === s.k ? 'ring-2 ring-blue-500' : s.k !== 'bottles' ? 'hover:border-gray-400 cursor-pointer' : ''
+                }`}
+              >
+                <div className="text-xs text-gray-500">{s.label}</div>
+                <div className={`text-2xl font-semibold font-mono mt-1 ${s.cls}`}>{s.val}</div>
+              </button>
+            ))}
           </div>
 
-          {/* Current Stock Table */}
-          <div className="bg-white rounded-xl shadow-sm border p-6">
-            <div className="flex items-center justify-between pb-4 border-b mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Current Liquor Stock Levels</h2>
-                <p className="text-xs text-gray-500 mt-0.5">Live bottle balance by product in this store.</p>
+          <div className="bg-white rounded-xl border">
+            <div className="flex flex-wrap items-center gap-3 p-4 border-b">
+              <input
+                className="flex-1 min-w-[200px] p-2 border rounded-lg text-sm"
+                placeholder="Search product or brand…"
+                value={stockSearch}
+                onChange={(e) => setStockSearch(e.target.value)}
+              />
+              <div className="inline-flex rounded-lg border bg-gray-50 p-0.5 text-xs">
+                {(['all', 'low', 'out'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setStockFilter(f)}
+                    className={`px-3 py-1.5 rounded-md cursor-pointer ${stockFilter === f ? 'bg-white shadow-sm font-semibold' : 'text-gray-600'}`}
+                  >
+                    {f === 'all' ? 'All' : f === 'low' ? 'Low' : 'Out'}
+                  </button>
+                ))}
               </div>
+              <button type="button" className="text-xs text-gray-600 hover:text-gray-900 cursor-pointer" onClick={loadStock}>
+                ↻ Refresh
+              </button>
               <button
                 type="button"
-                className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg border text-xs font-semibold cursor-pointer"
-                onClick={loadStock}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-red-700 border-red-200 bg-red-50 hover:bg-red-100 cursor-pointer"
+                onClick={() => setShowBreakage((v) => !v)}
               >
-                ↻ Refresh Stock
+                {showBreakage ? 'Hide breakage' : '💥 Record breakage'}
               </button>
             </div>
 
             <div className="overflow-x-auto" id="stockTable">
               {loadingStock ? (
                 <div className="p-8 text-center text-gray-500 text-sm">Loading stock levels…</div>
+              ) : visibleStock.length === 0 ? (
+                <div className="p-8 text-center text-gray-500 text-sm">No products match.</div>
               ) : (
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b text-xs text-gray-500 bg-gray-50/70 uppercase tracking-wider">
-                      <th className="py-2.5 px-3">Product</th>
-                      <th className="py-2.5 px-3 text-right">In Stock</th>
-                      <th className="py-2.5 px-3 text-right">Reorder Level</th>
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3 text-right">MRP (₹)</th>
+                    <tr className="border-b text-[11px] text-gray-500 bg-gray-50 uppercase tracking-wider">
+                      <th className="py-2.5 px-4">Product</th>
+                      <th className="py-2.5 px-4 w-56">Stock level</th>
+                      <th className="py-2.5 px-4 text-right">MRP</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {stockRows.map((r) => (
-                      <tr key={r.productId} className="hover:bg-gray-50/70 transition-colors">
-                        <td className="py-3 px-3">
-                          <div className="font-bold text-gray-900">{r.name}</div>
-                          {r.brand && (
-                            <div className="text-xs text-gray-500">
-                              {r.brand} {r.volumeMl ? `· ${r.volumeMl}ml` : ''}
+                    {visibleStock.map((r) => {
+                      const out = r.quantity <= 0;
+                      const low = !out && r.quantity <= r.reorderLevel;
+                      const pct = Math.min(100, r.reorderLevel > 0 ? (r.quantity / (r.reorderLevel * 3)) * 100 : r.quantity > 0 ? 100 : 0);
+                      return (
+                        <tr key={r.productId} className="hover:bg-gray-50/70">
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-gray-900">{r.name}</div>
+                            {r.brand && (
+                              <div className="text-xs text-gray-500">
+                                {r.brand}
+                                {r.volumeMl ? ` · ${r.volumeMl}ml` : ''}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              <span className={`font-mono font-semibold w-10 text-right ${out ? 'text-red-600' : low ? 'text-amber-600' : 'text-gray-900'}`}>
+                                {r.quantity}
+                              </span>
+                              {!!r.openMl && r.volumeMl && (
+                                <span className="open-ml text-[11px] text-purple-700 bg-purple-50 border border-purple-200 rounded-full px-2 py-0.5 whitespace-nowrap" title="Opened bottle, poured by the peg">
+                                  +{r.openMl} ml open
+                                </span>
+                              )}
+                              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden" title={`Reorder at ${r.reorderLevel}`}>
+                                <div className={`h-full ${out ? 'bg-red-500' : low ? 'bg-amber-400' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              {(out || low) && (
+                                <span className={`text-[11px] font-semibold ${out ? 'text-red-600' : 'text-amber-600'}`}>{out ? 'Out' : 'Low'}</span>
+                              )}
                             </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-gray-900">{r.quantity}</td>
-                        <td className="py-3 px-3 text-right font-mono text-gray-500">{r.reorderLevel}</td>
-                        <td className="py-3 px-3">
-                          {r.quantity <= 0 ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-100 text-red-800">
-                              Out of stock
-                            </span>
-                          ) : r.quantity <= r.reorderLevel ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800">
-                              Low
-                            </span>
-                          ) : (
-                            <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
-                              OK
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono font-semibold text-gray-900">
-                          ₹{parseFloat(r.mrp).toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-gray-700">₹{parseFloat(r.mrp).toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
           </div>
 
-          {/* Breakage Recording Section */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">💥 Record Broken Bottle</h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Record accidental bottle breakage to keep physical stock accurate.
-                </p>
-              </div>
-
-              <form onSubmit={handleRecordBreakage} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700" htmlFor="breakProduct">
-                    Product
-                  </label>
+          {showBreakage && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div className="bg-white rounded-xl border p-5 space-y-4">
+                <h3 className="text-sm font-semibold text-gray-900">Record broken bottle</h3>
+                <form onSubmit={handleRecordBreakage} className="space-y-3">
                   <select
                     id="breakProduct"
-                    className="w-full mt-1 p-2.5 border rounded-lg text-sm bg-white font-medium"
+                    aria-label="Product"
+                    className="w-full p-2 border rounded-lg text-sm bg-white"
                     value={breakProduct}
                     onChange={(e) => setBreakProduct(e.target.value)}
                     required
@@ -1885,95 +1826,70 @@ export function Inventory() {
                       </option>
                     ))}
                   </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-700" htmlFor="breakQty">
-                    Broken Bottles
-                  </label>
-                  <input
-                    id="breakQty"
-                    type="number"
-                    min="1"
-                    className="w-full mt-1 p-2.5 border rounded-lg text-sm bg-white font-mono"
-                    value={breakQty}
-                    onChange={(e) => setBreakQty(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-700" htmlFor="breakReason">
-                    Reason
-                  </label>
-                  <input
-                    id="breakReason"
-                    className="w-full mt-1 p-2.5 border rounded-lg text-sm bg-white"
-                    placeholder="e.g. Slipped from carton while shelving"
-                    value={breakReason}
-                    onChange={(e) => setBreakReason(e.target.value)}
-                    required
-                    minLength={3}
-                  />
-                </div>
-
-                <button
-                  id="breakSubmit"
-                  type="submit"
-                  className="w-full min-h-[44px] px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-sm shadow-sm transition-all cursor-pointer"
-                >
-                  Record Breakage
-                </button>
-              </form>
-            </div>
-
-            {isManager && (
-              <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">Breakage History (Last 30 Days)</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Manager compliance log of recorded breakages.</p>
-                </div>
-
-                <div id="breakLog" className="overflow-x-auto">
-                  {breakLog.length === 0 ? (
-                    <div className="p-8 text-center text-gray-400 text-xs">
-                      No breakage recorded in the last 30 days.
-                    </div>
-                  ) : (
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b text-gray-500 bg-gray-50">
-                          <th className="py-2 px-2">Date</th>
-                          <th className="py-2 px-2">Product</th>
-                          <th className="py-2 px-2 text-right">Qty</th>
-                          <th className="py-2 px-2 text-right">Cost (₹)</th>
-                          <th className="py-2 px-2">Reason</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {breakLog.map((b) => (
-                          <tr key={b.id}>
-                            <td className="py-2 px-2 text-gray-500">
-                              {new Date(b.createdAt).toLocaleDateString('en-IN', {
-                                day: 'numeric',
-                                month: 'short',
-                              })}
-                            </td>
-                            <td className="py-2 px-2 font-medium text-gray-900">{b.productName}</td>
-                            <td className="py-2 px-2 text-right font-mono font-bold text-gray-900">{b.quantity}</td>
-                            <td className="py-2 px-2 text-right font-mono text-gray-700">
-                              ₹{parseFloat(b.costValue).toFixed(2)}
-                            </td>
-                            <td className="py-2 px-2 text-gray-500 truncate max-w-xs">{b.reason}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+                  <div className="grid grid-cols-[100px_1fr] gap-3">
+                    <input
+                      id="breakQty"
+                      aria-label="Broken bottles"
+                      type="number"
+                      min="1"
+                      className="p-2 border rounded-lg text-sm font-mono"
+                      value={breakQty}
+                      onChange={(e) => setBreakQty(e.target.value)}
+                      required
+                    />
+                    <input
+                      id="breakReason"
+                      aria-label="Reason"
+                      className="p-2 border rounded-lg text-sm"
+                      placeholder="Reason, e.g. slipped while shelving"
+                      value={breakReason}
+                      onChange={(e) => setBreakReason(e.target.value)}
+                      required
+                      minLength={3}
+                    />
+                  </div>
+                  <button
+                    id="breakSubmit"
+                    type="submit"
+                    className="w-full min-h-[40px] bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm cursor-pointer"
+                  >
+                    Record breakage
+                  </button>
+                </form>
               </div>
-            )}
-          </div>
+
+              {isManager && (
+                <div className="bg-white rounded-xl border p-5 space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-900">Breakage, last 30 days</h3>
+                  <div id="breakLog" className="overflow-x-auto max-h-64 overflow-y-auto">
+                    {breakLog.length === 0 ? (
+                      <div className="p-6 text-center text-gray-400 text-xs">No breakage recorded.</div>
+                    ) : (
+                      <table className="w-full text-left text-xs">
+                        <tbody className="divide-y divide-gray-100">
+                          {breakLog.map((b) => (
+                            <tr key={b.id}>
+                              <td className="py-2 pr-2 text-gray-500 whitespace-nowrap">
+                                {new Date(b.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                              </td>
+                              <td className="py-2 pr-2">
+                                <div className="font-medium text-gray-900">{b.productName}</div>
+                                <div className="text-gray-500 truncate max-w-[220px]">{b.reason}</div>
+                              </td>
+                              <td className="py-2 text-right font-mono">
+                                ×{b.quantity}
+                                <div className="text-gray-500">₹{parseFloat(b.costValue).toFixed(0)}</div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

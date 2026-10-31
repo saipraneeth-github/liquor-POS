@@ -1,0 +1,9 @@
+﻿{
+  "serverUrl": "https://pos.yourcompany.com",
+  "token": "pa_paste-the-token-from-business-settings",
+  "pollIntervalMs": 3000,
+  "printer": {
+    "type": "windows-printer",
+    "name": "POS-58"
+  }
+}

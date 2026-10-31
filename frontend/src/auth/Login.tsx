@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useAuth, type User } from './AuthProvider';
 import { api } from '../api/client';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { errorMessage } from '../lib/print';
 
 export function Login() {
   const [email, setEmail] = useState('cashier@liquor.com');
@@ -24,17 +25,16 @@ export function Login() {
       // Step 3: fetch real user profile (id, name, role, branchId, …)
       const freshUser = await api.get<User>('/me');
       login(token, freshUser);
-      navigate('/');
+      navigate(freshUser.role === 'owner' && !freshUser.syndicateId ? '/platform' : '/');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Login failed';
-      setLoginError(msg);
+      setLoginError(errorMessage(err) || 'Login failed');
       // Clear the token if /me failed so we don't get stuck with a bad token
       localStorage.removeItem('token');
     }
   };
 
   const loginAs = (role: string) => {
-    setEmail(`${role}@liquor.com`);
+    setEmail(role === 'superadmin' ? 'superadmin@liquor.com' : `${role}@liquor.com`);
     setPassword('Password@123');
   };
 
@@ -76,10 +76,14 @@ export function Login() {
             Sign In
           </button>
         </form>
+        <div className="mt-3 text-center">
+          <Link to="/forgot-password" id="forgotLink" className="text-sm text-purple-600 hover:underline">Forgot password?</Link>
+        </div>
         <div className="mt-4 text-center">
           <div className="text-gray-500 text-sm mb-2">Demo accounts</div>
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <button type="button" onClick={() => loginAs('owner')} className="p-2 border rounded">👑 Owner</button>
+            <button type="button" onClick={() => loginAs('superadmin')} className="p-2 border rounded">🛡 Super Admin</button>
+          <button type="button" onClick={() => loginAs('owner')} className="p-2 border rounded">👑 Admin</button>
             <button type="button" onClick={() => loginAs('manager')} className="p-2 border rounded">🛠 Manager</button>
             <button type="button" onClick={() => loginAs('cashier')} className="p-2 border rounded">💰 Cashier</button>
             <button type="button" onClick={() => loginAs('steward')} className="p-2 border rounded">🍽 Steward</button>

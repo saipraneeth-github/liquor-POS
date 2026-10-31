@@ -18,6 +18,7 @@ import {
   listUsers,
   createUser,
   updateUser,
+  resetUserPassword,
   getUserPages,
   setUserPages,
   CreateUserSchema,
@@ -29,9 +30,11 @@ import {
 const IdParams = z.object({ id: z.string().uuid() });
 
 export async function userRoutes(fastify: FastifyInstance) {
-  fastify.get('/me', { preHandler: requireRole('steward') }, async (request, reply) => {
+  fastify.get('/me', { preHandler: requireRole('steward', { allowLocked: true }) }, async (request, reply) => {
     try {
-      return await getMe(getUser(request).sub);
+      // `access` tells the app to show the subscription screen instead of the pages when the tenant is locked
+      const access = (request as unknown as { tenantAccess?: string }).tenantAccess ?? 'OK';
+      return { ...(await getMe(getUser(request).sub)), access };
     } catch (err) {
       return sendError(reply, err, 'Profile lookup failed');
     }
@@ -67,6 +70,17 @@ export async function userRoutes(fastify: FastifyInstance) {
       return await updateUser(getUser(request), params.data.id, parsed.data);
     } catch (err) {
       return sendError(reply, err, 'User update failed');
+    }
+  });
+
+  // Temporary password for a user in scope (manager+ for their staff, Admin for managers)
+  fastify.post('/users/:id/reset-password', { preHandler: requireRole('manager') }, async (request, reply) => {
+    const params = IdParams.safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: 'User not found' });
+    try {
+      return await resetUserPassword(getUser(request), params.data.id);
+    } catch (err) {
+      return sendError(reply, err, 'Password reset failed');
     }
   });
 

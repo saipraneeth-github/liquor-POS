@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
+import { tenantOf } from '../menu/menu-access.js';
 import {
   createProduct,
   getProductByBarcode,
@@ -20,8 +21,9 @@ export async function productRoutes(fastify: FastifyInstance) {
   fastify.get('/products', {
     preHandler: requireRole('steward'),
   }, async (request) => {
-    const list = await listProducts(true);
-    if (getUser(request).role !== 'steward') return list;
+    const user = getUser(request);
+    const list = await listProducts(true, await tenantOf(user), user.branchId ?? undefined);
+    if (user.role !== 'steward') return list;
     return list.map(({ costPrice: _costPrice, ...rest }) => rest);
   });
 
@@ -30,7 +32,7 @@ export async function productRoutes(fastify: FastifyInstance) {
     preHandler: requireRole('cashier'),
   }, async (request, reply) => {
     const { barcode } = request.params as { barcode: string };
-    const product = await getProductByBarcode(barcode);
+    const product = await getProductByBarcode(barcode, await tenantOf(getUser(request)));
     if (!product || !product.isActive) return reply.code(404).send({ error: 'Product not found' });
     return product;
   });
@@ -47,7 +49,7 @@ export async function productRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
     }
     try {
-      const product = await createProduct(parsed.data);
+      const product = await createProduct(parsed.data, await tenantOf(getUser(request)));
       return reply.code(201).send(product);
     } catch (err: unknown) {
       return sendError(reply, err, 'Product creation failed');

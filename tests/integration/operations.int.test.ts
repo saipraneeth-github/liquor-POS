@@ -89,7 +89,9 @@ describe('products', () => {
 
   it('duplicate barcode → 409, unknown category → 422', async () => {
     const base = { categoryId: ctx.products[0].categoryId, name: 'Dup', brand: 'D', mrp: '100.00' };
-    expect((await inject('POST', '/products', ctx.auth('manager'), { ...base, barcode: '1000000000001' })).statusCode).toBe(409);
+    // barcodes are unique within a business: the second product with the same code is refused
+    expect((await inject('POST', '/products', ctx.auth('manager'), { ...base, barcode: '1000000000777' })).statusCode).toBe(201);
+    expect((await inject('POST', '/products', ctx.auth('manager'), { ...base, barcode: '1000000000777' })).statusCode).toBe(409);
     expect((await inject('POST', '/products', ctx.auth('manager'), { ...base, categoryId: '00000000-0000-4000-8000-000000000000' })).statusCode).toBe(422);
   });
 });

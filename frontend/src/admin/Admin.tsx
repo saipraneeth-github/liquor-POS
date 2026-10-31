@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { errorMessage } from '../lib/print';
+import { Modal } from '../components/ui';
 
 interface UserItem {
   id: string;
@@ -171,6 +173,27 @@ export function Admin() {
 
   const roles = isOwner ? ['manager', 'cashier', 'steward'] : ['cashier', 'steward'];
 
+  const [revealed, setRevealed] = useState<{ email: string; password: string } | null>(null);
+
+  const resetPassword = async (id: string) => {
+    try {
+      const res = await api.post<{ email: string; temporaryPassword: string }>('/users/' + id + '/reset-password');
+      setRevealed({ email: res.email, password: res.temporaryPassword });
+    } catch (err) {
+      alertToast(errorMessage(err));
+    }
+  };
+
+  const alertToast = (msg: string) => {
+    const host = document.getElementById('toastHost');
+    if (!host) return;
+    const el = document.createElement('div');
+    el.className = 'toast error bg-red-600 text-white p-3 rounded-lg shadow-lg text-sm mb-2';
+    el.textContent = msg;
+    host.appendChild(el);
+    setTimeout(() => el.remove(), 4500);
+  };
+
   return (
     <section className="page active" id="page-admin" aria-labelledby="adminTitle">
       <h2 className="h1 text-xl font-bold mb-4" id="adminTitle">⚙ Administration</h2>
@@ -227,6 +250,13 @@ export function Admin() {
                             onClick={() => openPagesModal(u.id)}
                           >
                             Pages
+                          </button>
+                          <button
+                            type="button"
+                            className="user-reset btn-sec btn-sm px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border text-xs"
+                            onClick={() => resetPassword(u.id)}
+                          >
+                            Reset password
                           </button>
                         </div>
                       )}
@@ -404,7 +434,14 @@ export function Admin() {
           </div>
         </div>
       )}
-    </section>
+      {revealed && (
+        <Modal title="Temporary password" onClose={() => setRevealed(null)}>
+          <p className="text-sm text-gray-600">Give this to <b>{revealed.email}</b>. It is shown only once; they can change it after signing in.</p>
+          <div id="revealedPassword" className="my-4 p-3 text-center font-mono text-lg tracking-wider bg-gray-50 border rounded-lg select-all">{revealed.password}</div>
+          <div className="flex justify-end"><button type="button" className="px-4 py-2 text-sm font-semibold bg-purple-600 text-white rounded-lg" onClick={() => setRevealed(null)}>Done</button></div>
+        </Modal>
+      )}    </section>
+
   );
 }
 

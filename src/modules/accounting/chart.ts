@@ -28,6 +28,7 @@ export const SYSTEM_LEDGERS = [
   { code: 'SALES',            name: 'Sales Account',       group: 'INCOME' },
   { code: 'PURCHASES',        name: 'Purchase Account',    group: 'EXPENSE' },
   { code: 'DISCOUNT_ALLOWED', name: 'Discount Allowed',    group: 'EXPENSE' },
+  { code: 'ROUND_OFF',        name: 'Round Off',           group: 'EXPENSE' },
 ] as const satisfies readonly LedgerDefinition[];
 
 export type SystemLedgerCode = (typeof SYSTEM_LEDGERS)[number]['code'];

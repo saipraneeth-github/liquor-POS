@@ -17,6 +17,8 @@ export interface KotItem {
   quantity: number;
   unitPrice: Decimal;      // MRP at order time
   taxRate: Decimal;        // e.g., 18.00
+  servingId?: string | null;
+  servingLabel?: string | null;
   status: KotItemStatus;
   notes: string | null;
 }
@@ -30,6 +32,8 @@ export interface KotOrder {
 
 export interface ConsolidatedLineItem {
   productId: string;
+  servingId: string | null;
+  servingLabel: string | null;
   quantity: number;
   unitPrice: Decimal;
   taxRate: Decimal;
@@ -85,9 +89,10 @@ export function consolidateKotOrders(orders: KotOrder[]): ConsolidatedBillSummar
       const taxable   = lineTotal.div(divisor).toDecimalPlaces(2);
       const tax       = lineTotal.minus(taxable);
 
-      const existing = lineMap.get(item.productId);
+      const key = `${item.productId}|${item.servingId ?? ''}`;
+      const existing = lineMap.get(key);
       if (existing) {
-        lineMap.set(item.productId, {
+        lineMap.set(key, {
           ...existing,
           quantity:     existing.quantity + item.quantity,
           lineTotal:    existing.lineTotal.plus(lineTotal),
@@ -95,8 +100,10 @@ export function consolidateKotOrders(orders: KotOrder[]): ConsolidatedBillSummar
           taxAmount:    existing.taxAmount.plus(tax),
         });
       } else {
-        lineMap.set(item.productId, {
+        lineMap.set(key, {
           productId:    item.productId,
+          servingId:    item.servingId ?? null,
+          servingLabel: item.servingLabel ?? null,
           quantity:     item.quantity,
           unitPrice:    item.unitPrice,
           taxRate:      item.taxRate,
