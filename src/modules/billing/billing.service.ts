@@ -235,19 +235,31 @@ export async function createBill(
 
       // Guarded, atomic stock deduction (sorted to keep lock order stable)
       const deltas = computeStockDeltas(items).sort((a, b) => a.productId.localeCompare(b.productId));
-      for (const delta of deltas) {
-        const qty = -delta.delta;
+      if (deltas.length > 0) {
+        // ⚡ Bolt Optimization: Batch update stock with CASE WHEN
+        // Replaces O(N) sequential database updates with a single query.
+        // Impact: Eliminates N+1 queries during billing, massively reducing DB lock contention and transaction duration.
+        const caseSql = sql`CAST(CASE ${sql.join(
+          deltas.map((d) => sql`WHEN ${stock.productId} = ${d.productId} THEN ${-d.delta}`),
+          sql` `
+        )} END AS integer)`;
+
         const updated = await tx
           .update(stock)
-          .set({ quantity: sql`${stock.quantity} - ${qty}` })
+          .set({ quantity: sql`${stock.quantity} - ${caseSql}` })
           .where(and(
             eq(stock.branchId, input.branchId),
-            eq(stock.productId, delta.productId),
-            gte(stock.quantity, qty),
+            inArray(stock.productId, deltas.map((d) => d.productId)),
+            sql`${stock.quantity} >= ${caseSql}`
           ))
-          .returning({ id: stock.id });
-        if (updated.length === 0) {
-          throw new BusinessRuleError(`Insufficient stock: product ${delta.productId} (requested ${qty})`);
+          .returning({ productId: stock.productId });
+
+        if (updated.length !== deltas.length) {
+          const updatedIds = new Set(updated.map((u) => u.productId));
+          const missing = deltas.find((d) => !updatedIds.has(d.productId));
+          if (missing) {
+            throw new BusinessRuleError(`Insufficient stock: product ${missing.productId} (requested ${-missing.delta})`);
+          }
         }
       }
 
