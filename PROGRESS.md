@@ -1,7 +1,7 @@
 # PROGRESS.md -- where we are and how to resume
 
 > Living handoff file. Update it at the end of every work session. Read `AGENTS.md` for the project itself.
-> Last updated: 2026-10-30 (IST)
+> Last updated: 2026-10-31 (IST)
 
 ## TL;DR
 
@@ -172,3 +172,34 @@ Design:
     - Integrated with generic fallback preserving 100% backward compatibility.
   - Added full test suite in `tests/unit/icdc.test.ts` verifying all 10 sample PDFs in `testing_invoices/` (100% clean extraction, 0 uncaught exceptions).
   - Full verification: `npm run build` clean, Vitest **371/371** passed (25 unit files, 13 integration files), Playwright E2E **21/21** passed.
+
+- **2026-10-31** -- Comprehensive Telangana ICDC Catalog Integration:
+  - Analyzed all 10 sample Telangana Excise ICDC delivery challans and extracted 84 distinct products across Beer, Whisky, Brandy, Rum, Vodka, Gin, and Wine.
+  - Added src/db/data/telangana-products.ts containing all 84 standardized products with clean title names, volumeMl, pack sizes, exciseCodes, SKUs, wholesale unit rates, and estimated retail MRPs.
+  - Expanded categories in src/db/seed.ts with Brandy, Gin, and Wine (GST 18.00%).
+  - Seeded all 84 catalog products into src/db/seed.ts and automated idempotent seeding on startup in dev-local.ts.
+  - Upgraded rate extraction in icdc.engine.ts to reliably discriminate dual case-rate / bottle-rate items, accurately assigning single-bottle unit rate for inventory costing.
+  - Verified 100% catalog matching: all 304 line items across all 10 PDFs matched with confidence 1.0 (0 mismatches, 0 unmatched lines).
+
+- **2026-10-31** -- Invoice Upload Inventory Page Redesign & Duplicate Validation:
+  - Redesigned `/inventory` into a clean, 3-tab architecture (`Add Supplier Bill`, `Bill History`, `Current Store Stock & Breakage`).
+  - Implemented 3-step wizard workflow (`Choose Bill` -> `Check Items & Match Bottles` -> `Confirm Stock Inward`) with progressive disclosure.
+  - Added case-insensitive & trimmed duplicate bill number validation both in real-time (300ms debounce via `GET /api/v1/invoices/:branchId/check-duplicate`) and server-side on submission/upload (409 Conflict).
+  - Formatted user-facing duplicate alert with exact existing date: `"Invoice number {number} has already been uploaded on {12 March 2025}."` with a one-click button to open the existing invoice.
+  - Designed for low formal education users: everyday vocabulary (eliminated accounting jargon), large readable typography, high-contrast badges, buttons with icons + text, inline guidance, friendly error handling, and mobile-friendly touch targets (>= 44px).
+  - Preserved backward compatibility for Playwright E2E and `preview.html`.
+  - Added unit tests in `tests/unit/invoice.duplicate.test.ts` (4/4 passed) and integration tests in `tests/integration/invoices.int.test.ts` (3/3 passed).
+  - Verification: `npm run build` clean (0 errors), Vitest **248/248 unit tests** passed, Playwright `supplier-invoices.spec.ts` passed.
+
+- **2026-10-31** -- On-the-Fly Catalog Product Creation for Missing Invoice Items:
+  - Added dedicated `GET /api/v1/categories` route returning all categories with tax rates.
+  - Updated `POST /api/v1/products` RBAC to `requireRole('cashier')` (previously manager) so store cashiers can register missing items while entering bills without interrupting the inward workflow.
+  - Added on-the-fly product creation dialogs directly accessible from unmatched invoice lines (available in both dropdown select options and dedicated `[ ➕ Add to catalog ]` button) in both `frontend/src/inventory/Inventory.tsx` and `preview.html`.
+  - Implemented intelligent pre-filling heuristics:
+    - Parses volume in ml (`1000|750|650|500|375|330|275|250|180|90 ml`) from invoice item descriptions.
+    - Heuristically estimates pack sizes (750ml -> 12, 375ml -> 24, 180ml -> 48, default 1).
+    - Detects category keywords (`whisky`, `beer`, `rum`, `vodka`, `brandy`, `gin`, `wine`).
+    - Detects brand names from description and pre-fills cost price & MRP.
+  - Persists new products to the database, automatically updates in-memory catalog cache across dropdowns, links product to the line item (`matchStatus = 'MANUAL'`), and recalculates totals.
+  - Added integration test in `tests/integration/invoices.int.test.ts` verifying category lookup, cashier product creation, and invoice line linking.
+  - Full verification: `npm run build` clean (TypeScript + Vite), 248/248 Vitest unit tests passed, 4/4 integration tests passed, Playwright E2E passed.

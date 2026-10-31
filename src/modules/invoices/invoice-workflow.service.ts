@@ -108,8 +108,8 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
         : current.source === 'MANUAL' ? computed : current.totalAmount;
       assertMoneyRange(lines, totalAmount);
 
-      const dup = await findLiveDuplicate(tx, current.branchId, input.supplierName, invoiceNumber, id);
-      if (dup) throw new DuplicateInvoiceError(dup, invoiceNumber);
+      const dup = await findLiveDuplicate(tx, current.branchId, invoiceNumber, id);
+      if (dup) throw new DuplicateInvoiceError(dup.id, invoiceNumber, dup.invoiceDate ?? dup.createdAt);
 
       const prevWarnings = current.extractionWarnings ?? [];
       const sticky = prevWarnings.filter((w) => ['OCR_USED', 'PDF_PAGES_TRUNCATED', 'DUPLICATE_FILE'].includes(w)

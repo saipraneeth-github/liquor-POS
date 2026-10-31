@@ -6,6 +6,7 @@ import { isIcdcDocument, extractIcdcHeader, extractIcdcTotals } from '../../src/
 import { extractInvoice } from '../../src/modules/invoices/extraction/index.js';
 import { matchLine, type CatalogProduct } from '../../src/modules/invoices/match.engine.js';
 import { convertCases } from '../../src/modules/invoices/draft.engine.js';
+import { TELANGANA_ICDC_PRODUCTS } from '../../src/db/data/telangana-products.js';
 
 describe('Telangana Excise ICDC Engine', () => {
   it('detects ICDC documents from text lines and rejects generic commercial invoices', () => {
@@ -72,6 +73,19 @@ describe('Telangana Excise ICDC Engine', () => {
       flags: ['CASES_CONVERTED'],
     });
   });
+
+  const catalogProducts: CatalogProduct[] = TELANGANA_ICDC_PRODUCTS.map((p) => ({
+    id: `prod-${p.exciseCode}`,
+    name: p.name,
+    brand: p.brand,
+    barcode: null,
+    sku: p.sku,
+    exciseCode: p.exciseCode,
+    volumeMl: p.volumeMl,
+    packQuantity: p.packQuantity,
+    mrp: p.mrp,
+    isActive: true,
+  }));
 
   describe('Testing All 10 Telangana ICDC PDFs in testing_invoices/', () => {
     const pdfDir = fs.existsSync('testing_invoices')
@@ -177,12 +191,17 @@ describe('Telangana Excise ICDC Engine', () => {
         expect(result.table.capturedTotal).toBe(tc.expectedTotal);
         expect(result.table.lines).toHaveLength(tc.expectedLines);
 
-        // Every line must have description, 4-digit sku, cases, and amount
+        // Every line must have description, 4-digit sku, cases, and amount, and match catalog
         for (const line of result.table.lines) {
           expect(line.description.length).toBeGreaterThan(0);
           expect(line.sku).toMatch(/^\d{4}$/);
           expect(line.cases).toBeGreaterThanOrEqual(0);
           expect(line.amount).toMatch(/^\d+\.\d{2}$/);
+
+          const match = matchLine(line, catalogProducts);
+          expect(match.status).toBe('MATCHED');
+          expect(match.method).toBe('SKU');
+          expect(match.confidence).toBe(1);
         }
 
         if (tc.sampleCheck) {

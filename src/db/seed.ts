@@ -4,6 +4,7 @@ import { db } from './client.js';
 import {
   syndicates, branches, users, categories, products, stock, tables, terminals, customers,
 } from './schema.js';
+import { TELANGANA_ICDC_PRODUCTS } from './data/telangana-products.js';
 
 export const SEED_PASSWORD = 'Password@123';
 
@@ -52,6 +53,9 @@ export async function seedDatabase(): Promise<void> {
     { name: 'Beer',   taxRate: '18.00' },
     { name: 'Vodka',  taxRate: '18.00' },
     { name: 'Rum',    taxRate: '18.00' },
+    { name: 'Brandy', taxRate: '18.00' },
+    { name: 'Gin',    taxRate: '18.00' },
+    { name: 'Wine',   taxRate: '18.00' },
   ]).onConflictDoNothing();
   const allCats = await db.select().from(categories);
   const catId = (name: string) => allCats.find((c) => c.name === name)!.id;
@@ -71,7 +75,26 @@ export async function seedDatabase(): Promise<void> {
     const [prod] = await db.select().from(products).where(eq(products.barcode, p.barcode)).limit(1);
     await db.insert(stock).values({ branchId, productId: prod.id, quantity: 100, reorderLevel: 10 }).onConflictDoNothing();
   }
-  console.log(' Products & stock seeded (100 bottles each)');
+  // 4b. Telangana Excise ICDC Catalog products
+  for (const tp of TELANGANA_ICDC_PRODUCTS) {
+    const pVal = {
+      categoryId: catId(tp.category),
+      name: tp.name,
+      brand: tp.brand,
+      volumeMl: tp.volumeMl,
+      packQuantity: tp.packQuantity,
+      exciseCode: tp.exciseCode,
+      sku: tp.sku,
+      mrp: tp.mrp,
+      costPrice: tp.costPrice,
+    };
+    await db.insert(products).values(pVal).onConflictDoNothing();
+    const [prod] = await db.select().from(products).where(eq(products.sku, tp.sku)).limit(1);
+    if (prod) {
+      await db.insert(stock).values({ branchId, productId: prod.id, quantity: 50, reorderLevel: 10 }).onConflictDoNothing();
+    }
+  }
+  console.log(` Products & stock seeded (${productData.length + TELANGANA_ICDC_PRODUCTS.length} total catalog products)`);
 
   // 5. Tables
   const existingTables = await db.select().from(tables).where(eq(tables.branchId, branchId));

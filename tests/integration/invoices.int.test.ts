@@ -225,6 +225,18 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     });
     expect(dupRes.statusCode).toBe(409);
     expect(dupRes.json().existingInvoiceId).toBe(body1.invoice.id);
+    expect(dupRes.json().message).toMatch(/Invoice number DG-2026-55 has already been uploaded on/);
+
+    // Verify GET /invoices/:branchId/check-duplicate (case-insensitive & trimmed)
+    const checkFound = await inject('GET', `/invoices/${ctx.branchId}/check-duplicate?invoiceNumber=  dg-2026-55  `, ctx.auth('cashier'));
+    expect(checkFound.statusCode).toBe(200);
+    expect(checkFound.json().exists).toBe(true);
+    expect(checkFound.json().message).toMatch(/Invoice number DG-2026-55 has already been uploaded on/);
+    expect(checkFound.json().invoice.id).toBe(body1.invoice.id);
+
+    const checkNotFound = await inject('GET', `/invoices/${ctx.branchId}/check-duplicate?invoiceNumber=NON-EXISTENT-99`, ctx.auth('cashier'));
+    expect(checkNotFound.statusCode).toBe(200);
+    expect(checkNotFound.json().exists).toBe(false);
 
     // Reject the first draft -> now re-uploading with the same number succeeds and flags DUPLICATE_FILE (same sha256)
     const rejRes = await inject('POST', `/invoices/detail/${body1.invoice.id}/reject`, ctx.auth('manager'), {
@@ -288,5 +300,55 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     expect((await inject('GET', `/invoices/${ctx.branchId}`, otherManager())).statusCode).toBe(403);
     expect((await inject('GET', `/invoices/detail/${draftId}`, otherManager())).statusCode).toBe(403);
     expect((await inject('GET', `/invoices/${ctx.branchId}`, ctx.auth('steward'))).statusCode).toBe(403);
+  });
+
+  it('allows cashier to fetch categories and create missing product into catalog during invoice entry', async () => {
+    // 1. Fetch categories
+    const catRes = await inject('GET', '/categories', ctx.auth('cashier'));
+    expect(catRes.statusCode).toBe(200);
+    const cats = catRes.json();
+    expect(Array.isArray(cats)).toBe(true);
+    expect(cats.length).toBeGreaterThan(0);
+    expect(cats[0]).toHaveProperty('id');
+    expect(cats[0]).toHaveProperty('name');
+    expect(cats[0]).toHaveProperty('taxRate');
+
+    // 2. Cashier registers a missing product directly
+    const createRes = await inject('POST', '/products', ctx.auth('cashier'), {
+      categoryId: cats[0].id,
+      name: 'Glenfiddich 12 Year Old 750ml',
+      brand: 'Glenfiddich',
+      volumeMl: 750,
+      packQuantity: 12,
+      costPrice: '3800.00',
+      mrp: '4800.00',
+      barcode: 'GLEN12-750',
+      exciseCode: 'EX-GLEN-12',
+    });
+    expect(createRes.statusCode).toBe(201);
+    const newProduct = createRes.json();
+    expect(newProduct.name).toBe('Glenfiddich 12 Year Old 750ml');
+    expect(newProduct.brand).toBe('Glenfiddich');
+    expect(newProduct.categoryName).toBe(cats[0].name);
+    expect(newProduct.mrp).toBe('4800.00');
+
+    // 3. Cashier uses newly created product in an invoice draft
+    const invoiceRes = await inject('POST', `/invoices/${ctx.branchId}`, ctx.auth('cashier'), {
+      supplierName: 'William Grant & Sons',
+      invoiceNumber: 'INV-GLEN-999',
+      items: [
+        {
+          productId: newProduct.id,
+          rawDescription: 'Glenfiddich 12yo 750ml x 12',
+          quantity: 24,
+          costPrice: '3800.00',
+          mrp: '4800.00',
+        },
+      ],
+    });
+    expect(invoiceRes.statusCode).toBe(201);
+    const inv = invoiceRes.json().invoice;
+    expect(inv.linesTotal).toBe('91200.00');
+    expect(invoiceRes.json().items[0].productId).toBe(newProduct.id);
   });
 });

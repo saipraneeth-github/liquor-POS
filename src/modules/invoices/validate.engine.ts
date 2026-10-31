@@ -78,6 +78,32 @@ export interface ValidatedInvoice {
   computedTotal: string;
 }
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+export function formatInvoiceDate(dateInput: Date | string | null | undefined): string {
+  if (!dateInput) {
+    const today = new Date();
+    return `${today.getDate()} ${MONTH_NAMES[today.getMonth()]} ${today.getFullYear()}`;
+  }
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (Number.isNaN(d.getTime())) {
+    const today = new Date();
+    return `${today.getDate()} ${MONTH_NAMES[today.getMonth()]} ${today.getFullYear()}`;
+  }
+  return `${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+export function normalizeInvoiceNumber(num: string | null | undefined): string {
+  return (num ?? '').trim().toLowerCase();
+}
+
+export function formatDuplicateInvoiceMessage(invoiceNumber: string, date: Date | string | null | undefined): string {
+  return `Invoice number ${invoiceNumber.trim()} has already been uploaded on ${formatInvoiceDate(date)}.`;
+}
+
 export function isPlaceholderNumber(invoiceNumber: string): boolean {
   return invoiceNumber.startsWith(PLACEHOLDER_PREFIX);
 }

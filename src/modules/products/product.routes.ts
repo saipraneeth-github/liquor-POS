@@ -5,6 +5,7 @@ import { sendError } from '../../lib/errors.js';
 import {
   createProduct,
   getProductByBarcode,
+  listCategories,
   listProducts,
   updateMrp,
   CreateProductSchema,
@@ -34,9 +35,12 @@ export async function productRoutes(fastify: FastifyInstance) {
     return product;
   });
 
-  // POST /products — create product (manager+)
+  // GET /categories — list all active categories (steward+)
+  fastify.get('/categories', { preHandler: requireRole('steward') }, async () => listCategories());
+
+  // POST /products — create product (cashier+)
   fastify.post('/products', {
-    preHandler: requireRole('manager'),
+    preHandler: requireRole('cashier'),
   }, async (request, reply) => {
     const parsed = CreateProductSchema.safeParse(request.body);
     if (!parsed.success) {

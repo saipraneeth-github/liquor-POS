@@ -343,14 +343,21 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
     const rateItems = a.items.filter(
       (i) => i.x >= rateMinX && i.x <= rateMaxX && !/^(?:Unit|Rate|Btl|\/)$/i.test(i.str),
     );
+    const rateNumbers: number[] = [];
+    for (const ri of rateItems) {
+      const m = ri.str.match(/[\d,]+\.\d{2}/);
+      if (m) {
+        const p = parseMoney(m[0]);
+        if (p) rateNumbers.push(parseFloat(p));
+      }
+    }
     let caseRate: string | null = null;
     let unitRate: string | null = null;
-    for (const ri of rateItems) {
-      if (ri.str.includes('/')) {
-        caseRate = parseMoney(ri.str.replace(/[^\d.]/g, ''));
-      } else if (/^\d+\.\d{2}$/.test(ri.str.replace(/,/g, ''))) {
-        unitRate = parseMoney(ri.str);
-      }
+    if (rateNumbers.length === 1) {
+      unitRate = rateNumbers[0].toFixed(2);
+    } else if (rateNumbers.length >= 2) {
+      unitRate = Math.min(...rateNumbers).toFixed(2);
+      caseRate = Math.max(...rateNumbers).toFixed(2);
     }
     const rate = unitRate ?? (caseRate && packQuantity ? (parseFloat(caseRate) / packQuantity).toFixed(2) : caseRate);
 

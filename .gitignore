@@ -32,9 +32,11 @@ test-results/
 playwright-report/
 
 # IDE & OS files
+.vscode/
 .DS_Store
 Thumbs.db
 .idea/
+test_lru.py
 *.swp
 *.swo
 

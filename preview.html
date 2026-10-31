@@ -581,7 +581,8 @@
               <input id="invUploadSupplier" class="input input-sm" maxlength="200" placeholder="Auto-detected" />
             </label>
             <label class="field" for="invUploadNumber" style="width:150px;">Invoice no. (optional)
-              <input id="invUploadNumber" class="input input-sm" maxlength="60" placeholder="Auto-detected" />
+              <input id="invUploadNumber" class="input input-sm" maxlength="60" placeholder="Auto-detected" oninput="checkDuplicateInvoiceInput(this.value)" />
+              <div id="invDupWarning" class="small" style="display:none;font-weight:600;font-size:11px;"></div>
             </label>
             <label class="field" for="invUploadDate" style="width:145px;">Date (optional)
               <input id="invUploadDate" class="input input-sm" type="date" />
@@ -2861,6 +2862,35 @@ async function loadSupplierInvoices() {
   } catch (e) { errorState(el, e); }
 }
 
+let _dupTimer = null;
+async function checkDuplicateInvoiceInput(val) {
+  clearTimeout(_dupTimer);
+  const warn = $('invDupWarning');
+  if (!warn) return;
+  const num = (val || '').trim();
+  if (!S.branchId || num.length < 2 || num.toUpperCase().startsWith('DRAFT-')) {
+    warn.style.display = 'none';
+    warn.textContent = '';
+    return;
+  }
+  _dupTimer = setTimeout(async () => {
+    try {
+      const res = await api(`/invoices/${S.branchId}/check-duplicate?invoiceNumber=${encodeURIComponent(num)}`);
+      if (res.exists) {
+        warn.style.display = 'block';
+        warn.style.color = '#dc2626';
+        warn.textContent = '⚠️ ' + (res.message || 'Invoice already uploaded');
+      } else {
+        warn.style.display = 'block';
+        warn.style.color = '#16a34a';
+        warn.textContent = '✓ Bill number available';
+      }
+    } catch {
+      warn.style.display = 'none';
+    }
+  }, 300);
+}
+
 async function uploadSupplierInvoice(e) {
   e.preventDefault();
   if (!S.branchId) { toast('Select a branch first.', 'error'); return; }
@@ -2959,7 +2989,8 @@ function matchBadgeHtml(status) {
 }
 
 function invLineRowHtml(item, idx, editable) {
-  const prodOpts = `<option value="">— Select product —</option>` + S.products.map((p) =>
+  const prodOpts = `<option value="">— Select product —</option>` +
+    (editable ? `<option value="__NEW__">➕ Add New Product to Catalog…</option>` : '') + S.products.map((p) =>
     `<option value="${p.id}" ${p.id === item.productId ? 'selected' : ''}>${esc(p.name)} (${money(p.mrp)})</option>`).join('');
   const flags = (item.flags || []).map((f) => badge(f, f === 'CASES_CONVERTED' ? 'blue' : f === 'UNMATCHED' || f === 'AMOUNT_MISMATCH' || f === 'COST_ABOVE_MRP' ? 'red' : 'yellow')).join(' ');
   const needsConfirm = item.matchStatus === 'SUGGESTED' && editable;
@@ -2971,6 +3002,7 @@ function invLineRowHtml(item, idx, editable) {
       <div class="row small" style="margin-top:4px; gap:6px;">
         <span class="ie-match-badge">${matchBadgeHtml(item.matchStatus)}</span>
         ${needsConfirm ? `<label class="check small"><input type="checkbox" class="ie-confirm" /> Confirm match</label>` : ''}
+        ${editable ? `<button type="button" class="btn-ghost btn-xs btn-add-prod" style="padding:1px 5px; font-size:11px; color:var(--primary);" onclick="openAddProductModalForLine(this)" title="Create product in catalog">➕ Add to catalog</button>` : ''}
       </div>
     </td>
     <td class="right">${editable ? `<input class="input input-sm ie-qty right" type="number" min="1" max="100000" value="${item.quantity || 1}" style="width:78px;" oninput="recalcInvDraft()" aria-label="Line ${idx + 1} quantity" />` : item.quantity}</td>
@@ -3047,6 +3079,11 @@ function renderSupplierInvoiceDetail() {
 }
 
 function onInvDraftProductChange(sel) {
+  if (sel.value === '__NEW__') {
+    sel.value = '';
+    openAddProductModalForLine(sel);
+    return;
+  }
   const tr = sel.closest('tr');
   const p = S.productMap[sel.value];
   if (p) {
@@ -3063,6 +3100,185 @@ function onInvDraftProductChange(sel) {
     tr.querySelector('.ie-match-badge').innerHTML = matchBadgeHtml('UNMATCHED');
   }
   recalcInvDraft();
+}
+
+
+let _currentLineTr = null;
+
+async function openAddProductModalForLine(target) {
+  const tr = target.closest('tr');
+  if (!tr) return;
+  _currentLineTr = tr;
+
+  if (!S.categories || S.categories.length === 0) {
+    try {
+      const cats = await api('/categories');
+      if (Array.isArray(cats) && cats.length) S.categories = cats;
+    } catch {
+      indexCatalog();
+    }
+  }
+
+  const desc = tr.querySelector('.ie-desc') ? tr.querySelector('.ie-desc').value : '';
+  const cost = tr.querySelector('.ie-cost') ? tr.querySelector('.ie-cost').value : '';
+  const mrp = tr.querySelector('.ie-mrp') ? tr.querySelector('.ie-mrp').value : '';
+
+  const volMatch = desc.match(/\b(1000|750|650|500|375|330|275|250|180|90)\s*ml\b/i);
+  const detectedVol = volMatch ? parseInt(volMatch[1], 10) : '';
+
+  let detectedPack = 1;
+  if (detectedVol === 750) detectedPack = 12;
+  else if (detectedVol === 375) detectedPack = 24;
+  else if (detectedVol === 180) detectedPack = 48;
+  else if (detectedVol === 650 || detectedVol === 500) detectedPack = 12;
+
+  const descLower = desc.toLowerCase();
+  let defaultCatId = S.categories[0] ? S.categories[0].id : '';
+  for (const c of S.categories) {
+    const cName = c.name.toLowerCase();
+    if (
+      (cName.includes('whisky') && (descLower.includes('whisky') || descLower.includes('whiskey') || descLower.includes('scotch'))) ||
+      (cName.includes('beer') && descLower.includes('beer')) ||
+      (cName.includes('rum') && descLower.includes('rum')) ||
+      (cName.includes('vodka') && descLower.includes('vodka')) ||
+      (cName.includes('brandy') && descLower.includes('brandy')) ||
+      (cName.includes('gin') && descLower.includes('gin')) ||
+      (cName.includes('wine') && descLower.includes('wine'))
+    ) {
+      defaultCatId = c.id;
+      break;
+    }
+  }
+
+  const words = desc.trim().split(/\s+/);
+  const brandSuggestion = words.length > 2 ? words.slice(0, 2).join(' ') : (words[0] || '');
+
+  const catOptions = S.categories.map(c =>
+    `<option value="${c.id}" ${c.id === defaultCatId ? 'selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+
+  const modalHtml = `
+    <form class="stack" onsubmit="saveProductForInvoiceLine(event)">
+      <div class="small muted" style="margin-bottom:8px;">
+        Creating catalog product pre-filled from line: <b>${esc(desc || 'New item')}</b>
+      </div>
+      <div class="form-grid">
+        <label class="field" for="modProdCat">Category *
+          <select id="modProdCat" class="input input-sm" required>${catOptions}</select>
+        </label>
+        <label class="field" for="modProdName">Product Name *
+          <input id="modProdName" class="input input-sm" required value="${esc(desc)}" maxlength="200" />
+        </label>
+        <label class="field" for="modProdBrand">Brand *
+          <input id="modProdBrand" class="input input-sm" required value="${esc(brandSuggestion)}" maxlength="100" />
+        </label>
+        <label class="field" for="modProdVol">Volume (ml)
+          <input id="modProdVol" class="input input-sm" type="number" min="1" max="5000" value="${detectedVol}" placeholder="e.g. 750" />
+        </label>
+        <label class="field" for="modProdPack">Pack Quantity
+          <input id="modProdPack" class="input input-sm" type="number" min="1" max="100" value="${detectedPack}" placeholder="e.g. 12" />
+        </label>
+        <label class="field" for="modProdCost">Cost Price (₹)
+          <input id="modProdCost" class="input input-sm mono" inputmode="decimal" value="${esc(cost)}" placeholder="0.00" />
+        </label>
+        <label class="field" for="modProdMrp">MRP (₹) *
+          <input id="modProdMrp" class="input input-sm mono" inputmode="decimal" required value="${esc(mrp)}" placeholder="e.g. 750.00" />
+        </label>
+        <label class="field" for="modProdBarcode">Barcode (optional)
+          <input id="modProdBarcode" class="input input-sm" placeholder="Scan or type barcode" maxlength="100" />
+        </label>
+        <label class="field" for="modProdExcise">Excise Code (optional)
+          <input id="modProdExcise" class="input input-sm" placeholder="e.g. TEL-W-001" maxlength="50" />
+        </label>
+      </div>
+      <div class="row right" style="margin-top:16px; gap:8px;">
+        <button type="button" class="btn-sec" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn-primary" id="modProdSaveBtn">Save &amp; Match Line</button>
+      </div>
+    </form>
+  `;
+
+  openModal('Add New Product to Catalog', modalHtml);
+}
+
+async function saveProductForInvoiceLine(e) {
+  e.preventDefault();
+  const tr = _currentLineTr;
+  if (!tr) { closeModal(); return; }
+
+  const catId = $('modProdCat').value;
+  const name = $('modProdName').value.trim();
+  const brand = $('modProdBrand').value.trim() || name.split(' ')[0];
+  const mrp = $('modProdMrp').value.trim();
+  const cost = $('modProdCost').value.trim();
+  const vol = Number($('modProdVol').value) || undefined;
+  const pack = Number($('modProdPack').value) || 1;
+  const barcode = $('modProdBarcode').value.trim() || undefined;
+  const exciseCode = $('modProdExcise').value.trim() || undefined;
+
+  if (!isMoney(mrp) || toPaise(mrp) <= 0) {
+    toast('MRP must be a valid amount like 750 or 750.00', 'error');
+    return;
+  }
+  if (cost && !isMoney(cost)) {
+    toast('Cost price must be a valid amount like 600 or 600.00', 'error');
+    return;
+  }
+
+  const payload = {
+    categoryId: catId,
+    name,
+    brand,
+    mrp,
+    packQuantity: pack,
+    costPrice: cost || undefined,
+    volumeMl: vol,
+    barcode,
+    exciseCode
+  };
+
+  const btn = $('modProdSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  try {
+    const created = await api('/products', { method: 'POST', body: payload });
+    toast('Added "' + created.name + '" to catalog & linked to line!', 'success');
+
+    S.products.push(created);
+    S.products.sort((a, b) => a.name.localeCompare(b.name));
+    S.productMap[created.id] = created;
+
+    const allSelects = document.querySelectorAll('#invEditLines .ie-prod');
+    allSelects.forEach(sel => {
+      const currentVal = sel.value;
+      const opts = `<option value="">— Select product —</option>` +
+        `<option value="__NEW__">➕ Add New Product to Catalog…</option>` +
+        S.products.map(p => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${esc(p.name)} (${money(p.mrp)})</option>`).join('');
+      sel.innerHTML = opts;
+    });
+
+    const thisSelect = tr.querySelector('.ie-prod');
+    if (thisSelect) {
+      thisSelect.value = created.id;
+    }
+    const costInput = tr.querySelector('.ie-cost');
+    const mrpInput = tr.querySelector('.ie-mrp');
+    if (costInput && (!costInput.value || Number(costInput.value) === 0) && created.costPrice) {
+      costInput.value = created.costPrice;
+    }
+    if (mrpInput && (!mrpInput.value || Number(mrpInput.value) === 0)) {
+      mrpInput.value = created.mrp;
+    }
+    tr.dataset.matchStatus = 'MANUAL';
+    const badgeEl = tr.querySelector('.ie-match-badge');
+    if (badgeEl) badgeEl.innerHTML = matchBadgeHtml('MANUAL');
+
+    recalcInvDraft();
+    closeModal();
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save & Match Line'; }
+    toast('Could not create product: ' + err.message, 'error');
+  }
 }
 
 function addInvDraftLine() {

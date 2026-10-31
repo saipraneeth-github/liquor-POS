@@ -37,7 +37,7 @@ test('supplier invoice upload: CSV extract -> review & map unmatched line -> app
   await expect(rows.nth(1).locator('.ie-match-badge')).toContainText('UNMATCHED');
 
   // Map line 2 to Kingfisher Premium Lager Beer 650ml
-  const kfOption = rows.nth(1).locator('.ie-prod option', { hasText: 'Kingfisher Premium Lager Beer 650ml' });
+  const kfOption = rows.nth(1).locator('.ie-prod option', { hasText: 'Kingfisher Premium Lager Beer 650ml' }).first();
   const kfVal = await kfOption.getAttribute('value');
   await rows.nth(1).locator('.ie-prod').selectOption(kfVal!);
   await expect(rows.nth(1).locator('.ie-match-badge')).toContainText('MANUAL');

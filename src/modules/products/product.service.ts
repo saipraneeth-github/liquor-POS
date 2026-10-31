@@ -9,18 +9,19 @@ import type { JwtPayload } from '../auth/auth.service.js';
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
 const SAFE_TEXT = (max: number) => z.string().trim().min(1).max(max).refine((s) => !/[<>]/.test(s), 'Must not contain HTML angle brackets (< or >)');
+const OPT_SAFE_TEXT = (max: number) => z.string().trim().max(max).optional().transform((s) => s || undefined).refine((s) => !s || !/[<>]/.test(s), 'Must not contain HTML angle brackets (< or >)');
 
 export const CreateProductSchema = z.object({
   categoryId:   z.string().uuid(),
-  barcode:      SAFE_TEXT(64).optional(),
-  sku:          SAFE_TEXT(64).optional(),
+  barcode:      OPT_SAFE_TEXT(64),
+  sku:          OPT_SAFE_TEXT(64),
   name:         SAFE_TEXT(200),
-  brand:        SAFE_TEXT(200),
-  volumeMl:     z.number().int().positive().optional(),
-  exciseCode:   z.string().trim().max(10).refine((s) => !/[<>]/.test(s), 'Must not contain < or >').optional(),
-  packQuantity: z.number().int().positive().max(1000).optional(),
+  brand:        OPT_SAFE_TEXT(200),
+  volumeMl:     z.coerce.number().int().positive().optional(),
+  exciseCode:   OPT_SAFE_TEXT(10),
+  packQuantity: z.coerce.number().int().positive().max(1000).optional(),
   mrp:          z.string().regex(/^\d+(\.\d{1,2})?$/, 'MRP must be a decimal string').refine((v) => Number(v) > 0, 'MRP must be positive'),
-  costPrice:    z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+  costPrice:    z.string().trim().optional().transform((v) => v || undefined).refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), 'Cost price must be a decimal string'),
 });
 
 export const UpdateMrpSchema = z.object({
@@ -31,13 +32,21 @@ export type CreateProductInput = z.infer<typeof CreateProductSchema>;
 
 // ─── PRODUCT SERVICE ─────────────────────────────────────────────────────────
 
+export async function listCategories() {
+  return await db
+    .select({ id: categories.id, name: categories.name, taxRate: categories.taxRate, taxType: categories.taxType })
+    .from(categories)
+    .orderBy(categories.name);
+}
+
 export async function createProduct(input: CreateProductInput) {
   const [category] = await db
-    .select({ id: categories.id })
+    .select({ id: categories.id, name: categories.name, taxRate: categories.taxRate })
     .from(categories)
     .where(eq(categories.id, input.categoryId))
     .limit(1);
   if (!category) throw new BusinessRuleError('Category not found');
+  const brand = input.brand || input.name.split(' ')[0] || input.name;
 
   try {
     const [product] = await db.insert(products).values({
@@ -45,14 +54,14 @@ export async function createProduct(input: CreateProductInput) {
       barcode:      input.barcode,
       sku:          input.sku,
       name:         input.name,
-      brand:        input.brand,
+      brand,
       volumeMl:     input.volumeMl,
       exciseCode:   input.exciseCode,
       packQuantity: input.packQuantity,
       mrp:          new Decimal(input.mrp).toFixed(2),
       costPrice:    input.costPrice ? new Decimal(input.costPrice).toFixed(2) : undefined,
     }).returning();
-    return product;
+    return { ...product, categoryName: category.name, taxRate: category.taxRate };
   } catch (err) {
     if (isUniqueViolation(err)) throw new ConflictError('A product with this barcode or SKU already exists');
     throw err;

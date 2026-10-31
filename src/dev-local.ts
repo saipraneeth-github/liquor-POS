@@ -16,9 +16,6 @@ const { db } = await import('./db/client.js');
 const { users } = await import('./db/schema.js');
 
 await runMigrations();
-const existing = await db.select({ id: users.id }).from(users).limit(1);
-if (existing.length === 0) {
-  await seedDatabase();
-}
+await seedDatabase();
 
 await import('./index.js');

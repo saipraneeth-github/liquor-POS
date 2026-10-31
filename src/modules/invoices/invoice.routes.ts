@@ -3,10 +3,12 @@ import fastifyMultipart from '@fastify/multipart';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
+import { db } from '../../db/client.js';
+import { isPlaceholderNumber } from './validate.engine.js';
 import { NothingExtractableError, UnsupportedFileError, terminateOcr } from './extraction/index.js';
 import { InvoiceInputSchema, ListQuerySchema, RejectSchema, UploadFieldsSchema } from './invoice.schemas.js';
 import {
-  DuplicateInvoiceError, createDraftFromUpload, createManualDraft, getInvoiceAttachment, getInvoiceBranchId,
+  DuplicateInvoiceError, createDraftFromUpload, createManualDraft, findLiveDuplicate, formatInvoiceDate, getInvoiceAttachment, getInvoiceBranchId,
   getInvoiceDetail, listInvoices,
 } from './invoice.service.js';
 import { approveInvoice, rejectInvoice, reviewInvoice, updateDraft } from './invoice-workflow.service.js';
@@ -22,7 +24,7 @@ const IdParams = z.object({ id: z.string().uuid() });
 
 function sendInvoiceError(reply: FastifyReply, err: unknown) {
   if (err instanceof DuplicateInvoiceError) {
-    return reply.code(409).send({ error: err.message, existingInvoiceId: err.existingInvoiceId });
+    return reply.code(409).send({ error: err.message, message: err.message, existingInvoiceId: err.existingInvoiceId, invoiceNumber: err.invoiceNumber });
   }
   if (err instanceof UnsupportedFileError || err instanceof NothingExtractableError) {
     return reply.code(err.statusCode).send({ error: err.message });
@@ -100,6 +102,45 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
     } catch (err) {
       return sendInvoiceError(reply, err);
     }
+  });
+
+  // GET /invoices/:branchId/check-duplicate?invoiceNumber=...&excludeId=... (cashier+)
+  fastify.get('/invoices/:branchId/check-duplicate', { preHandler: requireRole('cashier') }, async (request, reply) => {
+    const params = BranchParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
+    const user = getUser(request);
+    if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
+
+    const query = z.object({
+      invoiceNumber: z.string().default(''),
+      excludeId: z.string().uuid().optional(),
+    }).safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: 'Validation failed', details: query.error.flatten() });
+
+    const num = query.data.invoiceNumber.trim();
+    if (!num || num.length < 2 || isPlaceholderNumber(num)) {
+      return reply.send({ exists: false });
+    }
+
+    const existing = await findLiveDuplicate(db, params.data.branchId, num, query.data.excludeId);
+    if (!existing) {
+      return reply.send({ exists: false });
+    }
+
+    const dateStr = formatInvoiceDate(existing.invoiceDate ?? existing.createdAt);
+    return reply.send({
+      exists: true,
+      message: `Invoice number ${existing.invoiceNumber} has already been uploaded on ${dateStr}.`,
+      invoice: {
+        id: existing.id,
+        invoiceNumber: existing.invoiceNumber,
+        supplierName: existing.supplierName,
+        invoiceDate: existing.invoiceDate ? existing.invoiceDate.toISOString().slice(0, 10) : null,
+        createdAt: existing.createdAt?.toISOString() ?? null,
+        status: existing.status,
+        totalAmount: existing.totalAmount,
+      },
+    });
   });
 
   // GET /invoices/:branchId — history, newest first (cashier+)

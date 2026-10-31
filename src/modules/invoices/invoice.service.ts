@@ -4,7 +4,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { Decimal } from 'decimal.js';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import {
   categories, invoiceAttachments, products, supplierInvoiceItems, supplierInvoices,
@@ -16,16 +16,35 @@ import { extractInvoice } from './extraction/index.js';
 import { MAX_MONEY } from './extraction/numbers.js';
 import { buildDraftLines, DEFAULT_TAX_RATE, type CatalogEntry, type DraftLine } from './draft.engine.js';
 import { matchLine } from './match.engine.js';
-import { PLACEHOLDER_PREFIX, validateInvoice, validateLine } from './validate.engine.js';
+import {
+  PLACEHOLDER_PREFIX, isPlaceholderNumber, validateInvoice, validateLine,
+  formatInvoiceDate, formatDuplicateInvoiceMessage, normalizeInvoiceNumber,
+} from './validate.engine.js';
 import type { InvoiceInput, LineInput, UploadFields } from './invoice.schemas.js';
 import { getInvoiceDetail } from './invoice-query.service.js';
 
 export { getInvoiceDetail, listInvoices, getInvoiceAttachment, getInvoiceBranchId } from './invoice-query.service.js';
+export { formatInvoiceDate, formatDuplicateInvoiceMessage, normalizeInvoiceNumber } from './validate.engine.js';
 
-/** 409 carrying the id of the live invoice that already uses this supplier + number. */
+export interface LiveDuplicateInfo {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: Date | null;
+  createdAt: Date | null;
+  supplierName: string;
+  totalAmount: string;
+  status: string;
+}
+
+/** 409 carrying the id of the live invoice that already uses this number in the branch. */
 export class DuplicateInvoiceError extends ConflictError {
-  constructor(public readonly existingInvoiceId: string, invoiceNumber: string) {
-    super(`Invoice ${invoiceNumber} from this supplier is already recorded for the branch`);
+  constructor(
+    public readonly existingInvoiceId: string,
+    public readonly invoiceNumber: string,
+    public readonly existingDate?: Date | string | null,
+  ) {
+    const dateStr = formatInvoiceDate(existingDate);
+    super(`Invoice number ${invoiceNumber} has already been uploaded on ${dateStr}.`);
   }
 }
 
@@ -48,16 +67,34 @@ export async function loadCatalog(exec: Tx | typeof db = db): Promise<CatalogEnt
   return rows;
 }
 
-export async function findLiveDuplicate(exec: Tx | typeof db, branchId: string, supplierName: string, invoiceNumber: string, excludeId?: string) {
-  const conds = [
+export async function findLiveDuplicate(
+  exec: Tx | typeof db,
+  branchId: string,
+  invoiceNumber: string,
+  excludeId?: string,
+): Promise<LiveDuplicateInfo | null> {
+  const trimmed = (invoiceNumber ?? '').trim();
+  if (!trimmed || isPlaceholderNumber(trimmed)) return null;
+  const conds: SQL[] = [
     eq(supplierInvoices.branchId, branchId),
-    eq(supplierInvoices.supplierName, supplierName),
-    eq(supplierInvoices.invoiceNumber, invoiceNumber),
+    sql`lower(trim(${supplierInvoices.invoiceNumber})) = lower(trim(${trimmed}))`,
     ne(supplierInvoices.status, 'REJECTED'),
   ];
   if (excludeId) conds.push(ne(supplierInvoices.id, excludeId));
-  const [row] = await exec.select({ id: supplierInvoices.id }).from(supplierInvoices).where(and(...conds)).limit(1);
-  return row?.id ?? null;
+  const [row] = await exec
+    .select({
+      id: supplierInvoices.id,
+      invoiceNumber: supplierInvoices.invoiceNumber,
+      invoiceDate: supplierInvoices.invoiceDate,
+      createdAt: supplierInvoices.createdAt,
+      supplierName: supplierInvoices.supplierName,
+      totalAmount: supplierInvoices.totalAmount,
+      status: supplierInvoices.status,
+    })
+    .from(supplierInvoices)
+    .where(and(...conds))
+    .limit(1);
+  return row ?? null;
 }
 
 export function assertMoneyRange(lines: Array<{ lineCostTotal: string }>, total: string) {
@@ -94,8 +131,10 @@ async function insertDraft(
   assertMoneyRange(lines, header.totalAmount);
   try {
     return await db.transaction(async (tx) => {
-      const existing = await findLiveDuplicate(tx, header.branchId, header.supplierName, header.invoiceNumber);
-      if (existing) throw new DuplicateInvoiceError(existing, header.invoiceNumber);
+      if (header.invoiceNumber && !isPlaceholderNumber(header.invoiceNumber)) {
+        const existing = await findLiveDuplicate(tx, header.branchId, header.invoiceNumber);
+        if (existing) throw new DuplicateInvoiceError(existing.id, header.invoiceNumber, existing.invoiceDate ?? existing.createdAt);
+      }
       const [invoice] = await tx.insert(supplierInvoices).values({
         branchId: header.branchId,
         createdById: header.userId,
@@ -121,8 +160,8 @@ async function insertDraft(
     });
   } catch (err) {
     if (isUniqueViolation(err)) {
-      const existing = await findLiveDuplicate(db, header.branchId, header.supplierName, header.invoiceNumber);
-      if (existing) throw new DuplicateInvoiceError(existing, header.invoiceNumber);
+      const existing = await findLiveDuplicate(db, header.branchId, header.invoiceNumber);
+      if (existing) throw new DuplicateInvoiceError(existing.id, header.invoiceNumber, existing.invoiceDate ?? existing.createdAt);
     }
     throw err;
   }
@@ -156,7 +195,11 @@ export async function createDraftFromUpload(input: UploadInput) {
 
   const lines = buildDraftLines(extraction.table.lines, await loadCatalog());
   const f = input.fields;
-  const invoiceNumber = f.invoiceNumber ?? extraction.header.invoiceNumber ?? null;
+  const invoiceNumber = f.invoiceNumber?.trim() || extraction.header.invoiceNumber?.trim() || null;
+  if (invoiceNumber && !isPlaceholderNumber(invoiceNumber)) {
+    const existing = await findLiveDuplicate(db, input.branchId, invoiceNumber);
+    if (existing) throw new DuplicateInvoiceError(existing.id, invoiceNumber, existing.invoiceDate ?? existing.createdAt);
+  }
   const supplierName = (f.supplierName ?? extraction.header.supplierName ?? '').slice(0, 200);
   const invoiceDate = f.invoiceDate ?? extraction.header.invoiceDate ?? null;
   const usedOcr = extraction.kind === 'IMAGE' || (extraction.meta.ocrPages ?? 0) > 0;
@@ -230,6 +273,10 @@ export function linesFromInput(items: LineInput[], catalog: CatalogEntry[]): Dra
 }
 
 export async function createManualDraft(branchId: string, user: JwtPayload, input: InvoiceInput) {
+  if (input.invoiceNumber && !isPlaceholderNumber(input.invoiceNumber)) {
+    const existing = await findLiveDuplicate(db, branchId, input.invoiceNumber);
+    if (existing) throw new DuplicateInvoiceError(existing.id, input.invoiceNumber, existing.invoiceDate ?? existing.createdAt);
+  }
   const lines = linesFromInput(input.items, await loadCatalog());
   const inv = validateInvoice({
     invoiceNumber: input.invoiceNumber ?? null, invoiceDate: input.invoiceDate ?? null, supplierName: input.supplierName,
