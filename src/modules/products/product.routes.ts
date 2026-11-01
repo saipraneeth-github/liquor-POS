@@ -22,7 +22,9 @@ export async function productRoutes(fastify: FastifyInstance) {
     preHandler: requireRole('steward'),
   }, async (request) => {
     const user = getUser(request);
-    const list = await listProducts(true, await tenantOf(user), user.branchId ?? undefined);
+    const query = request.query as { branchId?: string };
+    const branchId = query?.branchId ?? user.branchId ?? undefined;
+    const list = await listProducts(true, await tenantOf(user), branchId);
     if (user.role !== 'steward') return list;
     return list.map(({ costPrice: _costPrice, ...rest }) => rest);
   });

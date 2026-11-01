@@ -11,7 +11,9 @@ import {
   bills,
   schemes,
   schemePurchases,
+  breakageLogs,
 } from '../../db/schema.js';
+import { deleteAllInvoices } from '../invoices/invoice.service.js';
 import { eq, and, gte, inArray, ne, sql } from 'drizzle-orm';
 import {
   parseAndValidateInvoice,
@@ -119,13 +121,25 @@ export async function approveInwardInvoice(input: ApproveInvoiceInput, user: Jwt
 
 type InvoiceRow = typeof supplierInvoices.$inferSelect;
 type InvoiceItemRow = typeof supplierInvoiceItems.$inferSelect;
-export type InvoiceProductMap = Map<string, { id: string; mrp: string; packQuantity: number | null }>;
+export type InvoiceProductMap = Map<string, {
+  id: string;
+  mrp: string;
+  packQuantity: number | null;
+  costPrice?: string | null;
+  previousCostPrice?: string | null;
+}>;
 
 /** Loads the referenced products (single query); throws 422 listing any unknown product ids. */
 export async function loadInvoiceProducts(tx: Tx, productIds: string[]): Promise<InvoiceProductMap> {
   const ids = [...new Set(productIds)];
   const productRows = ids.length === 0 ? [] : await tx
-    .select({ id: products.id, mrp: products.mrp, packQuantity: products.packQuantity })
+    .select({
+      id: products.id,
+      mrp: products.mrp,
+      packQuantity: products.packQuantity,
+      costPrice: products.costPrice,
+      previousCostPrice: products.previousCostPrice,
+    })
     .from(products)
     .where(inArray(products.id, ids));
   const productMap: InvoiceProductMap = new Map(productRows.map((p) => [p.id, p]));
@@ -150,7 +164,16 @@ export async function applyApprovedInvoice(
 
   const stockInsertsMap = new Map<string, { branchId: string; productId: string; quantity: number; reorderLevel: number }>();
   const stockAuditInserts = [];
-  const productUpdatesMap = new Map<string, { costPrice: string; mrp?: string }>();
+  const productUpdatesMap = new Map<string, {
+    costPrice: string;
+    mrp?: string;
+    previousCostPrice?: string;
+    costPerCase?: string;
+    lastInvoiceId?: string;
+    lastInvoiceNumber?: string;
+    lastInvoiceDate?: Date;
+    costUpdatedAt?: Date;
+  }>();
   const priceAuditInserts = [];
 
   for (const item of items) {
@@ -181,14 +204,27 @@ export async function applyApprovedInvoice(
     const newMrp = new Decimal(item.mrp).toFixed(2);
     const mrpChanged = !new Decimal(product.mrp).equals(newMrp);
 
-    // We update product for every item that dictates it, but for costPrice we just use the last item's cost price,
-    // however if we have multiple items for same product, this update could run multiple times concurrently.
-    // It's safer to only push one update per product. We do this by aggregating updates into a map.
-    productUpdatesMap.set(productId, { costPrice: new Decimal(item.costPrice).toFixed(2), ...(mrpChanged ? { mrp: newMrp } : {}) });
+    // Store unit-level cost price at high precision (DECIMAL 14, 6)
+    const newCostPrice = new Decimal(item.costPrice).toFixed(6);
+    const prevCostPrice = product.costPrice ? new Decimal(product.costPrice).toFixed(6) : null;
+    const caseRateVal = item.caseRate ? new Decimal(item.caseRate).toFixed(2) : null;
+
+    productUpdatesMap.set(productId, {
+      costPrice: newCostPrice,
+      previousCostPrice: prevCostPrice ?? undefined,
+      costPerCase: caseRateVal ?? undefined,
+      lastInvoiceId: invoice.id,
+      lastInvoiceNumber: invoice.invoiceNumber,
+      lastInvoiceDate: invoice.invoiceDate ?? new Date(),
+      costUpdatedAt: new Date(),
+      ...(mrpChanged ? { mrp: newMrp } : {}),
+    });
 
     if (mrpChanged) {
       priceAuditInserts.push({ productId, userId, oldMrp: product.mrp, newMrp });
-      productMap.set(productId, { ...product, mrp: newMrp });
+      productMap.set(productId, { ...product, mrp: newMrp, costPrice: newCostPrice, previousCostPrice: prevCostPrice ?? undefined });
+    } else {
+      productMap.set(productId, { ...product, costPrice: newCostPrice, previousCostPrice: prevCostPrice ?? undefined });
     }
   }
 
@@ -219,9 +255,21 @@ export async function applyApprovedInvoice(
       sql` `
     )} ELSE ${products.mrp} END AS numeric)`;
 
-    await tx.update(products)
-      .set({ costPrice: costPriceCaseSql, mrp: mrpCaseSql })
-      .where(inArray(products.id, updatesArr.map(([id]) => id)));
+    // Batch update products with costPrice, previousCostPrice, costPerCase, and invoice references
+    for (const [prodId, data] of updatesArr) {
+      await tx.update(products)
+        .set({
+          costPrice: data.costPrice,
+          ...(data.previousCostPrice !== undefined ? { previousCostPrice: data.previousCostPrice } : {}),
+          ...(data.costPerCase !== undefined ? { costPerCase: data.costPerCase } : {}),
+          lastInvoiceId: data.lastInvoiceId,
+          lastInvoiceNumber: data.lastInvoiceNumber,
+          lastInvoiceDate: data.lastInvoiceDate,
+          costUpdatedAt: data.costUpdatedAt,
+          ...(data.mrp ? { mrp: data.mrp } : {}),
+        })
+        .where(eq(products.id, prodId));
+    }
   }
 
   // Batch insert price audits if any
@@ -271,6 +319,12 @@ export async function getStockStatus(branchId: string) {
       volumeMl: products.volumeMl,
       packQuantity: products.packQuantity,
       mrp: products.mrp,
+      costPrice: products.costPrice,
+      previousCostPrice: products.previousCostPrice,
+      costPerCase: products.costPerCase,
+      lastInvoiceNumber: products.lastInvoiceNumber,
+      lastInvoiceDate: products.lastInvoiceDate,
+      costUpdatedAt: products.costUpdatedAt,
       quantity: stock.quantity,
       openMl: stock.openMl,
       reorderLevel: stock.reorderLevel,
@@ -315,4 +369,28 @@ export async function getBranchIndentEstimations(
     bufferDays,
     ...(item.packQuantity ? { casePackSize: item.packQuantity } : {}),
   }));
+}
+
+export async function clearCompleteInventory(branchId: string): Promise<{ deletedStock: number; deletedInvoices: number }> {
+  const deletedInvoices = await deleteAllInvoices(branchId);
+
+  const deletedStock = await db.transaction(async (tx) => {
+    await tx.delete(stockAudit).where(eq(stockAudit.branchId, branchId));
+    await tx.delete(breakageLogs).where(eq(breakageLogs.branchId, branchId));
+    const deleted = await tx.delete(stock).where(eq(stock.branchId, branchId)).returning({ id: stock.id });
+
+    await tx.update(products).set({
+      costPrice: null,
+      previousCostPrice: null,
+      costPerCase: null,
+      lastInvoiceId: null,
+      lastInvoiceNumber: null,
+      lastInvoiceDate: null,
+      costUpdatedAt: null,
+    });
+
+    return deleted.length;
+  });
+
+  return { deletedStock, deletedInvoices };
 }

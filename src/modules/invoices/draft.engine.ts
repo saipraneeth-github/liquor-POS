@@ -1,3 +1,4 @@
+import { calculatePrecisionLine } from './precision-calc.engine.js';
 /**
  * draft.engine.ts — PURE: extracted lines + catalog → draft invoice lines (matched, cases converted, validated).
  */
@@ -16,17 +17,31 @@ export interface DraftLine {
   lineNumber: number;
   rawDescription: string;
   barcode: string | null;
+  sku: string | null;
   productId: string | null;
   productName: string | null;
   matchStatus: 'MATCHED' | 'SUGGESTED' | 'UNMATCHED' | 'MANUAL';
   matchMethod: 'BARCODE' | 'SKU' | 'NAME' | 'MANUAL' | null;
   matchConfidence: string | null;
+  casesDelivered: number;
+  bottlesDelivered: number;
+  packQuantity: number;
   quantity: number;
+  caseRate: string | null;
   costPrice: string;
+  displayCostPrice: string;
   mrp: string;
   taxRate: string;
   extractedAmount: string | null;
   lineCostTotal: string;
+  unitDerivedTotal: string;
+  roundingAdjustment: string;
+  previousCostPrice: string | null;
+  costDifference: string | null;
+  costIncreasePct: string | null;
+  hasIncreased: boolean;
+  hasDecreased: boolean;
+  isHighIncrease: boolean;
   flags: string[];
   candidates: MatchResult['candidates'];
 }
@@ -71,21 +86,32 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
   return lines.map((line) => {
     const match = matchLine(line, catalog);
     const product = match.productId ? byId.get(match.productId)! : null;
-    const effectivePackQty = product?.packQuantity ?? line.packQuantity ?? null;
-    const conv = convertCases(line, effectivePackQty);
-    const flags = [...line.flags, ...match.flags, ...conv.flags];
-    const rawDescription = line.cases !== null && !conv.flags.includes('CASES_CONVERTED')
-      ? `${line.description} [${line.cases} cs]`
+    const effectivePackQty = product?.packQuantity ?? line.packQuantity ?? 12;
+
+    // Run precision arithmetic calculation
+    const calc = calculatePrecisionLine({
+      lineNumber: line.lineNumber,
+      cases: line.cases,
+      looseBottles: line.quantity,
+      packQuantity: effectivePackQty,
+      rate: line.rate,
+      caseRate: line.caseRate,
+      amount: line.amount,
+      mrp: line.mrp ?? product?.mrp ?? null,
+      currentProductCost: product?.costPrice ?? null,
+    });
+
+    const flags = [...line.flags, ...match.flags, ...calc.flags];
+    if (line.cases !== null) flags.push('CASES_CONVERTED');
+
+    const rawDescription = line.cases !== null
+      ? `${line.description} [${line.cases} cs${line.quantity ? ' + ' + line.quantity + ' btls' : ''}]`
       : line.description;
-    // qty × rate must fit numeric(12,2); an absurd product is treated as a misread quantity
-    if (conv.quantity !== null && conv.rate !== null && new Decimal(conv.rate).mul(conv.quantity).gte(MAX_MONEY)) {
-      conv.quantity = null;
-      flags.push('VALUE_OUT_OF_RANGE');
-    }
+
     const effectiveMrp = line.mrp ?? product?.mrp ?? null;
     const validated = validateLine({
-      quantity: conv.quantity,
-      costPrice: conv.rate,
+      quantity: calc.totalQuantity,
+      costPrice: calc.costPrice,
       mrp: effectiveMrp,
       extractedAmount: line.amount,
       catalogMrp: product?.mrp ?? null,
@@ -94,21 +120,36 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       matchStatus: match.status,
       flags,
     });
+
     return {
       lineNumber: line.lineNumber,
       rawDescription: rawDescription.slice(0, 500),
       barcode: line.barcode,
+      sku: line.sku,
       productId: match.productId,
       productName: product?.name ?? null,
       matchStatus: match.status,
       matchMethod: match.method,
       matchConfidence: match.productId ? match.confidence.toFixed(3) : (match.confidence > 0 ? match.confidence.toFixed(3) : null),
-      quantity: conv.quantity !== null && conv.quantity > 0 ? conv.quantity : 0,
-      costPrice: conv.rate ?? '0.00',
+      casesDelivered: calc.casesDelivered,
+      bottlesDelivered: calc.bottlesDelivered,
+      packQuantity: calc.packQuantity,
+      quantity: calc.totalQuantity,
+      caseRate: calc.caseRate,
+      costPrice: calc.costPrice,
+      displayCostPrice: calc.displayUnitCost,
       mrp: effectiveMrp ?? '0.00',
       taxRate: validTaxRate(line.taxRate) ?? product?.taxRate ?? DEFAULT_TAX_RATE,
       extractedAmount: line.amount,
-      lineCostTotal: validated.lineCostTotal,
+      lineCostTotal: calc.lineCostTotal,
+      unitDerivedTotal: calc.unitDerivedTotal,
+      roundingAdjustment: calc.roundingAdjustment,
+      previousCostPrice: calc.previousCostPrice,
+      costDifference: calc.costDifference,
+      costIncreasePct: calc.costIncreasePct,
+      hasIncreased: calc.hasIncreased,
+      hasDecreased: calc.hasDecreased,
+      isHighIncrease: calc.isHighIncrease,
       flags: validated.flags,
       candidates: match.candidates,
     };

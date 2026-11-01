@@ -4,6 +4,7 @@
  * documents, accurately resolving multi-line brand names across line/page wraps, dual quantities (cases + bottles),
  * excise code (SKU) extraction, per-bottle unit rates, and Net Invoice Value totals.
  */
+import { Decimal } from 'decimal.js';
 import { parseMoney } from './numbers.js';
 import { parseDateText } from './header-fields.engine.js';
 import type {
@@ -18,6 +19,17 @@ export interface IcdcDocumentResult {
   header: ExtractedHeader;
   headerText: string[];
   specialCess: string | null;
+  mrpRoundingOff: string | null;
+  linesBasicTotal: string | null;
+  turnoverTax: string | null;
+  tcsAmount: string | null;
+  challanAmount: string | null;
+  challanNumber: string | null;
+  previousCredit: string | null;
+  subTotal: string | null;
+  netInvoiceValue: string | null;
+  totalInvoiceAmount: string | null;
+  retailerCreditBalance: string | null;
 }
 
 const ICDC_INDICATORS = [
@@ -156,13 +168,51 @@ export function extractIcdcHeader(items: PagePositionedItem[], lines: string[]):
 /**
  * Extracts Net Invoice Value ((-)Less this Invoice Value) and Special Excise Cess from ICDC items.
  */
+export interface IcdcTotalsResult {
+  capturedTotal: string | null;
+  specialCess: string | null;
+  mrpRoundingOff: string | null;
+  linesBasicTotal: string | null;
+  turnoverTax: string | null;
+  tcsAmount: string | null;
+  challanAmount: string | null;
+  challanNumber: string | null;
+  previousCredit: string | null;
+  subTotal: string | null;
+  netInvoiceValue: string | null;
+  totalInvoiceAmount: string | null;
+  retailerCreditBalance: string | null;
+}
+
 export function extractIcdcTotals(
   items: PagePositionedItem[],
   lines: string[],
-): { capturedTotal: string | null; specialCess: string | null } {
+): IcdcTotalsResult {
   let capturedTotal: string | null = null;
   let specialCess: string | null = null;
+  let mrpRoundingOff: string | null = null;
+  let linesBasicTotal: string | null = null;
+  let turnoverTax: string | null = null;
+  let tcsAmount: string | null = null;
+  let challanAmount: string | null = null;
+  let challanNumber: string | null = null;
+  let previousCredit: string | null = null;
+  let subTotal: string | null = null;
+  let retailerCreditBalance: string | null = null;
 
+  function findByLabel(pattern: RegExp): string | null {
+    const hits = items.filter((i) => pattern.test(i.str));
+    for (const h of hits) {
+      const nearby = items.filter(
+        (i) => i.page === h.page && Math.abs(i.y - h.y) <= 8 && i.x > h.x,
+      );
+      for (const n of nearby) {
+        const pm = parseMoney(n.str);
+        if (pm) return pm;
+      }
+    }
+    return null;
+  }
   // Search items near "(-)Less this Invoice Value:" or "Net Invoice Value:"
   const totalLabels = items.filter((i) => /Less\s*this\s*Invoice\s*Value|Net\s*Invoice\s*Value/i.test(i.str));
   for (const totalItem of totalLabels) {
@@ -221,7 +271,123 @@ export function extractIcdcTotals(
     }
   }
 
-  return { capturedTotal, specialCess };
+  // Invoice Value (Wholesale basic lines sum)
+  linesBasicTotal = findByLabel(/^Invoice\s*Value/i);
+  if (!linesBasicTotal) {
+    for (const l of lines) {
+      const m = l.match(/(?:^|\s)Invoice\s*Value\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
+      if (m) { const p = parseMoney(m[1]); if (p) { linesBasicTotal = p; break; } }
+    }
+  }
+
+  // MRP Rounding Off
+  mrpRoundingOff = findByLabel(/MRP\s*Rounding\s*Off|Rounding\s*Off/i);
+  if (!mrpRoundingOff) {
+    for (const l of lines) {
+      const m = l.match(/(?:MRP\s*Rounding\s*Off|Rounding\s*Off)\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
+      if (m) { const p = parseMoney(m[1]); if (p) { mrpRoundingOff = p; break; } }
+    }
+  }
+
+  // Turnover Tax
+  turnoverTax = findByLabel(/Turnover\s*Tax/i);
+  if (!turnoverTax) {
+    for (const l of lines) {
+      const m = l.match(/Turnover\s*Tax\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
+      if (m) { const p = parseMoney(m[1]); if (p) { turnoverTax = p; break; } }
+    }
+  }
+
+  // TCS
+  tcsAmount = findByLabel(/\bTCS\b/i);
+  if (!tcsAmount) {
+    for (const l of lines) {
+      const m = l.match(/\bTCS\b(?:\s*\(\d+%\))?\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
+      if (m) { const p = parseMoney(m[1]); if (p) { tcsAmount = p; break; } }
+    }
+  }
+
+  // e-challan / DD Amount
+  challanAmount = findByLabel(/e-challan\s*\/\s*DD\s*Amount/i);
+  if (!challanAmount) {
+    for (const l of lines) {
+      const m = l.match(/e-challan\s*\/\s*DD\s*Amount\s*[:\-]?\s*([₹Rs.\s]*[\d,]+(?:\.\d{2})?)/i);
+      if (m) { const p = parseMoney(m[1]); if (p) { challanAmount = p; break; } }
+    }
+  }
+
+  // Previous Credit
+  previousCredit = findByLabel(/Previous\s*Credit/i);
+  if (!previousCredit) {
+    for (const l of lines) {
+      const m = l.match(/Previous\s*Credit\s*[:\-]?\s*([₹Rs.\s]*[\d,]+(?:\.\d{2})?)/i);
+      if (m) { const p = parseMoney(m[1]); if (p) { previousCredit = p; break; } }
+    }
+  }
+
+  // Sub Total
+  subTotal = findByLabel(/Sub\s*Total/i);
+  if (!subTotal) {
+    for (const l of lines) {
+      const m = l.match(/Sub\s*Total\s*[:\-]?\s*([₹Rs.\s]*[\d,]+(?:\.\d{2})?)/i);
+      if (m) { const p = parseMoney(m[1]); if (p) { subTotal = p; break; } }
+    }
+  }
+
+  // Retailer Credit Balance / Amount Credited (to Licensee Account)
+  retailerCreditBalance = findByLabel(/Retailer\s*Credit\s*Balance|Amount\s*Credited\s*\([^)]+\)/i);
+  if (!retailerCreditBalance) {
+    for (const l of lines) {
+      const m = l.match(/(?:Retailer\s*Credit\s*Balance|Amount\s*Credited\s*\([^)]+\))\s*[:\-]?\s*([₹Rs.\s]*[\d,]+(?:\.\d{2})?)/i);
+      if (m) { const p = parseMoney(m[1]); if (p) { retailerCreditBalance = p; break; } }
+    }
+  }
+
+  // No.e-challan/DD
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/No\.?\s*e-challan\s*\/\s*DD/i.test(l)) {
+      const m = l.match(/No\.?\s*e-challan\s*\/\s*DD\s*[:\-]?\s*(\d+)/i);
+      const count = m ? m[1] : '1';
+      let ref = '';
+      for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
+        if (/^\d+\.[\d\w\/]+\s*Rs\.?\s*[\d,]+/i.test(lines[j].trim())) {
+          ref = lines[j].trim();
+          break;
+        }
+      }
+      challanNumber = ref ? `${count} (${ref})` : count;
+      break;
+    }
+  }
+
+  const netInvoiceValue = capturedTotal;
+
+  // Calculate totalInvoiceAmount = netInvoiceValue + turnoverTax + specialCess + tcsAmount
+  let totalInvoiceAmount: string | null = null;
+  if (netInvoiceValue) {
+    let tot = new Decimal(netInvoiceValue);
+    if (turnoverTax) tot = tot.plus(new Decimal(turnoverTax));
+    if (specialCess) tot = tot.plus(new Decimal(specialCess));
+    if (tcsAmount) tot = tot.plus(new Decimal(tcsAmount));
+    totalInvoiceAmount = tot.toFixed(2);
+  }
+
+  return {
+    capturedTotal,
+    specialCess,
+    mrpRoundingOff,
+    linesBasicTotal,
+    turnoverTax,
+    tcsAmount,
+    challanAmount,
+    challanNumber,
+    previousCredit,
+    subTotal,
+    netInvoiceValue,
+    totalInvoiceAmount,
+    retailerCreditBalance,
+  };
 }
 
 interface Anchor {
@@ -387,6 +553,7 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
       taxRate: null,
       packQuantity,
       volumeMl,
+      caseRate: caseRate ?? null,
       confidence: 100,
       flags,
     });
@@ -416,13 +583,24 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
 export function extractIcdcDocument(items: PagePositionedItem[], lines: string[]): IcdcDocumentResult {
   const header = extractIcdcHeader(items, lines);
   const table = extractIcdcTable(items);
-  const { specialCess } = extractIcdcTotals(items, lines);
+  const totals = extractIcdcTotals(items, lines);
 
   return {
     table,
     header,
     headerText: lines,
-    specialCess,
+    specialCess: totals.specialCess,
+    mrpRoundingOff: totals.mrpRoundingOff,
+    linesBasicTotal: totals.linesBasicTotal,
+    turnoverTax: totals.turnoverTax,
+    tcsAmount: totals.tcsAmount,
+    challanAmount: totals.challanAmount,
+    challanNumber: totals.challanNumber,
+    previousCredit: totals.previousCredit,
+    subTotal: totals.subTotal,
+    netInvoiceValue: totals.netInvoiceValue,
+    totalInvoiceAmount: totals.totalInvoiceAmount,
+    retailerCreditBalance: totals.retailerCreditBalance,
   };
 }
 

@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { db } from '../../db/client.js';
-import { branchMenuAvailability, categories, priceAudit, productServings, products, servingPriceAudit, users } from '../../db/schema.js';
+import { branchMenuAvailability, categories, priceAudit, productServings, products, servingPriceAudit, users, stock } from '../../db/schema.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { Tx } from '../../lib/domain-events.js';
 import type { JwtPayload } from '../auth/auth.service.js';
@@ -152,12 +152,44 @@ export async function listMenuItems(type: MenuTypeParam, tenant: Tenant, include
 
   // At a branch, its own switch overrides the shared availability flag
   const overrides = branchId ? await branchAvailability(db, branchId, rows.map((r) => r.id)) : new Map<string, boolean>();
-  const withBranch = rows.map((r) => ({
-    ...r,
-    sharedAvailable: r.isAvailable,
-    isAvailable: overrides.get(r.id) ?? r.isAvailable,
-    branchOverride: overrides.has(r.id),
-  }));
+
+  // Real-time branch stock level (bottles & open peg ml)
+  const stockMap = new Map<string, { quantity: number; openMl: number; reorderLevel: number }>();
+  if (branchId && rows.length > 0) {
+    const stockRows = await db
+      .select({
+        productId: stock.productId,
+        quantity: stock.quantity,
+        openMl: stock.openMl,
+        reorderLevel: stock.reorderLevel,
+      })
+      .from(stock)
+      .where(and(
+        eq(stock.branchId, branchId),
+        inArray(stock.productId, rows.map((r) => r.id))
+      ));
+    for (const s of stockRows) {
+      stockMap.set(s.productId, {
+        quantity: s.quantity,
+        openMl: s.openMl,
+        reorderLevel: s.reorderLevel ?? 5,
+      });
+    }
+  }
+
+  const withBranch = rows.map((r) => {
+    const s = stockMap.get(r.id);
+    return {
+      ...r,
+      sharedAvailable: r.isAvailable,
+      isAvailable: overrides.get(r.id) ?? r.isAvailable,
+      branchOverride: overrides.has(r.id),
+      currentStock: r.trackStock ? (s?.quantity ?? 0) : null,
+      stockQuantity: r.trackStock ? (s?.quantity ?? 0) : null,
+      openMl: r.trackStock ? (s?.openMl ?? 0) : null,
+      reorderLevel: s?.reorderLevel ?? 5,
+    };
+  });
   return (await attachServings(withBranch, includeInactive)).map(withEffectiveGst);
 }
 

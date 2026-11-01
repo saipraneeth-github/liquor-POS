@@ -92,7 +92,7 @@ export async function loadKotPrintModel(kotOrderId: string) {
   const [table] = session ? await db.select({ name: tables.name }).from(tables).where(eq(tables.id, session.tableId)).limit(1) : [];
   const [steward] = await db.select({ name: users.name }).from(users).where(eq(users.id, order.createdById)).limit(1);
   const items = await db
-    .select({ item: kotItems, productName: products.name })
+    .select({ item: kotItems, productName: products.name, menuType: products.menuType })
     .from(kotItems)
     .innerJoin(products, eq(kotItems.productId, products.id))
     .where(eq(kotItems.kotOrderId, kotOrderId));
@@ -106,7 +106,13 @@ export async function loadKotPrintModel(kotOrderId: string) {
     date: formatBusinessDateTime(order.createdAt ?? new Date()),
     notes: order.notes ?? undefined,
     items: items
-      .filter(({ item }) => item.status !== 'CANCELLED')
+      .filter(({ item, menuType }) => {
+        if (item.status === 'CANCELLED') return false;
+        if (order.destination === 'KITCHEN') {
+          return menuType === 'KITCHEN';
+        }
+        return true;
+      })
       .map(({ item, productName }) => ({
         name: item.servingLabel ? `${productName} (${item.servingLabel})` : productName,
         qty: item.quantity,

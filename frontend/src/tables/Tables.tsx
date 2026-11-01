@@ -22,22 +22,43 @@ type Product = {
   mrp: string;
   isAvailable?: boolean;
   servings?: Serving[];
+  menuType?: 'RETAIL' | 'KITCHEN' | 'BAR';
+  categoryName?: string;
+  currentStock?: number | null;
+  stockQuantity?: number | null;
+  openMl?: number | null;
+  reorderLevel?: number | null;
+  trackStock?: boolean;
 };
 
 type KotItem = {
   id: string;
   productId: string;
+  productName?: string;
+  menuType?: string;
   quantity: number;
   servingLabel?: string | null;
   status: 'PENDING' | 'PREPARING' | 'SERVED' | 'CANCELLED';
+  notes?: string | null;
 };
 
 type KotOrder = {
   id: string;
   status: string;
-  destination: string;
+  destination: 'KITCHEN' | 'BAR' | string;
   items: KotItem[];
 };
+
+export function isKitchenProduct(p: { menuType?: string; categoryName?: string; name?: string }): boolean {
+  if (p.menuType === 'KITCHEN') return true;
+  if (p.menuType === 'BAR' || p.menuType === 'RETAIL') return false;
+  const cat = (p.categoryName || '').toLowerCase();
+  return /food|starter|main|snack|kitchen|bread|dessert|tandoor|rice|curry|salad|soup|veg/.test(cat);
+}
+
+export function isBarProduct(p: { menuType?: string; categoryName?: string; name?: string }): boolean {
+  return !isKitchenProduct(p);
+}
 
 const KOT_NEXT: Record<string, string[]> = {
   PENDING: ['PREPARING', 'CANCELLED'],
@@ -84,6 +105,7 @@ export function Tables() {
 
   // View KOTs State
   const [tableKots, setTableKots] = useState<KotOrder[]>([]);
+  const [kotFilter, setKotFilter] = useState<'ALL' | 'KITCHEN' | 'BAR'>('ALL');
 
   // Add Table Form (Manager)
   const [newTableName, setNewTableName] = useState('');
@@ -109,7 +131,8 @@ export function Tables() {
 
   useEffect(() => {
     loadTables();
-    api.get<Product[]>('/products')
+    const url = branchId ? `/products?branchId=${branchId}` : '/products';
+    api.get<Product[]>(url)
       .then((prods) => {
         setProducts(prods || []);
         if (prods && prods.length > 0) {
@@ -117,7 +140,7 @@ export function Tables() {
         }
       })
       .catch(() => {});
-  }, [loadTables]);
+  }, [loadTables, branchId]);
 
   const handleTileClick = async (table: Table) => {
     if (table.status === 'OCCUPIED') {
@@ -142,10 +165,13 @@ export function Tables() {
     }
   };
 
-  const handleOpenKotModal = () => {
-    setKotItems([{ productId: products[0]?.id || '', quantity: 1 }]);
+  const handleOpenKotModal = (dest: 'BAR' | 'KITCHEN' = 'BAR') => {
+    setKotDest(dest);
+    const validProds = products.filter(
+      (p) => p.isAvailable !== false && (dest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p))
+    );
+    setKotItems([{ productId: validProds[0]?.id || '', quantity: 1 }]);
     setKotNotes('');
-    setKotDest('BAR');
     setActiveModal('newKot');
   };
 
@@ -442,18 +468,29 @@ export function Tables() {
                     <button
                       type="button"
                       id="tblActKot"
-                      onClick={handleOpenKotModal}
-                      className="px-4 py-2 bg-purple-600 text-white rounded font-medium hover:bg-purple-700 text-sm"
+                      onClick={() => handleOpenKotModal('BAR')}
+                      className="px-4 py-2 bg-purple-600 text-white rounded font-medium hover:bg-purple-700 text-sm flex items-center gap-1.5"
                     >
-                      + KOT
+                      <span>🍸</span> + Bar KOT
+                    </button>
+                    <button
+                      type="button"
+                      id="tblActKitchenKot"
+                      onClick={() => handleOpenKotModal('KITCHEN')}
+                      className="px-4 py-2 bg-amber-600 text-white rounded font-medium hover:bg-amber-700 text-sm flex items-center gap-1.5"
+                    >
+                      <span>🍳</span> + Kitchen KOT
                     </button>
                     <button
                       type="button"
                       id="tblActKots"
-                      onClick={handleViewKots}
-                      className="px-4 py-2 border rounded font-medium hover:bg-gray-100 dark:hover:bg-gray-700 text-sm"
+                      onClick={() => {
+                        setKotFilter('ALL');
+                        handleViewKots();
+                      }}
+                      className="px-4 py-2 border rounded font-medium hover:bg-gray-100 dark:hover:bg-gray-700 text-sm flex items-center gap-1.5"
                     >
-                      KOTs
+                      <span>📋</span> KOTs
                     </button>
                     {canCashier && (
                       <>
@@ -560,166 +597,288 @@ export function Tables() {
               )}
 
               {/* New KOT Form */}
-              {activeModal === 'newKot' && (
-                <form onSubmit={handleCreateKot} className="space-y-4">
-                  <div>
-                    <label htmlFor="kotDest" className="block text-xs font-semibold mb-1 text-gray-500">
-                      Destination
-                    </label>
-                    <select
-                      id="kotDest"
-                      value={kotDest}
-                      onChange={(e) => setKotDest(e.target.value as 'BAR' | 'KITCHEN')}
-                      className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    >
-                      <option value="BAR">🍸 Bar</option>
-                      <option value="KITCHEN">🍳 Kitchen</option>
-                    </select>
-                  </div>
+              {activeModal === 'newKot' && (() => {
+                const availableProducts = products.filter(
+                  (p) => p.isAvailable !== false && (kotDest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p))
+                );
+                return (
+                  <form onSubmit={handleCreateKot} className="space-y-4">
+                    <div>
+                      <label htmlFor="kotDest" className="block text-xs font-semibold mb-1 text-gray-500">
+                        Destination
+                      </label>
+                      <select
+                        id="kotDest"
+                        value={kotDest}
+                        onChange={(e) => {
+                          const newDest = e.target.value as 'BAR' | 'KITCHEN';
+                          setKotDest(newDest);
+                          const validProds = products.filter(
+                            (p) => p.isAvailable !== false && (newDest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p))
+                          );
+                          setKotItems([{ productId: validProds[0]?.id || '', quantity: 1 }]);
+                        }}
+                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      >
+                        <option value="BAR">🍸 Bar (Drinks &amp; Liquor)</option>
+                        <option value="KITCHEN">🍳 Kitchen (Food &amp; Snacks)</option>
+                      </select>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {kotDest === 'KITCHEN'
+                          ? 'Showing food dishes and snacks only for Kitchen KOT.'
+                          : 'Showing bar drinks, peg servings, and counter bottles.'}
+                      </p>
+                    </div>
 
-                  <div id="kotLines" className="space-y-3">
-                    {kotItems.map((item, idx) => (
-                      <div key={idx} className="kot-line flex gap-2 items-center">
-                        <select
-                          className="kot-product flex-1 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                          aria-label="Product"
-                          value={item.productId}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setKotItems((prev) =>
-                              prev.map((it, i) => (i === idx ? { ...it, productId: val, servingId: undefined } : it))
-                            );
-                          }}
-                        >
-                          {products.filter((p) => p.isAvailable !== false).map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                        {(products.find((p) => p.id === item.productId)?.servings ?? []).length > 0 && (
+                    <div id="kotLines" className="space-y-3">
+                      {kotItems.map((item, idx) => (
+                        <div key={idx} className="kot-line flex gap-2 items-center">
                           <select
-                            className="kot-serving w-36 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                            aria-label="Serving"
-                            value={item.servingId ?? ''}
+                            className="kot-product flex-1 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            aria-label="Product"
+                            value={item.productId}
                             onChange={(e) => {
                               const val = e.target.value;
-                              setKotItems((prev) => prev.map((it, i) => (i === idx ? { ...it, servingId: val || undefined } : it)));
+                              setKotItems((prev) =>
+                                prev.map((it, i) => (i === idx ? { ...it, productId: val, servingId: undefined } : it))
+                              );
                             }}
                           >
-                            <option value="">Bottle rate</option>
-                            {products.find((p) => p.id === item.productId)!.servings!.map((s) => (
-                              <option key={s.id} value={s.id}>{s.label} — ₹{parseFloat(s.price)}</option>
-                            ))}
+                            {availableProducts.length === 0 ? (
+                              <option value="">No {kotDest === 'KITCHEN' ? 'kitchen food' : 'bar'} items found</option>
+                            ) : (
+                              availableProducts.map((p) => {
+                                const stockQty = p.currentStock ?? p.stockQuantity ?? 0;
+                                const isTracked = p.trackStock !== false;
+                                let stockLabel = '';
+                                if (isTracked) {
+                                  stockLabel = stockQty <= 0
+                                    ? ' [⚠️ Out of Stock]'
+                                    : ` [Stock: ${stockQty} btl${p.openMl ? `, ${p.openMl}ml open` : ''}]`;
+                                } else {
+                                  stockLabel = ' [Kitchen Fresh]';
+                                }
+                                return (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name} {p.mrp ? `(₹${parseFloat(p.mrp)})` : ''}{stockLabel}
+                                  </option>
+                                );
+                              })
+                            )}
                           </select>
-                        )}
-                        <input
-                          type="number"
-                          min={1}
-                          max={50}
-                          className="kot-qty w-20 p-2 border rounded text-sm text-right dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                          value={item.quantity}
-                          onChange={(e) => {
-                            const q = parseInt(e.target.value) || 1;
-                            setKotItems((prev) =>
-                              prev.map((it, i) => (i === idx ? { ...it, quantity: q } : it))
-                            );
-                          }}
-                        />
-                      </div>
-                    ))}
-                  </div>
+                          {(products.find((p) => p.id === item.productId)?.servings ?? []).length > 0 && (
+                            <select
+                              className="kot-serving w-36 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                              aria-label="Serving"
+                              value={item.servingId ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setKotItems((prev) => prev.map((it, i) => (i === idx ? { ...it, servingId: val || undefined } : it)));
+                              }}
+                            >
+                              <option value="">Bottle rate</option>
+                              {products.find((p) => p.id === item.productId)!.servings!.map((s) => (
+                                <option key={s.id} value={s.id}>{s.label} — ₹{parseFloat(s.price)}</option>
+                              ))}
+                            </select>
+                          )}
+                          <input
+                            type="number"
+                            min={1}
+                            max={50}
+                            className="kot-qty w-20 p-2 border rounded text-sm text-right dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const q = parseInt(e.target.value) || 1;
+                              setKotItems((prev) =>
+                                prev.map((it, i) => (i === idx ? { ...it, quantity: q } : it))
+                              );
+                            }}
+                          />
+                          {kotItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setKotItems((prev) => prev.filter((_, i) => i !== idx))}
+                              className="p-1.5 text-gray-400 hover:text-red-500 rounded text-sm"
+                              aria-label="Remove line"
+                              title="Remove item"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setKotItems((prev) => [...prev, { productId: products[0]?.id || '', quantity: 1 }])
-                    }
-                    className="text-xs text-purple-600 dark:text-purple-400 font-semibold"
-                  >
-                    + Add item
-                  </button>
-
-                  <div>
-                    <label htmlFor="kotNotes" className="block text-xs font-semibold mb-1 text-gray-500">
-                      Notes
-                    </label>
-                    <input
-                      id="kotNotes"
-                      maxLength={500}
-                      value={kotNotes}
-                      onChange={(e) => setKotNotes(e.target.value)}
-                      placeholder="e.g. Less spicy, extra ice"
-                      className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
                     <button
                       type="button"
-                      onClick={() => setActiveModal(null)}
-                      className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                      onClick={() =>
+                        setKotItems((prev) => [...prev, { productId: availableProducts[0]?.id || '', quantity: 1 }])
+                      }
+                      className="text-xs text-purple-600 dark:text-purple-400 font-semibold cursor-pointer"
                     >
-                      Cancel
+                      + Add item
                     </button>
-                    <button
-                      type="submit"
-                      id="kotCreateBtn"
-                      disabled={kotSubmitting}
-                      className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
-                    >
-                      {kotSubmitting ? 'Sending...' : 'Create KOT'}
-                    </button>
-                  </div>
-                </form>
-              )}
+
+                    <div>
+                      <label htmlFor="kotNotes" className="block text-xs font-semibold mb-1 text-gray-500">
+                        Notes
+                      </label>
+                      <input
+                        id="kotNotes"
+                        maxLength={500}
+                        value={kotNotes}
+                        onChange={(e) => setKotNotes(e.target.value)}
+                        placeholder="e.g. Less spicy, extra ice, no onions"
+                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveModal(null)}
+                        className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        id="kotCreateBtn"
+                        disabled={kotSubmitting || availableProducts.length === 0}
+                        className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
+                      >
+                        {kotSubmitting ? 'Sending...' : 'Create KOT'}
+                      </button>
+                    </div>
+                  </form>
+                );
+              })()}
 
               {/* View KOTs List */}
-              {activeModal === 'viewKots' && (
-                <div className="space-y-4">
-                  {tableKots.length === 0 ? (
-                    <div className="p-4 text-center text-gray-500">No KOTs for this table yet.</div>
-                  ) : (
-                    tableKots.map((o, idx) => (
-                      <div key={o.id} className="p-3 border rounded-lg dark:border-gray-700 space-y-2">
-                        <div className="flex justify-between items-center font-bold text-sm">
-                          <span>KOT #{idx + 1} ({o.destination})</span>
-                          <span className="flex items-center gap-2">
-                            <button type="button" className="text-xs text-purple-600 hover:underline cursor-pointer" onClick={() => printInBrowser('kot', o.id)}>Print KOT</button>
-                            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
-                              {o.status}
-                            </span>
-                          </span>
-                        </div>
-                        <div className="divide-y dark:divide-gray-700">
-                          {o.items.map((i) => {
-                            const nextOptions = KOT_NEXT[i.status] || [];
-                            const allowed = [i.status, ...nextOptions];
-                            return (
-                              <div key={i.id} className="py-2 flex justify-between items-center text-sm">
-                                <span>{productName(i.productId)}{i.servingLabel ? ` (${i.servingLabel})` : ''} x {i.quantity}</span>
-                                <select
-                                  id={`ks-${i.id}`}
-                                  value={i.status}
-                                  disabled={nextOptions.length === 0}
-                                  onChange={(e) => handleUpdateKotStatus(o.id, i.id, e.target.value)}
-                                  className="p-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                >
-                                  {allowed.map((s) => (
-                                    <option key={s} value={s}>
-                                      {s}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            );
-                          })}
-                        </div>
+              {activeModal === 'viewKots' && (() => {
+                const filteredKots = tableKots.filter((o) => {
+                  if (kotFilter === 'ALL') return true;
+                  return o.destination === kotFilter;
+                });
+                const kitchenCount = tableKots.filter((o) => o.destination === 'KITCHEN').length;
+                const barCount = tableKots.filter((o) => o.destination === 'BAR').length;
+                return (
+                  <div className="space-y-4">
+                    {/* Destination filter tabs */}
+                    <div className="flex gap-2 border-b dark:border-gray-700 pb-2">
+                      <button
+                        type="button"
+                        onClick={() => setKotFilter('ALL')}
+                        className={`px-3 py-1 text-xs rounded-full font-medium transition ${
+                          kotFilter === 'ALL'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        All ({tableKots.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKotFilter('KITCHEN')}
+                        className={`px-3 py-1 text-xs rounded-full font-medium transition ${
+                          kotFilter === 'KITCHEN'
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        🍳 Kitchen ({kitchenCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKotFilter('BAR')}
+                        className={`px-3 py-1 text-xs rounded-full font-medium transition ${
+                          kotFilter === 'BAR'
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        🍸 Bar ({barCount})
+                      </button>
+                    </div>
+
+                    {filteredKots.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500">
+                        {tableKots.length === 0
+                          ? 'No KOTs for this table yet.'
+                          : `No ${kotFilter.toLowerCase()} KOTs for this table.`}
                       </div>
-                    ))
-                  )}
-                </div>
-              )}
+                    ) : (
+                      filteredKots.map((o, idx) => {
+                        const isKitchen = o.destination === 'KITCHEN';
+                        return (
+                          <div key={o.id} className="p-3 border rounded-lg dark:border-gray-700 space-y-2">
+                            <div className="flex justify-between items-center font-bold text-sm">
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                    isKitchen
+                                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                                      : 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-300 dark:border-purple-700'
+                                  }`}
+                                >
+                                  {isKitchen ? '🍳 Kitchen Order' : '🍸 Bar Order'}
+                                </span>
+                                <span>KOT #{idx + 1}</span>
+                              </span>
+                              <span className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="text-xs text-purple-600 hover:underline cursor-pointer"
+                                  onClick={() => printInBrowser('kot', o.id)}
+                                >
+                                  Print KOT
+                                </button>
+                                <span className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
+                                  {o.status}
+                                </span>
+                              </span>
+                            </div>
+                            <div className="divide-y dark:divide-gray-700">
+                              {o.items.map((i) => {
+                                const nextOptions = KOT_NEXT[i.status] || [];
+                                const allowed = [i.status, ...nextOptions];
+                                const displayName = i.productName || productName(i.productId);
+                                return (
+                                  <div key={i.id} className="py-2 flex justify-between items-center text-sm">
+                                    <div>
+                                      <div className="font-medium">
+                                        {displayName}
+                                        {i.servingLabel ? ` (${i.servingLabel})` : ''} × {i.quantity}
+                                      </div>
+                                      {i.notes && (
+                                        <div className="text-xs text-gray-400 italic">Note: {i.notes}</div>
+                                      )}
+                                    </div>
+                                    <select
+                                      id={`ks-${i.id}`}
+                                      value={i.status}
+                                      disabled={nextOptions.length === 0}
+                                      onChange={(e) => handleUpdateKotStatus(o.id, i.id, e.target.value)}
+                                      className="p-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    >
+                                      {allowed.map((s) => (
+                                        <option key={s} value={s}>
+                                          {s}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

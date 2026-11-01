@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { db } from '../../db/client.js';
-import { products, categories, priceAudit, productServings } from '../../db/schema.js';
+import { products, categories, priceAudit, productServings, stock } from '../../db/schema.js';
 import { and, eq, getTableColumns, inArray, isNull, or } from 'drizzle-orm';
 import { branchAvailability, type Tenant } from '../menu/menu-access.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
@@ -142,5 +142,40 @@ export async function listProducts(activeOnly = true, tenant: Tenant = 'ALL', br
     if (!s.isActive) continue;
     byProduct.set(s.productId, [...(byProduct.get(s.productId) ?? []), s]);
   }
-  return rows.map((r) => ({ ...r, servings: byProduct.get(r.id) ?? [] }));
+
+  // Branch-level real-time inventory stock (bottles & open peg ml)
+  const stockMap = new Map<string, { quantity: number; openMl: number; reorderLevel: number }>();
+  if (branchId && rows.length > 0) {
+    const stockRows = await db
+      .select({
+        productId: stock.productId,
+        quantity: stock.quantity,
+        openMl: stock.openMl,
+        reorderLevel: stock.reorderLevel,
+      })
+      .from(stock)
+      .where(and(
+        eq(stock.branchId, branchId),
+        inArray(stock.productId, rows.map((r) => r.id))
+      ));
+    for (const s of stockRows) {
+      stockMap.set(s.productId, {
+        quantity: s.quantity,
+        openMl: s.openMl,
+        reorderLevel: s.reorderLevel ?? 5,
+      });
+    }
+  }
+
+  return rows.map((r) => {
+    const s = stockMap.get(r.id);
+    return {
+      ...r,
+      currentStock: r.trackStock ? (s?.quantity ?? 0) : null,
+      stockQuantity: r.trackStock ? (s?.quantity ?? 0) : null,
+      openMl: r.trackStock ? (s?.openMl ?? 0) : null,
+      reorderLevel: s?.reorderLevel ?? 5,
+      servings: byProduct.get(r.id) ?? [],
+    };
+  });
 }

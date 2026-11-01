@@ -8,7 +8,7 @@ import { isPlaceholderNumber } from './validate.engine.js';
 import { NothingExtractableError, UnsupportedFileError, terminateOcr } from './extraction/index.js';
 import { InvoiceInputSchema, ListQuerySchema, RejectSchema, UploadFieldsSchema } from './invoice.schemas.js';
 import {
-  DuplicateInvoiceError, createDraftFromUpload, createManualDraft, findLiveDuplicate, formatInvoiceDate, getInvoiceAttachment, getInvoiceBranchId,
+  DuplicateInvoiceError, createDraftFromUpload, createManualDraft, deleteAllInvoices, deleteInvoice, findLiveDuplicate, formatInvoiceDate, getInvoiceAttachment, getInvoiceBranchId,
   getInvoiceDetail, listInvoices,
 } from './invoice.service.js';
 import { approveInvoice, rejectInvoice, reviewInvoice, updateDraft } from './invoice-workflow.service.js';
@@ -227,5 +227,32 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
     const body = RejectSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: 'Validation failed', details: body.error.flatten() });
     try { return await rejectInvoice(id, user, body.data.reason); } catch (err) { return sendInvoiceError(reply, err); }
+  });
+
+  // DELETE /invoices/detail/:id — delete a supplier invoice (manager+)
+  fastify.delete('/invoices/detail/:id', { preHandler: requireRole('manager') }, async (request, reply) => {
+    const user = getUser(request);
+    const id = await authorizeInvoice(request, reply, user);
+    if (!id) return;
+    try {
+      await deleteInvoice(id, user);
+      return reply.code(200).send({ success: true, message: 'Invoice deleted' });
+    } catch (err) {
+      return sendInvoiceError(reply, err);
+    }
+  });
+
+  // DELETE /invoices/:branchId/all — delete all supplier invoices for this branch (manager+)
+  fastify.delete('/invoices/:branchId/all', { preHandler: requireRole('manager') }, async (request, reply) => {
+    const params = BranchParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
+    const user = getUser(request);
+    if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
+    try {
+      const deletedCount = await deleteAllInvoices(params.data.branchId);
+      return reply.code(200).send({ success: true, deletedCount, message: `Deleted ${deletedCount} invoice(s)` });
+    } catch (err) {
+      return sendInvoiceError(reply, err);
+    }
   });
 }

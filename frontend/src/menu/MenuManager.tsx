@@ -30,6 +30,11 @@ interface MenuItem {
   volumeMl: number | null;
   categoryName: string | null;
   servings: Serving[];
+  currentStock?: number | null;
+  stockQuantity?: number | null;
+  openMl?: number | null;
+  reorderLevel?: number | null;
+  trackStock?: boolean;
 }
 
 interface HistoryRow {
@@ -321,6 +326,7 @@ export function MenuManager({ kind }: { kind: MenuKind }) {
                 <th className="py-2.5 px-4">Item</th>
                 <th className="py-2.5 px-4">{kind === 'bar' ? 'Servings & rates' : 'Rate'}</th>
                 <th className="py-2.5 px-4 w-20">GST</th>
+                <th className="py-2.5 px-4 w-36">Stock Level</th>
                 <th className="py-2.5 px-4 w-32">Availability</th>
                 {canEdit && <th className="py-2.5 px-4 w-44 text-right">Actions</th>}
               </tr>
@@ -350,6 +356,32 @@ export function MenuManager({ kind }: { kind: MenuKind }) {
                     )}
                   </td>
                   <td className="py-3 px-4 font-mono">{Number(i.effectiveGstRate)}%</td>
+                  <td className="py-3 px-4">
+                    {i.trackStock !== false ? (
+                      <div>
+                        {(i.currentStock ?? i.stockQuantity ?? 0) <= 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                            0 in stock
+                          </span>
+                        ) : (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1 font-mono font-semibold text-xs text-gray-900 dark:text-gray-100">
+                              📦 {i.currentStock ?? i.stockQuantity} {kind === 'bar' ? 'bottles' : 'units'}
+                            </span>
+                            {kind === 'bar' && i.openMl ? (
+                              <div className="text-[11px] text-blue-600 dark:text-blue-400 font-mono">
+                                💧 {i.openMl} ml open
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                        ✨ Made to order
+                      </span>
+                    )}
+                  </td>
                   <td className="py-3 px-4">
                     <button
                       type="button"

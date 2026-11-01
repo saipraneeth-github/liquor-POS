@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { CategoryBadge } from '../components/category-icons';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -18,6 +19,11 @@ interface Product {
   sku?: string;
   mrp: string;
   costPrice?: string;
+  previousCostPrice?: string;
+  costPerCase?: string;
+  lastInvoiceNumber?: string;
+  lastInvoiceDate?: string;
+  costUpdatedAt?: string;
   categoryId?: string;
   categoryName?: string;
 }
@@ -205,7 +211,9 @@ export function Products() {
                 <th className="py-2 px-3">Product</th>
                 <th className="py-2 px-3">Category</th>
                 <th className="py-2 px-3">Barcode</th>
+                <th className="py-2 px-3 text-right">Cost Price</th>
                 <th className="py-2 px-3 text-right">MRP</th>
+                <th className="py-2 px-3 text-right">Margin</th>
                 <th className="py-2 px-3 text-right">Stock</th>
                 {isManager && <th className="py-2 px-3"></th>}
               </tr>
@@ -220,14 +228,71 @@ export function Products() {
                       {p.volumeMl ? ` · ${p.volumeMl}ml` : ''}
                       {p.packQuantity ? ` · ${p.packQuantity}/case` : ''}
                     </div>
+                    {/* Price Increase Indicator */}
+                    {(() => {
+                      const curCost = p.costPrice ? parseFloat(p.costPrice) : null;
+                      const prevCost = p.previousCostPrice ? parseFloat(p.previousCostPrice) : null;
+                      if (!curCost || !prevCost || Math.abs(curCost - prevCost) < 0.001) return null;
+                      const diff = curCost - prevCost;
+                      const pct = prevCost > 0 ? (diff / prevCost) * 100 : 0;
+                      const isInc = diff > 0;
+                      return (
+                        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                            isInc 
+                              ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800' 
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                          }`}>
+                            <span>{isInc ? '▲ Cost Increased' : '▼ Cost Decreased'}:</span>
+                            <span className="line-through text-gray-400 font-mono">₹{prevCost.toFixed(2)}</span>
+                            <span>➔</span>
+                            <span className="font-bold font-mono">₹{curCost.toFixed(2)}</span>
+                            <span className="font-bold font-mono">({isInc ? '+' : ''}₹{diff.toFixed(2)}, {isInc ? '+' : ''}{pct.toFixed(1)}%)</span>
+                          </span>
+                          {p.lastInvoiceNumber && (
+                            <span className="text-[10px] text-gray-500 font-mono">
+                              Inv #{p.lastInvoiceNumber}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="py-2 px-3">
-                    <span className="tag px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs">
-                      {p.categoryName || '—'}
-                    </span>
+                    <CategoryBadge categoryName={p.categoryName} productName={p.name} />
                   </td>
                   <td className="py-2 px-3 font-mono text-xs text-gray-600 dark:text-gray-400">{p.barcode || '—'}</td>
+                  <td className="py-2 px-3 text-right">
+                    {p.costPrice ? (
+                      <div>
+                        <span className="font-mono font-semibold text-gray-900 dark:text-gray-100">
+                          ₹{parseFloat(p.costPrice).toFixed(2)}
+                        </span>
+                        {p.costPerCase && (
+                          <div className="text-[10px] text-gray-500 font-mono">
+                            ₹{parseFloat(p.costPerCase).toFixed(0)}/cs
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-xs">—</span>
+                    )}
+                  </td>
                   <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">₹{parseFloat(p.mrp).toFixed(2)}</td>
+                  <td className="py-2 px-3 text-right">
+                    {p.costPrice && p.mrp ? (() => {
+                      const cost = parseFloat(p.costPrice);
+                      const mrp = parseFloat(p.mrp);
+                      const margin = mrp > 0 ? ((mrp - cost) / mrp) * 100 : 0;
+                      return (
+                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[11px] font-bold ${
+                          margin >= 20 ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/30' : 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/30'
+                        }`}>
+                          {margin.toFixed(1)}%
+                        </span>
+                      );
+                    })() : <span className="text-gray-400 text-xs">—</span>}
+                  </td>
                   <td className="py-2 px-3 text-right font-mono text-gray-700 dark:text-gray-300">
                     {stockMap[p.id] !== undefined ? stockMap[p.id] : '—'}
                   </td>

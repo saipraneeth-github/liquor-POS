@@ -27,6 +27,10 @@ export const SYSTEM_LEDGERS = [
   { code: 'CAPITAL',          name: 'Capital Account',     group: 'EQUITY' },
   { code: 'SALES',            name: 'Sales Account',       group: 'INCOME' },
   { code: 'PURCHASES',        name: 'Purchase Account',    group: 'EXPENSE' },
+  { code: 'PURCHASES_EXCISE_ROUNDING', name: 'Purchase Excise Rounding', group: 'EXPENSE' },
+  { code: 'EXCISE_TURNOVER_TAX',       name: 'Excise Turnover Tax',       group: 'EXPENSE' },
+  { code: 'SPECIAL_EXCISE_CESS',       name: 'Special Excise Cess',       group: 'EXPENSE' },
+  { code: 'TCS_RECEIVABLE',            name: 'TCS Receivable (Sec 206C)', group: 'ASSET' },
   { code: 'DISCOUNT_ALLOWED', name: 'Discount Allowed',    group: 'EXPENSE' },
   { code: 'ROUND_OFF',        name: 'Round Off',           group: 'EXPENSE' },
 ] as const satisfies readonly LedgerDefinition[];

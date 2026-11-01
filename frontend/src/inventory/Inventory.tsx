@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { X } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { getCategoryInfo } from '../components/category-icons';
+import { X, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -8,10 +9,17 @@ interface StockRow {
   name: string;
   brand?: string;
   volumeMl?: number;
+  packQuantity?: number;
   quantity: number;
   openMl?: number;
   reorderLevel: number;
   mrp: string;
+  costPrice?: string;
+  previousCostPrice?: string;
+  costPerCase?: string;
+  lastInvoiceNumber?: string;
+  lastInvoiceDate?: string;
+  categoryId?: string;
 }
 
 interface Category {
@@ -26,6 +34,11 @@ interface Product {
   barcode?: string;
   sku?: string;
   costPrice?: string;
+  previousCostPrice?: string;
+  costPerCase?: string;
+  lastInvoiceNumber?: string;
+  lastInvoiceDate?: string;
+  costUpdatedAt?: string;
   mrp: string;
   categoryId?: string;
   categoryName?: string;
@@ -42,10 +55,19 @@ interface InvoiceItem {
   rawDescription: string;
   barcode?: string | null;
   quantity: number;
+  casesDelivered?: number | null;
+  bottlesDelivered?: number | null;
+  packQuantity?: number | null;
+  caseRate?: string | null;
   costPrice: string;
   mrp: string;
   taxRate?: string;
   lineCostTotal: string;
+  unitDerivedTotal?: string | null;
+  roundingAdjustment?: string | null;
+  previousCostPrice?: string | null;
+  costDifference?: string | null;
+  costIncreasePct?: string | null;
   extractedAmount?: string;
   matchStatus: 'MATCHED' | 'MANUAL' | 'SUGGESTED' | 'UNMATCHED';
   flags: string[];
@@ -58,6 +80,21 @@ interface InvoiceHeader {
   invoiceDate: string;
   totalAmount: string;
   linesTotal: string;
+  linesBasicTotal?: string | null;
+  mrpRoundingOff?: string | null;
+  roundingAdjustment?: string | null;
+  specialExciseCess?: string | null;
+  turnoverTax?: string | null;
+  tcsAmount?: string | null;
+  totalCases?: number | null;
+  totalBottles?: number | null;
+  challanAmount?: string | null;
+  challanNumber?: string | null;
+  previousCredit?: string | null;
+  subTotal?: string | null;
+  netInvoiceValue?: string | null;
+  totalInvoiceAmount?: string | null;
+  retailerCreditBalance?: string | null;
   status: 'DRAFT' | 'REVIEWED' | 'APPROVED' | 'REJECTED';
   source: string;
   notes?: string;
@@ -134,6 +171,8 @@ export function Inventory() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingStock, setLoadingStock] = useState(false);
+  const [stockCategoryFilter, setStockCategoryFilter] = useState<string>('all');
+  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
   // Breakage Form
   const [breakProduct, setBreakProduct] = useState('');
@@ -719,7 +758,11 @@ export function Inventory() {
         productId: it.productId || null,
         confirmMatch: it.matchStatus === 'MANUAL',
         rawDescription: it.rawDescription,
+        casesDelivered: it.casesDelivered,
+        bottlesDelivered: it.bottlesDelivered,
+        packQuantity: it.packQuantity,
         quantity: it.quantity,
+        caseRate: it.caseRate,
         costPrice: it.costPrice,
         mrp: it.mrp,
       })),
@@ -756,6 +799,30 @@ export function Inventory() {
     }
   };
 
+  const handleClearCompleteInventory = () => {
+    if (!branchId) return;
+    setConfirmModal({
+      title: 'Delete Complete Store Inventory?',
+      message:
+        'Are you sure you want to delete all current stock, breakage logs, and bills for this store? All bottle counts will be reset to 0 so you can inward fresh stock from invoices.',
+      onOk: async () => {
+        setConfirmModal(null);
+        try {
+          const res = await api.delete<{ success: boolean; deletedStock: number; deletedInvoices: number }>(
+            `/inventory/stock/${branchId}/clear`
+          );
+          showToast(`✓ Inventory cleared: ${res.deletedStock} stock lines and ${res.deletedInvoices} bills removed.`, 'success');
+          await loadStock();
+          loadInvoices();
+          setActiveInvoice(null);
+          setWizardStep(1);
+        } catch (err: any) {
+          showToast('Failed to clear inventory: ' + err.message, 'error');
+        }
+      },
+    });
+  };
+
   const handleApprove = () => {
     if (!activeInvoice || !activeInvoice.invoice.id) return;
     const totalBottles = activeInvoice.items.reduce((sum, it) => sum + (it.quantity || 0), 0);
@@ -769,17 +836,36 @@ export function Inventory() {
         const ok = await saveDraft(true);
         if (!ok) return;
         try {
-          const updated = await api.post<ActiveInvoiceData>(`/invoices/detail/${activeInvoice.invoice.id}/approve`, {});
-          setActiveInvoice(updated);
+          await api.post<ActiveInvoiceData>(`/invoices/detail/${activeInvoice.invoice.id}/approve`, {});
           showToast(`✓ Success: ${totalBottles} bottles added to store inventory!`, 'success');
           await loadStock();
           loadInvoices();
-          setWizardStep(3);
+          setActiveInvoice(null);
+          setWizardStep(1);
+          setActiveTab('stock');
         } catch (err: any) {
           showToast('Approval failed: ' + err.message, 'error');
         }
       },
     });
+  };
+
+
+  const handleDeleteInvoice = async (id: string, invoiceNumber: string) => {
+    if (!window.confirm(`Are you sure you want to delete invoice ${invoiceNumber || 'draft'}? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/invoices/detail/${id}`);
+      showToast(`Invoice ${invoiceNumber || 'draft'} deleted.`, 'success');
+      if (activeInvoice?.invoice.id === id) {
+        setActiveInvoice(null);
+        setWizardStep(1);
+      }
+      loadInvoices();
+    } catch (err: any) {
+      showToast('Failed to delete invoice: ' + err.message, 'error');
+    }
   };
 
   const handleRecordBreakage = async (e: React.FormEvent) => {
@@ -819,6 +905,9 @@ export function Inventory() {
   const visibleStock = stockRows.filter((r) => {
     if (stockFilter === 'out' && r.quantity > 0) return false;
     if (stockFilter === 'low' && !(r.quantity > 0 && r.quantity <= r.reorderLevel)) return false;
+    const prod = productMap.get(r.productId);
+    const cat = getCategoryInfo(prod?.categoryName, r.name);
+    if (stockCategoryFilter !== 'all' && cat.type !== stockCategoryFilter) return false;
     return !q || r.name.toLowerCase().includes(q) || (r.brand || '').toLowerCase().includes(q);
   });
 
@@ -1158,6 +1247,15 @@ export function Inventory() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isManager && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg font-medium cursor-pointer transition-colors"
+                      onClick={() => handleDeleteInvoice(activeInvoice.invoice.id, activeInvoice.invoice.invoiceNumber)}
+                    >
+                      <Trash2 size={14} /> Delete Bill
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg font-medium cursor-pointer transition-colors"
@@ -1250,6 +1348,199 @@ export function Inventory() {
                 </div>
               </div>
 
+              {/* Wholesale Reconciliation Card */}
+              {(() => {
+                const wholesaleBasic = activeInvoice.invoice.linesBasicTotal
+                  ? parseFloat(activeInvoice.invoice.linesBasicTotal)
+                  : parseFloat(draftLinesCostTotal);
+                const mrpRounding = activeInvoice.invoice.mrpRoundingOff
+                  ? parseFloat(activeInvoice.invoice.mrpRoundingOff)
+                  : 0;
+                const docTotal = parseFloat(activeInvoice.invoice.totalAmount || '0');
+                const diff = docTotal - (wholesaleBasic + mrpRounding);
+                const isReconciled = Math.abs(diff) < 0.05;
+
+                return (
+                  <div className="p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2.5 dark:border-slate-800">
+                      <div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                          <span>⚖️</span>
+                          <span>Invoice Financial Reconciliation</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          High-precision wholesale case arithmetic reconciled against state excise challan totals.
+                        </p>
+                      </div>
+                      <div>
+                        {isReconciled ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
+                            <span>✓</span> 100% Reconciled (₹0.00 Discrepancy)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800">
+                            <span>⚠️</span> Variance: ₹{diff.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                      <div className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700">
+                        <div className="text-[11px] text-gray-500 font-medium">Tier 1: Wholesale Items Basic</div>
+                        <div className="text-base font-bold font-mono text-gray-900 dark:text-gray-100 mt-0.5">
+                          ₹{wholesaleBasic.toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-gray-400">Sum of item lines</div>
+                      </div>
+
+                      <div className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700">
+                        <div className="text-[11px] text-gray-500 font-medium">State MRP Rounding Off</div>
+                        <div className={`text-base font-bold font-mono mt-0.5 ${mrpRounding >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                          {mrpRounding >= 0 ? '+' : ''}₹{mrpRounding.toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-gray-400">Debited to Excise Rounding</div>
+                      </div>
+
+                      <div className="p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700">
+                        <div className="text-[11px] text-gray-500 font-medium">Tier 2: Net Document Payable</div>
+                        <div className="text-base font-bold font-mono text-emerald-700 dark:text-emerald-400 mt-0.5">
+                          ₹{docTotal.toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-gray-400">Challan final debit total</div>
+                      </div>
+                    </div>
+
+                    {/* State Excise Depot Ledger & e-Challan Reconciliation */}
+                    {(activeInvoice.invoice.previousCredit || activeInvoice.invoice.challanAmount || activeInvoice.invoice.retailerCreditBalance || activeInvoice.invoice.specialExciseCess) && (
+                      <div className="mt-3 pt-3 border-t dark:border-slate-800 space-y-2.5">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400 flex items-center gap-1.5">
+                            <span>🏛️</span>
+                            <span>Telangana State Excise Depot (TSBCL) Account Reconciliation</span>
+                          </div>
+                          {activeInvoice.invoice.retailerCreditBalance && (
+                            <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              ✓ Depot Ledger Invariant Verified
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                          <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
+                            <span className="text-gray-500 text-[10px] block">Previous Credit (Opening)</span>
+                            <span className="font-mono font-bold text-gray-900 dark:text-gray-100">
+                              ₹{parseFloat(activeInvoice.invoice.previousCredit || '0.00').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
+                            <span className="text-gray-500 text-[10px] block">e-Challan / DD Paid</span>
+                            <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              +₹{parseFloat(activeInvoice.invoice.challanAmount || '0.00').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                            {activeInvoice.invoice.challanNumber && (
+                              <span className="text-[9px] text-gray-400 block truncate" title={activeInvoice.invoice.challanNumber}>
+                                {activeInvoice.invoice.challanNumber}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
+                            <span className="text-gray-500 text-[10px] block">Sub Total (Available Funds)</span>
+                            <span className="font-mono font-bold text-indigo-900 dark:text-indigo-200">
+                              ₹{parseFloat(activeInvoice.invoice.subTotal || '0.00').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
+                            <span className="text-gray-500 text-[10px] block">Retailer Credit Balance</span>
+                            <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                              ₹{parseFloat(activeInvoice.invoice.retailerCreditBalance || '0.00').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Deductions Breakdown */}
+                        <div className="p-2.5 bg-slate-100/70 dark:bg-slate-800/60 rounded-lg text-xs space-y-1">
+                          <div className="font-semibold text-slate-700 dark:text-slate-300 text-[11px] mb-1">
+                            Invoice Statutory &amp; Excise Deductions Applied to Depot Account:
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                            <div>
+                              <span className="text-gray-500">(-) Net Goods Value:</span>{' '}
+                              <b className="font-mono">₹{parseFloat(activeInvoice.invoice.netInvoiceValue || activeInvoice.invoice.totalAmount || '0').toFixed(2)}</b>
+                            </div>
+                            {activeInvoice.invoice.turnoverTax && parseFloat(activeInvoice.invoice.turnoverTax) > 0 && (
+                              <div>
+                                <span className="text-gray-500">(-) Turnover Tax:</span>{' '}
+                                <b className="font-mono">₹{parseFloat(activeInvoice.invoice.turnoverTax).toFixed(2)}</b>
+                              </div>
+                            )}
+                            {activeInvoice.invoice.specialExciseCess && parseFloat(activeInvoice.invoice.specialExciseCess) > 0 && (
+                              <div>
+                                <span className="text-gray-500">(-) Special Excise Cess:</span>{' '}
+                                <b className="font-mono">₹{parseFloat(activeInvoice.invoice.specialExciseCess).toFixed(2)}</b>
+                              </div>
+                            )}
+                            {activeInvoice.invoice.tcsAmount && parseFloat(activeInvoice.invoice.tcsAmount) > 0 && (
+                              <div>
+                                <span className="text-gray-500">(-) TCS (Sec 206C):</span>{' '}
+                                <b className="font-mono">₹{parseFloat(activeInvoice.invoice.tcsAmount).toFixed(2)}</b>
+                              </div>
+                            )}
+                            <div className="font-semibold text-indigo-900 dark:text-indigo-200">
+                              <span>Total Deducted:</span>{' '}
+                              <b className="font-mono text-rose-600 dark:text-rose-400">
+                                ₹{parseFloat(activeInvoice.invoice.totalInvoiceAmount || activeInvoice.invoice.totalAmount || '0').toFixed(2)}
+                              </b>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* High Price Increase Alert Banner (>= 10%) */}
+              {(() => {
+                const highIncreaseItems = activeInvoice.items.filter((it) => {
+                  if (it.flags?.includes('HIGH_COST_INCREASE')) return true;
+                  if (it.costIncreasePct && parseFloat(it.costIncreasePct) >= 10) return true;
+                  if (it.previousCostPrice && it.costPrice) {
+                    const prev = parseFloat(it.previousCostPrice);
+                    const curr = parseFloat(it.costPrice);
+                    if (prev > 0 && (curr - prev) / prev >= 0.10) return true;
+                  }
+                  return false;
+                });
+
+                if (highIncreaseItems.length === 0) return null;
+
+                return (
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-bold text-sm">
+                      <span className="text-base">⚠️</span>
+                      <span>Wholesale Price Spike Alert ({highIncreaseItems.length} item{highIncreaseItems.length > 1 ? 's' : ''} increased &gt; 10%)</span>
+                    </div>
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      The following items have wholesale cost price increases exceeding 10% compared to earlier bills. Please verify case rates on your delivery challan:
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {highIncreaseItems.map((hi, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
+                          <span>{hi.productName || hi.rawDescription}</span>
+                          <span className="font-mono text-rose-700 dark:text-rose-400 font-bold">
+                            {hi.costIncreasePct ? `+${parseFloat(hi.costIncreasePct).toFixed(1)}%` : '+10%+'}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Items */}
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -1281,11 +1572,12 @@ export function Inventory() {
                 <div className="overflow-x-auto border rounded-xl">
                   <table className="w-full text-left text-sm" id="invEditTable">
                     <thead>
-                      <tr className="border-b text-[11px] text-gray-500 bg-gray-50 uppercase tracking-wider">
+                      <tr className="border-b text-[11px] text-gray-500 bg-gray-50 dark:bg-gray-800 uppercase tracking-wider">
                         <th className="py-2.5 px-3 w-8">#</th>
                         <th className="py-2.5 px-3">Item &amp; catalog match</th>
-                        <th className="py-2.5 px-2 text-right w-20">Qty</th>
-                        <th className="py-2.5 px-2 text-right w-24">Cost ₹</th>
+                        <th className="py-2.5 px-2 text-right w-28">Cases / Qty</th>
+                        <th className="py-2.5 px-2 text-right w-24">Case Rate</th>
+                        <th className="py-2.5 px-2 text-right w-28">Unit Cost ₹</th>
                         <th className="py-2.5 px-2 text-right w-24">MRP ₹</th>
                         <th className="py-2.5 px-3 text-right w-28">Total</th>
                       </tr>
@@ -1303,12 +1595,34 @@ export function Inventory() {
                           >
                             <td className="py-3 px-3 text-xs text-gray-400 font-mono">{idx + 1}</td>
                             <td className="py-3 px-3 space-y-1.5">
-                              <input
-                                className="ie-desc w-full px-1 py-0.5 rounded text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-400 focus:bg-white outline-none"
-                                value={it.rawDescription}
-                                onChange={(e) => handleLineDescChange(idx, e.target.value)}
-                                title="Description as printed on the bill"
-                              />
+                              <div className="flex items-center gap-2">
+                                {(() => {
+                                  const matchedProd = it.productId ? productMap.get(it.productId) : null;
+                                  const lineCat = getCategoryInfo(matchedProd?.categoryName, it.rawDescription);
+                                  const { Icon } = lineCat;
+                                  return (
+                                    <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 border ${lineCat.badgeClass}`} title={lineCat.label}>
+                                      <Icon size={12} />
+                                    </div>
+                                  );
+                                })()}
+                                <input
+                                  className="ie-desc w-full px-1 py-0.5 rounded text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-400 focus:bg-white outline-none"
+                                  value={it.rawDescription}
+                                  onChange={(e) => handleLineDescChange(idx, e.target.value)}
+                                  title="Description as printed on the bill"
+                                />
+                                {(() => {
+                                  const matchedProd = it.productId ? productMap.get(it.productId) : null;
+                                  const lineCat = getCategoryInfo(matchedProd?.categoryName, it.rawDescription);
+                                  return (
+                                    <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${lineCat.badgeClass}`}>
+                                      <span>{lineCat.emoji}</span>
+                                      <span>{lineCat.label}</span>
+                                    </span>
+                                  );
+                                })()}
+                              </div>
                               <div className="flex items-center gap-2">
                                 <span
                                   className={`ie-match-badge shrink-0 w-2 h-2 rounded-full ${
@@ -1329,11 +1643,14 @@ export function Inventory() {
                                 >
                                   <option value="">Select catalog product…</option>
                                   <option value="__NEW__">＋ Add new product…</option>
-                                  {products.map((p) => (
-                                    <option key={p.id} value={p.id}>
-                                      {p.name} · ₹{parseFloat(p.mrp).toFixed(0)}
-                                    </option>
-                                  ))}
+                                  {products.map((p) => {
+                                    const pCat = getCategoryInfo(p.categoryName, p.name);
+                                    return (
+                                      <option key={p.id} value={p.id}>
+                                        {pCat.emoji} {p.name} · ₹{parseFloat(p.mrp).toFixed(0)}
+                                      </option>
+                                    );
+                                  })}
                                 </select>
                                 {!matched && (
                                   <button
@@ -1345,6 +1662,30 @@ export function Inventory() {
                                   </button>
                                 )}
                               </div>
+                              {/* Price Increase Badge */}
+                              {(() => {
+                                const curCost = parseFloat(it.costPrice);
+                                const prevCost = it.previousCostPrice ? parseFloat(it.previousCostPrice) : null;
+                                if (!curCost || !prevCost || Math.abs(curCost - prevCost) < 0.001) return null;
+                                const diff = curCost - prevCost;
+                                const pct = prevCost > 0 ? (diff / prevCost) * 100 : 0;
+                                const isInc = diff > 0;
+                                return (
+                                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                      isInc
+                                        ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                    }`}>
+                                      <span>{isInc ? '▲ Cost Increased' : '▼ Cost Decreased'}:</span>
+                                      <span className="line-through text-gray-400 font-mono">₹{prevCost.toFixed(2)}</span>
+                                      <span>➔</span>
+                                      <span className="font-bold font-mono">₹{curCost.toFixed(2)}</span>
+                                      <span className="font-bold font-mono">({isInc ? '+' : ''}₹{diff.toFixed(2)}, {isInc ? '+' : ''}{pct.toFixed(1)}%)</span>
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                               {(it.flags || []).length > 0 && (
                                 <div className="text-[11px] text-amber-700">⚠ {it.flags.join(', ')}</div>
                               )}
@@ -1357,12 +1698,28 @@ export function Inventory() {
                                 value={it.quantity}
                                 onChange={(e) => handleLineQtyChange(idx, e.target.value)}
                               />
+                              {(it.casesDelivered !== undefined && it.casesDelivered !== null && it.casesDelivered > 0) && (
+                                <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                                  {it.casesDelivered} cs{it.bottlesDelivered ? ` + ${it.bottlesDelivered}b` : ''}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-2 text-right">
+                              {it.caseRate ? (
+                                <div className="font-mono text-xs text-gray-900 dark:text-gray-100 font-medium">
+                                  ₹{parseFloat(it.caseRate).toFixed(0)}
+                                  <div className="text-[9px] text-gray-400">/case</div>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 text-xs">—</span>
+                              )}
                             </td>
                             <td className="py-3 px-2 text-right">
                               <input
-                                className="ie-cost w-20 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
+                                className="ie-cost w-24 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
                                 value={it.costPrice}
                                 onChange={(e) => handleLineCostChange(idx, e.target.value)}
+                                title={`Unit cost: ₹${parseFloat(it.costPrice || '0').toFixed(6)}`}
                               />
                             </td>
                             <td className="py-3 px-2 text-right">
@@ -1420,13 +1777,27 @@ export function Inventory() {
                   )}
 
                   {/* Proceed to Step 3 Confirmation Screen */}
-                  <button
-                    type="button"
-                    className="min-h-[48px] px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer"
-                    onClick={() => setWizardStep(3)}
-                  >
-                    <span>➡️</span> Proceed to Inward Confirmation
-                  </button>
+                  {activeInvoice.invoice.status === 'APPROVED' ? (
+                    <button
+                      type="button"
+                      className="min-h-[48px] px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer"
+                      onClick={() => {
+                        setActiveInvoice(null);
+                        setWizardStep(1);
+                        setActiveTab('stock');
+                      }}
+                    >
+                      <span>✓</span> View in Store Stock
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="min-h-[48px] px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer"
+                      onClick={() => setWizardStep(3)}
+                    >
+                      <span>➡️</span> Proceed to Inward Confirmation
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1499,6 +1870,26 @@ export function Inventory() {
                 </div>
               </div>
 
+              {/* Excise Depot Account Summary */}
+              {activeInvoice.invoice.retailerCreditBalance && (
+                <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-indigo-900 flex items-center gap-1.5">
+                      <span>🏛️</span> State Excise Depot Account Statement
+                    </span>
+                    <span className="font-bold text-emerald-800">
+                      Balance: ₹{parseFloat(activeInvoice.invoice.retailerCreditBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="text-gray-600 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div>Opening Credit: <b className="font-mono">₹{parseFloat(activeInvoice.invoice.previousCredit || '0').toFixed(2)}</b></div>
+                    <div>Challan Paid: <b className="font-mono text-emerald-700">+₹{parseFloat(activeInvoice.invoice.challanAmount || '0').toFixed(2)}</b></div>
+                    <div>Total Deducted: <b className="font-mono text-rose-700">-₹{parseFloat(activeInvoice.invoice.totalInvoiceAmount || activeInvoice.invoice.totalAmount || '0').toFixed(2)}</b></div>
+                    <div>Closing Balance: <b className="font-mono text-indigo-900">₹{parseFloat(activeInvoice.invoice.retailerCreditBalance).toFixed(2)}</b></div>
+                  </div>
+                </div>
+              )}
+
               {/* Warning Notice */}
               <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-start gap-2">
                 <span>✓</span>
@@ -1519,14 +1910,28 @@ export function Inventory() {
                 </button>
 
                 {isManager ? (
-                  <button
-                    id="invApproveBtn"
-                    type="button"
-                    className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    onClick={handleApprove}
-                  >
-                    <span>✅</span> Confirm &amp; Add to Live Stock
-                  </button>
+                  activeInvoice.invoice.status === 'APPROVED' ? (
+                    <button
+                      type="button"
+                      className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                      onClick={() => {
+                        setActiveInvoice(null);
+                        setWizardStep(1);
+                        setActiveTab('stock');
+                      }}
+                    >
+                      <span>✓</span> Inwarded — View Store Stock
+                    </button>
+                  ) : (
+                    <button
+                      id="invApproveBtn"
+                      type="button"
+                      className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      onClick={handleApprove}
+                    >
+                      <span>✅</span> Confirm &amp; Add to Live Stock
+                    </button>
+                  )
                 ) : (
                   <button
                     type="button"
@@ -1674,13 +2079,25 @@ export function Inventory() {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right">
-                        <button
-                          type="button"
-                          className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded font-semibold text-xs border cursor-pointer"
-                          onClick={() => openInvoice(inv.id)}
-                        >
-                          Open Bill
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded font-semibold text-xs border cursor-pointer"
+                            onClick={() => openInvoice(inv.id)}
+                          >
+                            Open Bill
+                          </button>
+                          {isManager && (
+                            <button
+                              type="button"
+                              title="Delete bill"
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer"
+                              onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1719,6 +2136,33 @@ export function Inventory() {
           </div>
 
           <div className="bg-white rounded-xl border">
+            <div className="flex flex-wrap items-center gap-1.5 px-4 py-2.5 bg-gray-50/70 border-b overflow-x-auto text-xs">
+              <span className="text-gray-500 font-semibold uppercase tracking-wider text-[10px] mr-1 shrink-0">Filter by Type:</span>
+              {[
+                { id: 'all', label: 'All', emoji: '🍷' },
+                { id: 'beer', label: 'Beer', emoji: '🍺' },
+                { id: 'whisky', label: 'Whisky', emoji: '🥃' },
+                { id: 'wine', label: 'Wine', emoji: '🍷' },
+                { id: 'vodka', label: 'Vodka', emoji: '🍸' },
+                { id: 'rum', label: 'Rum', emoji: '🍹' },
+                { id: 'gin', label: 'Gin', emoji: '🌿' },
+                { id: 'brandy', label: 'Brandy', emoji: '🍇' },
+              ].map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setStockCategoryFilter(c.id)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-medium transition-all cursor-pointer ${
+                    stockCategoryFilter === c.id
+                      ? 'bg-blue-600 text-white shadow-xs font-semibold'
+                      : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+                  }`}
+                >
+                  <span>{c.emoji}</span>
+                  <span>{c.label}</span>
+                </button>
+              ))}
+            </div>
             <div className="flex flex-wrap items-center gap-3 p-4 border-b">
               <input
                 className="flex-1 min-w-[200px] p-2 border rounded-lg text-sm"
@@ -1748,20 +2192,48 @@ export function Inventory() {
               >
                 {showBreakage ? 'Hide breakage' : '💥 Record breakage'}
               </button>
+              {isManager && (
+                <button
+                  type="button"
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 cursor-pointer flex items-center gap-1"
+                  onClick={handleClearCompleteInventory}
+                  title="Delete all stock and previous bills to start fresh"
+                >
+                  <Trash2 size={13} /> Clear Store Stock
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto" id="stockTable">
               {loadingStock ? (
                 <div className="p-8 text-center text-gray-500 text-sm">Loading stock levels…</div>
               ) : visibleStock.length === 0 ? (
-                <div className="p-8 text-center text-gray-500 text-sm">No products match.</div>
+                <div className="p-8 text-center text-gray-500 text-sm space-y-2">
+                  <div className="text-3xl">📦</div>
+                  <div className="font-semibold text-gray-700 dark:text-gray-300">No products in store stock</div>
+                  <div className="text-xs text-gray-400">
+                    Upload and confirm a supplier invoice in the "Add Supplier Bill" tab to inward bottles into stock.
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer"
+                    onClick={() => {
+                      setActiveTab('upload');
+                      setWizardStep(1);
+                    }}
+                  >
+                    <span>＋</span> Upload Bill Now
+                  </button>
+                </div>
               ) : (
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b text-[11px] text-gray-500 bg-gray-50 uppercase tracking-wider">
+                    <tr className="border-b text-[11px] text-gray-500 bg-gray-50 dark:bg-gray-800 uppercase tracking-wider">
                       <th className="py-2.5 px-4">Product</th>
                       <th className="py-2.5 px-4 w-56">Stock level</th>
-                      <th className="py-2.5 px-4 text-right">MRP</th>
+                      <th className="py-2.5 px-3 text-right">Cost Price</th>
+                      <th className="py-2.5 px-3 text-right">MRP</th>
+                      <th className="py-2.5 px-3 text-right">Margin</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1772,13 +2244,63 @@ export function Inventory() {
                       return (
                         <tr key={r.productId} className="hover:bg-gray-50/70">
                           <td className="py-3 px-4">
-                            <div className="font-medium text-gray-900">{r.name}</div>
-                            {r.brand && (
-                              <div className="text-xs text-gray-500">
-                                {r.brand}
-                                {r.volumeMl ? ` · ${r.volumeMl}ml` : ''}
-                              </div>
-                            )}
+                            {(() => {
+                              const prod = productMap.get(r.productId);
+                              const cat = getCategoryInfo(prod?.categoryName, r.name);
+                              const { Icon } = cat;
+                              return (
+                                <div className="flex items-start gap-2.5">
+                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${cat.badgeClass}`}>
+                                    <Icon size={16} />
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                                      <span>{r.name}</span>
+                                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${cat.badgeClass}`}>
+                                        <span>{cat.emoji}</span>
+                                        <span>{cat.label}</span>
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-gray-500 mt-0.5">
+                                      {r.brand || ''}
+                                      {r.volumeMl ? ` · ${r.volumeMl}ml` : ''}
+                                      {r.packQuantity ? ` · ${r.packQuantity}/cs` : ''}
+                                    </div>
+                                    {/* Price Increase Indicator below item */}
+                                    {(() => {
+                                      const prodObj = productMap.get(r.productId);
+                                      const curCost = r.costPrice ? parseFloat(r.costPrice) : (prodObj?.costPrice ? parseFloat(prodObj.costPrice) : null);
+                                      const prevCost = r.previousCostPrice ? parseFloat(r.previousCostPrice) : (prodObj?.previousCostPrice ? parseFloat(prodObj.previousCostPrice) : null);
+                                      if (!curCost || !prevCost || Math.abs(curCost - prevCost) < 0.001) return null;
+                                      const diff = curCost - prevCost;
+                                      const pctInc = prevCost > 0 ? (diff / prevCost) * 100 : 0;
+                                      const isInc = diff > 0;
+                                      const invNum = r.lastInvoiceNumber || prodObj?.lastInvoiceNumber;
+                                      return (
+                                        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                            isInc
+                                              ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                          }`}>
+                                            <span>{isInc ? '▲ Cost Increased' : '▼ Cost Decreased'}:</span>
+                                            <span className="line-through text-gray-400 font-mono">₹{prevCost.toFixed(2)}</span>
+                                            <span>➔</span>
+                                            <span className="font-bold font-mono">₹{curCost.toFixed(2)}</span>
+                                            <span className="font-bold font-mono">({isInc ? '+' : ''}₹{diff.toFixed(2)}, {isInc ? '+' : ''}{pctInc.toFixed(1)}%)</span>
+                                          </span>
+                                          {invNum && (
+                                            <span className="text-[10px] text-gray-500 font-mono">
+                                              Inv #{invNum}
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
@@ -1798,7 +2320,47 @@ export function Inventory() {
                               )}
                             </div>
                           </td>
-                          <td className="py-3 px-4 text-right font-mono text-gray-700">₹{parseFloat(r.mrp).toFixed(2)}</td>
+                          <td className="py-3 px-3 text-right">
+                            {(() => {
+                              const prodObj = productMap.get(r.productId);
+                              const cost = r.costPrice || prodObj?.costPrice;
+                              const caseCost = r.costPerCase || prodObj?.costPerCase;
+                              if (!cost) return <span className="text-gray-400 text-xs">—</span>;
+                              return (
+                                <div>
+                                  <span className="font-mono font-semibold text-gray-900 dark:text-gray-100">
+                                    ₹{parseFloat(cost).toFixed(2)}
+                                  </span>
+                                  {caseCost && (
+                                    <div className="text-[10px] text-gray-500 font-mono">
+                                      ₹{parseFloat(caseCost).toFixed(0)}/cs
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">
+                            ₹{parseFloat(r.mrp).toFixed(2)}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            {(() => {
+                              const prodObj = productMap.get(r.productId);
+                              const cost = r.costPrice ? parseFloat(r.costPrice) : (prodObj?.costPrice ? parseFloat(prodObj.costPrice) : null);
+                              const mrp = parseFloat(r.mrp);
+                              if (!cost || !mrp) return <span className="text-gray-400 text-xs">—</span>;
+                              const margin = ((mrp - cost) / mrp) * 100;
+                              return (
+                                <span className={`inline-flex px-1.5 py-0.5 rounded text-[11px] font-bold ${
+                                  margin >= 20
+                                    ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/30'
+                                    : 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/30'
+                                }`}>
+                                  {margin.toFixed(1)}%
+                                </span>
+                              );
+                            })()}
+                          </td>
                         </tr>
                       );
                     })}

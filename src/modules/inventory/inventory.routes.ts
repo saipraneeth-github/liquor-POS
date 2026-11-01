@@ -9,6 +9,7 @@ import {
   approveInwardInvoice,
   getStockStatus,
   getBranchIndentEstimations,
+  clearCompleteInventory,
 } from './inventory.service.js';
 
 const BranchParams = z.object({ branchId: z.string().uuid() });
@@ -50,6 +51,28 @@ const ApproveInvoiceSchema = z.object({
 });
 
 export async function inventoryRoutes(fastify: FastifyInstance) {
+  // DELETE /inventory/stock/:branchId/clear — delete complete inventory for branch (manager+)
+  fastify.delete('/inventory/stock/:branchId/clear', {
+    preHandler: requireRole('manager'),
+  }, async (request, reply) => {
+    const params = BranchParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
+    const { branchId } = params.data;
+    const user = getUser(request);
+    if (!(await assertBranchAccess(user, branchId, reply))) return;
+
+    try {
+      const res = await clearCompleteInventory(branchId);
+      return reply.code(200).send({
+        success: true,
+        message: 'Complete inventory cleared successfully',
+        ...res,
+      });
+    } catch (err: unknown) {
+      return sendError(reply, err, 'Failed to clear inventory');
+    }
+  });
+
   // POST /inventory/invoices/parse — AI invoice parser and catalog matcher (manager+)
   fastify.post('/inventory/invoices/parse', {
     preHandler: requireRole('manager'),

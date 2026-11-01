@@ -14,6 +14,8 @@ export interface KotItem {
   id: string;
   kotOrderId: string;
   productId: string;
+  productName?: string;
+  menuType?: string;
   quantity: number;
   unitPrice: Decimal;      // MRP at order time
   taxRate: Decimal;        // e.g., 18.00
@@ -26,6 +28,7 @@ export interface KotItem {
 export interface KotOrder {
   id: string;
   tableSessionId: string;
+  destination?: 'KITCHEN' | 'BAR';
   status: KotStatus;
   items: KotItem[];
 }

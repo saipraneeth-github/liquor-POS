@@ -177,7 +177,13 @@ export interface SupplierInvoiceItemInput {
  * taxable = round2(lineCostTotal / (1 + rate/100)) and tax = lineCostTotal - taxable.
  * The creditor is credited with the sum of line costs (not the free-typed invoice.totalAmount).
  */
-export function supplierInvoiceLines(items: SupplierInvoiceItemInput[]): PostingLine[] {
+export function supplierInvoiceLines(
+  items: SupplierInvoiceItemInput[],
+  mrpRoundingOff?: string | null,
+  specialExciseCess?: string | null,
+  tcsAmount?: string | null,
+  turnoverTax?: string | null,
+): PostingLine[] {
   if (items.length === 0) throw new Error('Supplier invoice has no items');
   let taxable = new Decimal(0);
   let tax = new Decimal(0);
@@ -191,10 +197,47 @@ export function supplierInvoiceLines(items: SupplierInvoiceItemInput[]): Posting
     tax = tax.plus(lineTotal.minus(lineTaxable));
     total = total.plus(lineTotal);
   }
-  return buildVoucher<string>([
+
+  const lines: RawPostingLine<string>[] = [
     dr('PURCHASES', taxable),
     dr('INPUT_GST', tax),
-    cr('SUNDRY_CREDITORS', total),
+  ];
+
+  if (mrpRoundingOff && new Decimal(mrpRoundingOff).gt(0)) {
+    const rounding = new Decimal(mrpRoundingOff).toDecimalPlaces(2);
+    lines.push(dr('PURCHASES_EXCISE_ROUNDING', rounding));
+    total = total.plus(rounding);
+  }
+
+  if (turnoverTax && new Decimal(turnoverTax).gt(0)) {
+    const tot = new Decimal(turnoverTax).toDecimalPlaces(2);
+    lines.push(dr('EXCISE_TURNOVER_TAX', tot));
+    total = total.plus(tot);
+  }
+
+  if (specialExciseCess && new Decimal(specialExciseCess).gt(0)) {
+    const cess = new Decimal(specialExciseCess).toDecimalPlaces(2);
+    lines.push(dr('SPECIAL_EXCISE_CESS', cess));
+    total = total.plus(cess);
+  }
+
+  if (tcsAmount && new Decimal(tcsAmount).gt(0)) {
+    const tcs = new Decimal(tcsAmount).toDecimalPlaces(2);
+    lines.push(dr('TCS_RECEIVABLE', tcs));
+    total = total.plus(tcs);
+  }
+
+  lines.push(cr('SUNDRY_CREDITORS', total));
+  return buildVoucher<string>(lines);
+}
+
+/** Supplier e-Challan / DD advance payment to depot: Dr SUNDRY_CREDITORS, Cr BANK. */
+export function supplierChallanPaymentLines(challanAmount: string): PostingLine[] {
+  const amt = new Decimal(challanAmount).toDecimalPlaces(2);
+  if (amt.lte(0)) throw new Error('Challan amount must be positive');
+  return buildVoucher<string>([
+    dr('SUNDRY_CREDITORS', amt),
+    cr('BANK', amt),
   ]);
 }
 

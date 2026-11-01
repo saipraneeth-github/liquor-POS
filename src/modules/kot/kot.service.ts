@@ -157,10 +157,25 @@ export async function getKotOrdersForSession(tableSessionId: string, branchId: s
 
   if (orders.length === 0) return [];
 
-  // All items in one query
+  // All items in one query joined with products for name & menuType
   const items = await db
-    .select()
+    .select({
+      id: kotItems.id,
+      kotOrderId: kotItems.kotOrderId,
+      productId: kotItems.productId,
+      quantity: kotItems.quantity,
+      unitPrice: kotItems.unitPrice,
+      taxRate: kotItems.taxRate,
+      servingId: kotItems.servingId,
+      servingLabel: kotItems.servingLabel,
+      servingMl: kotItems.servingMl,
+      status: kotItems.status,
+      notes: kotItems.notes,
+      productName: products.name,
+      menuType: products.menuType,
+    })
     .from(kotItems)
+    .leftJoin(products, eq(kotItems.productId, products.id))
     .where(inArray(kotItems.kotOrderId, orders.map((o) => o.id)));
 
   const byOrder = new Map<string, typeof items>();
@@ -173,18 +188,21 @@ export async function getKotOrdersForSession(tableSessionId: string, branchId: s
   return orders.map((order): KotOrder => ({
     id:             order.id,
     tableSessionId: order.tableSessionId,
+    destination:    order.destination,
     status:         order.status as KotItemStatus,
     items: (byOrder.get(order.id) ?? []).map((i) => ({
-      id:         i.id,
-      kotOrderId: i.kotOrderId,
-      productId:  i.productId,
-      quantity:   i.quantity,
-      unitPrice:  new Decimal(i.unitPrice),
-      taxRate:    new Decimal(i.taxRate),
+      id:           i.id,
+      kotOrderId:   i.kotOrderId,
+      productId:    i.productId,
+      productName:  i.productName ?? undefined,
+      menuType:     i.menuType ?? undefined,
+      quantity:     i.quantity,
+      unitPrice:    new Decimal(i.unitPrice),
+      taxRate:      new Decimal(i.taxRate),
       servingId:    i.servingId,
       servingLabel: i.servingLabel,
-      status:     i.status as KotItemStatus,
-      notes:      i.notes,
+      status:       i.status as KotItemStatus,
+      notes:        i.notes,
     })),
   }));
 }

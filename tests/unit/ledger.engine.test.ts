@@ -12,6 +12,7 @@ import {
   paymentLedgerCode,
   reverseLines,
   supplierInvoiceLines,
+  supplierChallanPaymentLines,
   voucherTotals,
   type PostingLine,
 } from '../../src/modules/accounting/ledger.engine.js';
@@ -205,6 +206,41 @@ describe('supplierInvoiceLines', () => {
 
   it('rejects an empty invoice', () => {
     expect(() => supplierInvoiceLines([])).toThrow();
+  });
+
+  it('posts Telangana ICDC invoice with MRP Rounding, Turnover Tax, Cess, and TCS perfectly balanced', () => {
+    // Exact ICDC.pdf figures:
+    // Basic items: 6,80,595.20
+    // Special Excise Cess: 1,04,160.00
+    // TCS: 6,806.00
+    // Total Invoice Deducted: 7,91,561.20
+    const lines = supplierInvoiceLines(
+      [{ lineCostTotal: '680595.20', taxRate: '18.00' }],
+      '0.00',      // mrpRoundingOff
+      '104160.00',  // specialExciseCess
+      '6806.00',    // tcsAmount
+      '0.00'       // turnoverTax
+    );
+    expectBalanced(lines);
+    expect(amountOf(lines, 'SUNDRY_CREDITORS', 'credit')).toBe('791561.20');
+    expect(amountOf(lines, 'SPECIAL_EXCISE_CESS', 'debit')).toBe('104160.00');
+    expect(amountOf(lines, 'TCS_RECEIVABLE', 'debit')).toBe('6806.00');
+
+    // And verify e-Challan / DD advance payment
+    const challanLines = supplierChallanPaymentLines('4100000.00');
+    expectBalanced(challanLines);
+    expect(amountOf(challanLines, 'SUNDRY_CREDITORS', 'debit')).toBe('4100000.00');
+    expect(amountOf(challanLines, 'BANK', 'credit')).toBe('4100000.00');
+
+    // Net ledger balance with depot:
+    // Opening credit: 6,37,042.97 (debit balance / advance)
+    // Challan paid: +41,00,000.00 (debit)
+    // Invoice deduction: -7,91,561.20 (credit)
+    const prevCredit = new Decimal('637042.97');
+    const challan = new Decimal('4100000.00');
+    const invoiceDeduction = new Decimal('791561.20');
+    const remainingBalance = prevCredit.plus(challan).minus(invoiceDeduction);
+    expect(remainingBalance.toFixed(2)).toBe('3945481.77'); // Exact Retailer Credit Balance!
   });
 });
 

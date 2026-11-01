@@ -106,6 +106,17 @@ export async function extractInvoice(buf: Buffer, opts: ExtractOptions = {}): Pr
         tableStart = 0;
         meta.engine = 'icdc-extractor';
         if (icdc.specialCess) meta.specialCess = icdc.specialCess;
+        if (icdc.mrpRoundingOff) meta.mrpRoundingOff = icdc.mrpRoundingOff;
+        if (icdc.linesBasicTotal) meta.linesBasicTotal = icdc.linesBasicTotal;
+        if (icdc.turnoverTax) meta.turnoverTax = icdc.turnoverTax;
+        if (icdc.tcsAmount) meta.tcsAmount = icdc.tcsAmount;
+        if (icdc.challanAmount) meta.challanAmount = icdc.challanAmount;
+        if (icdc.challanNumber) meta.challanNumber = icdc.challanNumber;
+        if (icdc.previousCredit) meta.previousCredit = icdc.previousCredit;
+        if (icdc.subTotal) meta.subTotal = icdc.subTotal;
+        if (icdc.netInvoiceValue) meta.netInvoiceValue = icdc.netInvoiceValue;
+        if (icdc.totalInvoiceAmount) meta.totalInvoiceAmount = icdc.totalInvoiceAmount;
+        if (icdc.retailerCreditBalance) meta.retailerCreditBalance = icdc.retailerCreditBalance;
       } else {
         ({ table, headerText, tableStart } = tableFromTextLines(pdf.lines, opts.columnMapping));
         meta.engine = pdf.ocrPages > 0 ? (pdf.ocrPages < pdf.pages ? 'pdfjs+tesseract' : 'tesseract(pdf)') : 'pdfjs';

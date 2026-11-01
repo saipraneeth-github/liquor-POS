@@ -22,6 +22,7 @@ export interface CatalogProduct {
   volumeMl: number | null;
   packQuantity: number | null;
   mrp: string;
+  costPrice?: string | null;
   isActive: boolean;
 }
 

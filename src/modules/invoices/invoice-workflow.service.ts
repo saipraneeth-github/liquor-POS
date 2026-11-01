@@ -48,7 +48,9 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
       const prevById = new Map(prevItems.map((i) => [i.id, i]));
       const catalog = await loadCatalog(tx, current.branchId);
       const refIds = [...new Set(input.items.map((i) => i.productId).filter((p): p is string => !!p))];
-      const refRows = refIds.length ? await tx.select({ id: products.id, name: products.name, mrp: products.mrp }).from(products).where(inArray(products.id, refIds)) : [];
+      const refRows = refIds.length ? await tx.select({
+        id: products.id, name: products.name, mrp: products.mrp, sku: products.sku, costPrice: products.costPrice,
+      }).from(products).where(inArray(products.id, refIds)) : [];
       const refMap = new Map(refRows.map((p) => [p.id, p]));
       const missing = refIds.filter((p) => !refMap.has(p));
       if (missing.length) throw new BusinessRuleError(`Unknown products: ${missing.join(', ')}`);
@@ -80,7 +82,17 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
             status = productId ? 'MANUAL' : 'UNMATCHED'; method = productId ? 'MANUAL' : null; confidence = productId ? '1.000' : null;
           }
         }
-        const next = { quantity: item.quantity, costPrice: new Decimal(item.costPrice).toFixed(2), mrp: new Decimal(item.mrp).toFixed(2) };
+        const cpDec = new Decimal(item.costPrice);
+        const costPrice = cpDec.decimalPlaces() <= 2 ? cpDec.toFixed(2) : cpDec.toFixed(6);
+        const next = {
+          casesDelivered: (item.casesDelivered !== undefined && item.casesDelivered !== null) ? item.casesDelivered : (prev?.casesDelivered ?? 0),
+          bottlesDelivered: (item.bottlesDelivered !== undefined && item.bottlesDelivered !== null) ? item.bottlesDelivered : (prev?.bottlesDelivered ?? 0),
+          packQuantity: (item.packQuantity !== undefined && item.packQuantity !== null) ? item.packQuantity : (prev?.packQuantity ?? 12),
+          quantity: item.quantity,
+          caseRate: item.caseRate !== undefined ? item.caseRate : (prev?.caseRate ?? null),
+          costPrice,
+          mrp: new Decimal(item.mrp).toFixed(2),
+        };
         if (prev && sameNumbers(prev, next)) {
           const keep = (prev.flags ?? []).filter((f) => (EXTRACTION_FLAGS as readonly string[]).includes(f)
             && (f !== 'VOLUME_DIFFERS' || prev.productId === productId));
@@ -91,13 +103,26 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
           ...next, extractedAmount: item.extractedAmount ?? prev?.extractedAmount ?? null,
           catalogMrp: product?.mrp ?? null, productId, matchStatus: status, flags: carried,
         });
+        const derived = new Decimal(costPrice).mul(item.quantity).toFixed(4);
+        const roundingAdj = new Decimal(v.lineCostTotal).minus(new Decimal(derived)).toFixed(4);
         return {
           lineNumber: idx + 1, rawDescription: item.rawDescription, barcode: item.barcode ?? prev?.barcode ?? null,
+          sku: product?.sku ?? null,
           productId, productName: product?.name ?? null, matchStatus: status, matchMethod: method, matchConfidence: confidence,
           ...next,
+          displayCostPrice: new Decimal(costPrice).toFixed(2),
           taxRate: new Decimal(item.taxRate ?? prev?.taxRate ?? (productId ? taxByProduct.get(productId) : null) ?? DEFAULT_TAX_RATE).toFixed(2),
-          extractedAmount: item.extractedAmount !== undefined ? item.extractedAmount : prev?.extractedAmount ?? null,
-          lineCostTotal: v.lineCostTotal, flags: v.flags, candidates: [],
+          extractedAmount: item.extractedAmount !== undefined ? item.extractedAmount : (prev?.extractedAmount ?? null),
+          lineCostTotal: v.lineCostTotal,
+          unitDerivedTotal: derived,
+          roundingAdjustment: roundingAdj,
+          previousCostPrice: prev?.previousCostPrice ?? product?.costPrice ?? null,
+          costDifference: prev?.costDifference ?? null,
+          costIncreasePct: prev?.costIncreasePct ?? null,
+          hasIncreased: false,
+          hasDecreased: false,
+          isHighIncrease: false,
+          flags: v.flags, candidates: [],
         };
       });
 
@@ -123,6 +148,16 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
         invoiceNumber,
         invoiceDate: invoiceDate ? new Date(invoiceDate) : null,
         totalAmount,
+        specialExciseCess: input.specialExciseCess !== undefined ? input.specialExciseCess : current.specialExciseCess,
+        turnoverTax: input.turnoverTax !== undefined ? input.turnoverTax : current.turnoverTax,
+        tcsAmount: input.tcsAmount !== undefined ? input.tcsAmount : current.tcsAmount,
+        challanAmount: input.challanAmount !== undefined ? input.challanAmount : current.challanAmount,
+        challanNumber: input.challanNumber !== undefined ? input.challanNumber : current.challanNumber,
+        previousCredit: input.previousCredit !== undefined ? input.previousCredit : current.previousCredit,
+        subTotal: input.subTotal !== undefined ? input.subTotal : current.subTotal,
+        netInvoiceValue: input.netInvoiceValue !== undefined ? input.netInvoiceValue : current.netInvoiceValue,
+        totalInvoiceAmount: input.totalInvoiceAmount !== undefined ? input.totalInvoiceAmount : current.totalInvoiceAmount,
+        retailerCreditBalance: input.retailerCreditBalance !== undefined ? input.retailerCreditBalance : current.retailerCreditBalance,
         notes: input.notes !== undefined ? input.notes : current.notes,
         status: 'DRAFT',
         reviewedById: null,

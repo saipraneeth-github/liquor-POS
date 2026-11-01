@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Wine, Plus, Minus, Trash2 } from 'lucide-react';
+import { X, Plus, Minus, Trash2 } from 'lucide-react';
+import { getCategoryInfo, CategoryIcon } from '../components/category-icons';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter, showToast } from '../lib/print';
 
@@ -13,7 +14,14 @@ type Product = {
   mrp: string;          // decimal string e.g. "1050.00"
   barcode: string;
   categoryId: string;
+  categoryName?: string;
   isAvailable?: boolean;
+  trackStock?: boolean;
+  currentStock?: number | null;
+  stockQuantity?: number | null;
+  openMl?: number | null;
+  reorderLevel?: number | null;
+  menuType?: 'RETAIL' | 'KITCHEN' | 'BAR';
   servings?: Serving[]; // peg / glass / bottle rates (bar items)
 };
 
@@ -100,16 +108,17 @@ export function POS() {
     (window as any).renderOffline = refreshQueueCount;
   }, [sub, refreshQueueCount]);
 
-  // Load products
+  // Load products (with branch-specific stock levels)
   useEffect(() => {
     if (!user) return;
-    fetch('/api/v1/products', {
+    const url = branchId ? `/api/v1/products?branchId=${branchId}` : '/api/v1/products';
+    fetch(url, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
     })
       .then((r) => r.ok ? r.json() : [])
       .then(setProducts)
       .catch(() => { /* offline — products not available */ });
-  }, [user]);
+  }, [user, branchId]);
 
   // Restore last sync label from localStorage
   useEffect(() => {
@@ -327,26 +336,68 @@ export function POS() {
           className="w-full p-2 mb-4 border rounded dark:bg-gray-700 dark:border-gray-600"
         />
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto" id="posCatalog">
-          {filteredProducts.map((p) => (
-            <button
-              key={p.id}
-              className={`pos-product p-4 bg-white dark:bg-gray-800 rounded shadow hover:shadow-md transition text-center ${p.isAvailable === false ? 'opacity-50 cursor-not-allowed' : ''}`}
-              onClick={() => pickProduct(p)}
-              disabled={p.isAvailable === false}
-            >
-              <div className="mb-2 flex justify-center">
-                <Wine size={22} className="text-purple-600 dark:text-purple-400" />
-              </div>
-              <div className="font-semibold truncate">{p.name}</div>
-              <div className="text-sm text-gray-500">
-                {p.isAvailable === false
-                  ? 'Out of stock'
-                  : p.servings && p.servings.length > 0
-                  ? 'From ₹' + Math.min(...p.servings.map((s) => parseFloat(s.price))).toLocaleString('en-IN')
-                  : '₹' + parseFloat(p.mrp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-            </button>
-          ))}
+          {filteredProducts.map((p) => {
+            const stockQty = p.currentStock ?? p.stockQuantity ?? 0;
+            const isTracked = p.trackStock !== false;
+            const isOut = isTracked && stockQty <= 0;
+            const isLow = isTracked && !isOut && stockQty <= (p.reorderLevel ?? 5);
+
+            return (
+              <button
+                key={p.id}
+                className={`pos-product p-3.5 bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition text-center flex flex-col items-center justify-between min-h-[145px] border border-transparent hover:border-purple-300 dark:hover:border-purple-600 ${
+                  p.isAvailable === false || isOut ? 'opacity-60 bg-gray-50 dark:bg-gray-800/60' : ''
+                }`}
+                onClick={() => pickProduct(p)}
+                disabled={p.isAvailable === false}
+              >
+                <div className="w-full flex items-center justify-between text-xs mb-1">
+                  <div className="flex items-center gap-1">
+                    <CategoryIcon categoryName={(p as any).categoryName} productName={p.name} size={18} />
+                    <span>{getCategoryInfo((p as any).categoryName, p.name).emoji}</span>
+                  </div>
+                  {/* Stock Badge */}
+                  {isTracked ? (
+                    isOut ? (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">
+                        Out of stock
+                      </span>
+                    ) : isLow ? (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
+                        Low: {stockQty} btl
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
+                        Stock: {stockQty}
+                      </span>
+                    )
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                      Kitchen
+                    </span>
+                  )}
+                </div>
+
+                <div className="w-full my-auto py-1">
+                  <div className="font-semibold text-sm truncate" title={p.name}>{p.name}</div>
+                  <div className="text-xs text-gray-500 truncate">{p.brand}</div>
+                </div>
+
+                <div className="w-full pt-1.5 border-t dark:border-gray-700/60 flex items-center justify-between text-xs">
+                  <span className="font-bold font-mono text-purple-600 dark:text-purple-400">
+                    {p.servings && p.servings.length > 0
+                      ? 'From ₹' + Math.min(...p.servings.map((s) => parseFloat(s.price))).toLocaleString('en-IN')
+                      : '₹' + parseFloat(p.mrp).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                  {isTracked && p.openMl ? (
+                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-mono" title="Peg ml open in current bottle">
+                      💧{p.openMl}ml
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -505,7 +556,7 @@ export function POS() {
       {servingPicker && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" id="servingPicker" onClick={() => setServingPicker(null)}>
           <div className="bg-white dark:bg-gray-800 p-5 rounded shadow-lg max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-3">
+            <div className="flex justify-between items-center mb-2">
               <h2 className="text-lg font-bold">{servingPicker.name}</h2>
               <button
                 type="button"
@@ -515,6 +566,11 @@ export function POS() {
               >
                 <X size={18} />
               </button>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 mb-3 bg-gray-50 dark:bg-gray-750 p-2 rounded border dark:border-gray-700">
+              <span>📦 Sealed Bottles: <strong className="text-gray-900 dark:text-white font-mono">{servingPicker.currentStock ?? servingPicker.stockQuantity ?? 0}</strong></span>
+              <span>·</span>
+              <span>💧 Open Bottle: <strong className="text-blue-600 dark:text-blue-400 font-mono">{servingPicker.openMl ?? 0} ml</strong></span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               {servingPicker.servings!.map((s) => (

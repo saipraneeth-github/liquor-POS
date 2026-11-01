@@ -46,6 +46,8 @@ export interface ExtractedLine {
   /** Quantity expressed in cases (converted to bottles after matching, when the pack size is known). */
   cases: number | null;
   rate: string | null;
+  /** Explicit wholesale case rate if stated on the document (e.g. Rate / Case). */
+  caseRate?: string | null;
   mrp: string | null;
   amount: string | null;
   taxRate: string | null;
@@ -90,6 +92,17 @@ export interface ExtractionMeta {
   gstin?: string | null;
   capturedTotal?: string | null;
   specialCess?: string | null;
+  mrpRoundingOff?: string | null;
+  linesBasicTotal?: string | null;
+  turnoverTax?: string | null;
+  tcsAmount?: string | null;
+  challanAmount?: string | null;
+  challanNumber?: string | null;
+  previousCredit?: string | null;
+  subTotal?: string | null;
+  netInvoiceValue?: string | null;
+  totalInvoiceAmount?: string | null;
+  retailerCreditBalance?: string | null;
   [key: string]: unknown;
 }
 

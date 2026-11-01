@@ -5,6 +5,9 @@ import { PLACEHOLDER_PREFIX } from './validate.engine.js';
 /** Money: decimal string, ≤ 10 integer digits (numeric(12,2)), ≤ 2 dp. */
 export const MONEY = z.string().trim().regex(/^\d{1,10}(\.\d{1,2})?$/, 'must be a decimal string with up to 10 digits and 2dp');
 
+/** High-precision unit cost: decimal string, <= 10 integer digits, <= 6 dp. */
+export const PRECISION_MONEY = z.string().trim().regex(/^\d{1,10}(\.\d{1,6})?$/, 'must be a decimal string with up to 10 digits and up to 6dp');
+
 const DATE = z.string().trim().refine((s) => /^\d{4}-\d{2}-\d{2}/.test(s) && !Number.isNaN(Date.parse(s)), 'invalid date (use YYYY-MM-DD)');
 
 const SAFE_NAME = z.string().trim().min(1).max(200).refine((s) => !/[<>]/.test(s), 'must not contain < or >');
@@ -20,8 +23,12 @@ export const LineInputSchema = z.object({
   confirmMatch: z.boolean().optional(),
   rawDescription: z.string().trim().min(1).max(500),
   barcode: z.string().trim().max(32).nullable().optional(),
+  casesDelivered: z.number().int().min(0).max(100_000).nullable().optional(),
+  bottlesDelivered: z.number().int().min(0).max(100_000).nullable().optional(),
+  packQuantity: z.number().int().min(1).max(100_000).nullable().optional(),
   quantity: z.number().int().min(0).max(100_000),
-  costPrice: MONEY,
+  caseRate: MONEY.nullable().optional(),
+  costPrice: PRECISION_MONEY,
   mrp: MONEY,
   taxRate: MONEY.refine((v) => Number(v) <= 100, 'taxRate must be <= 100').optional(),
   extractedAmount: MONEY.nullable().optional(),
@@ -33,6 +40,16 @@ export const InvoiceInputSchema = z.object({
   invoiceNumber: InvoiceNumber.optional(),
   invoiceDate: DATE.nullable().optional(),
   totalAmount: MONEY.optional(),
+  specialExciseCess: MONEY.nullable().optional(),
+  turnoverTax: MONEY.nullable().optional(),
+  tcsAmount: MONEY.nullable().optional(),
+  challanAmount: MONEY.nullable().optional(),
+  challanNumber: z.string().max(200).nullable().optional(),
+  previousCredit: MONEY.nullable().optional(),
+  subTotal: MONEY.nullable().optional(),
+  netInvoiceValue: MONEY.nullable().optional(),
+  totalInvoiceAmount: MONEY.nullable().optional(),
+  retailerCreditBalance: MONEY.nullable().optional(),
   notes: z.string().max(1000).nullable().optional(),
   items: z.array(LineInputSchema).min(1).max(500),
 });

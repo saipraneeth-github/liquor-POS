@@ -207,6 +207,18 @@ describe('Telangana Excise ICDC Engine', () => {
         if (tc.sampleCheck) {
           tc.sampleCheck(result.table.lines);
         }
+
+        // Verify Telangana Excise depot reconciliation fields in extraction meta
+        if (tc.file === 'ICDC.pdf') {
+          expect(result.meta.challanAmount).toBe('4100000.00');
+          expect(result.meta.previousCredit).toBe('637042.97');
+          expect(result.meta.subTotal).toBe('4737042.97');
+          expect(result.meta.netInvoiceValue).toBe('680595.20');
+          expect(result.meta.specialCess).toBe('104160.00');
+          expect(result.meta.tcsAmount).toBe('6806.00');
+          expect(result.meta.totalInvoiceAmount).toBe('791561.20');
+          expect(result.meta.retailerCreditBalance).toBe('3945481.77');
+        }
       });
     }
   });

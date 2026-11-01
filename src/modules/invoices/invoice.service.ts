@@ -4,13 +4,13 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { Decimal } from 'decimal.js';
-import { and, eq, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import {
-  branches, categories, invoiceAttachments, products, supplierInvoiceItems, supplierInvoices,
+  branches, categories, invoiceAttachments, journalLines, journalVouchers, products, schemePurchases, supplierInvoiceItems, supplierInvoices,
 } from '../../db/schema.js';
 import type { Tx } from '../../lib/domain-events.js';
-import { BusinessRuleError, ConflictError, isUniqueViolation } from '../../lib/errors.js';
+import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import { extractInvoice } from './extraction/index.js';
 import { MAX_MONEY } from './extraction/numbers.js';
@@ -64,7 +64,7 @@ export async function loadCatalog(exec: Tx | typeof db = db, branchId?: string):
     .select({
       id: products.id, name: products.name, brand: products.brand, barcode: products.barcode, sku: products.sku,
       exciseCode: products.exciseCode,
-      volumeMl: products.volumeMl, packQuantity: products.packQuantity, mrp: products.mrp, isActive: products.isActive,
+      volumeMl: products.volumeMl, packQuantity: products.packQuantity, mrp: products.mrp, costPrice: products.costPrice, isActive: products.isActive,
       taxRate: categories.taxRate,
     })
     .from(products)
@@ -113,11 +113,20 @@ export function itemValues(invoiceId: string, lines: DraftLine[]) {
     invoiceId,
     productId: l.productId,
     rawDescription: l.rawDescription,
+    casesDelivered: l.casesDelivered ?? 0,
+    bottlesDelivered: l.bottlesDelivered ?? 0,
+    packQuantity: l.packQuantity ?? 12,
     quantity: l.quantity,
+    caseRate: l.caseRate ?? null,
     costPrice: l.costPrice,
     mrp: l.mrp,
     taxRate: l.taxRate,
     lineCostTotal: l.lineCostTotal,
+    unitDerivedTotal: l.unitDerivedTotal ?? null,
+    roundingAdjustment: l.roundingAdjustment ?? '0.0000',
+    previousCostPrice: l.previousCostPrice ?? null,
+    costDifference: l.costDifference ?? null,
+    costIncreasePct: l.costIncreasePct ?? null,
     lineNumber: l.lineNumber,
     barcode: l.barcode,
     matchStatus: l.matchStatus,
@@ -141,13 +150,33 @@ async function insertDraft(
         const existing = await findLiveDuplicate(tx, header.branchId, header.invoiceNumber);
         if (existing) throw new DuplicateInvoiceError(existing.id, header.invoiceNumber, existing.invoiceDate ?? existing.createdAt);
       }
+      const linesBasicTotal = lines.reduce((s, l) => s.plus(new Decimal(l.lineCostTotal || '0')), new Decimal(0)).toFixed(2);
+      const roundingAdjustment = lines.reduce((s, l) => s.plus(new Decimal(l.roundingAdjustment || '0')), new Decimal(0)).toFixed(4);
+      const totalCases = lines.reduce((s, l) => s + (l.casesDelivered || 0), 0);
+      const totalBottles = lines.reduce((s, l) => s + (l.quantity || 0), 0);
+
       const [invoice] = await tx.insert(supplierInvoices).values({
         branchId: header.branchId,
         createdById: header.userId,
         supplierName: header.supplierName,
         invoiceNumber: header.invoiceNumber,
         invoiceDate: header.invoiceDate ? new Date(header.invoiceDate) : null,
+        linesBasicTotal: (header.meta?.linesBasicTotal as string) ?? linesBasicTotal,
+        mrpRoundingOff: (header.meta?.mrpRoundingOff as string) ?? '0.00',
+        roundingAdjustment,
         totalAmount: header.totalAmount,
+        specialExciseCess: (header.meta?.specialCess as string) ?? null,
+        turnoverTax: (header.meta?.turnoverTax as string) ?? null,
+        tcsAmount: (header.meta?.tcsAmount as string) ?? null,
+        totalCases,
+        totalBottles,
+        challanAmount: (header.meta?.challanAmount as string) ?? null,
+        challanNumber: (header.meta?.challanNumber as string) ?? null,
+        previousCredit: (header.meta?.previousCredit as string) ?? null,
+        subTotal: (header.meta?.subTotal as string) ?? null,
+        netInvoiceValue: (header.meta?.netInvoiceValue as string) ?? null,
+        totalInvoiceAmount: (header.meta?.totalInvoiceAmount as string) ?? null,
+        retailerCreditBalance: (header.meta?.retailerCreditBalance as string) ?? null,
         status: 'DRAFT',
         notes: header.notes ?? null,
         source: header.source,
@@ -257,21 +286,39 @@ export function linesFromInput(items: LineInput[], catalog: CatalogEntry[]): Dra
       quantity: item.quantity, costPrice: item.costPrice, mrp: item.mrp, extractedAmount: item.extractedAmount ?? null,
       catalogMrp: product?.mrp ?? null, productId, matchStatus: status, flags: auto?.flags ?? [],
     });
+    const cpDec = new Decimal(item.costPrice);
+    const costPriceStr = cpDec.decimalPlaces() <= 2 ? cpDec.toFixed(2) : cpDec.toFixed(6);
+    const derived = new Decimal(costPriceStr).mul(item.quantity).toFixed(4);
+    const roundingAdj = new Decimal(v.lineCostTotal).minus(new Decimal(derived)).toFixed(4);
     return {
       lineNumber: idx + 1,
       rawDescription: item.rawDescription,
       barcode: item.barcode ?? null,
+      sku: product?.sku ?? null,
       productId,
       productName: product?.name ?? null,
       matchStatus: status,
       matchMethod: item.productId ? 'MANUAL' : auto?.method ?? null,
       matchConfidence: item.productId ? '1.000' : auto && auto.confidence > 0 ? auto.confidence.toFixed(3) : null,
+      casesDelivered: item.casesDelivered ?? 0,
+      bottlesDelivered: item.bottlesDelivered ?? 0,
+      packQuantity: item.packQuantity ?? 12,
       quantity: item.quantity,
-      costPrice: new Decimal(item.costPrice).toFixed(2),
+      caseRate: item.caseRate ?? null,
+      costPrice: costPriceStr,
+      displayCostPrice: new Decimal(costPriceStr).toFixed(2),
       mrp: new Decimal(item.mrp).toFixed(2),
       taxRate: new Decimal(item.taxRate ?? product?.taxRate ?? DEFAULT_TAX_RATE).toFixed(2),
       extractedAmount: item.extractedAmount ? new Decimal(item.extractedAmount).toFixed(2) : null,
       lineCostTotal: v.lineCostTotal,
+      unitDerivedTotal: derived,
+      roundingAdjustment: roundingAdj,
+      previousCostPrice: product?.costPrice ?? null,
+      costDifference: null,
+      costIncreasePct: null,
+      hasIncreased: false,
+      hasDecreased: false,
+      isHighIncrease: false,
       flags: v.flags,
       candidates: auto?.candidates ?? [],
     };
@@ -295,4 +342,40 @@ export async function createManualDraft(branchId: string, user: JwtPayload, inpu
     notes: input.notes, source: 'MANUAL', warnings: inv.warnings, meta: { engine: 'manual', computedTotal: inv.computedTotal },
   }, lines);
   return { ...(await getInvoiceDetail(id)), warnings: inv.warnings };
+}
+
+export async function deleteInvoice(invoiceId: string, _user: JwtPayload): Promise<void> {
+  const [inv] = await db.select().from(supplierInvoices).where(eq(supplierInvoices.id, invoiceId)).limit(1);
+  if (!inv) throw new NotFoundError('Invoice not found');
+
+  await db.transaction(async (tx) => {
+    const vouchers = await tx.select({ id: journalVouchers.id }).from(journalVouchers)
+      .where(and(inArray(journalVouchers.sourceType, ['SUPPLIER_INVOICE', 'SUPPLIER_CHALLAN']), eq(journalVouchers.sourceId, invoiceId)));
+    for (const v of vouchers) {
+      await tx.delete(journalLines).where(eq(journalLines.voucherId, v.id));
+      await tx.delete(journalVouchers).where(eq(journalVouchers.id, v.id));
+    }
+
+    await tx.delete(schemePurchases).where(eq(schemePurchases.referenceId, invoiceId));
+    await tx.delete(supplierInvoices).where(eq(supplierInvoices.id, invoiceId));
+  });
+}
+
+export async function deleteAllInvoices(branchId: string): Promise<number> {
+  const invs = await db.select({ id: supplierInvoices.id }).from(supplierInvoices).where(eq(supplierInvoices.branchId, branchId));
+  if (invs.length === 0) return 0;
+
+  for (const inv of invs) {
+    await db.transaction(async (tx) => {
+      const vouchers = await tx.select({ id: journalVouchers.id }).from(journalVouchers)
+        .where(and(inArray(journalVouchers.sourceType, ['SUPPLIER_INVOICE', 'SUPPLIER_CHALLAN']), eq(journalVouchers.sourceId, inv.id)));
+      for (const v of vouchers) {
+        await tx.delete(journalLines).where(eq(journalLines.voucherId, v.id));
+        await tx.delete(journalVouchers).where(eq(journalVouchers.id, v.id));
+      }
+      await tx.delete(schemePurchases).where(eq(schemePurchases.referenceId, inv.id));
+      await tx.delete(supplierInvoices).where(eq(supplierInvoices.id, inv.id));
+    });
+  }
+  return invs.length;
 }

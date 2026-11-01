@@ -46,7 +46,7 @@ export async function menuRoutes(app: FastifyInstance) {
     const query = ListQuery.safeParse(req.query);
     const wantsInactive = query.success && query.data.includeInactive === 'true';
     const user = getUser(req);
-    const branchId = query.success ? query.data.branchId : undefined;
+    const branchId = (query.success && query.data.branchId) ? query.data.branchId : (user.branchId ?? undefined);
     if (branchId && !(await assertBranchAccess(user, branchId, reply))) return;
     const items = await listMenuItems(params.data.type, await tenantOf(user), wantsInactive && roleRank(user.role) >= 3, branchId);
     return { items };

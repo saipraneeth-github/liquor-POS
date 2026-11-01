@@ -1502,8 +1502,31 @@ function indexCatalog() {
   S.categories = [...cats.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 function productName(id) { const p = S.productMap[id]; return p ? p.name : 'Product ' + String(id).slice(0, 8); }
-function productOptions(selected) {
-  return S.products.map((p) => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)} — ${money(p.mrp)}</option>`).join('');
+function isKitchenProduct(p) {
+  if (!p) return false;
+  if (p.menuType === 'KITCHEN') return true;
+  if (p.menuType === 'BAR' || p.menuType === 'RETAIL') return false;
+  const cat = (p.categoryName || '').toLowerCase();
+  return /food|starter|main|snack|kitchen|bread|dessert|tandoor|rice|curry|salad|soup|veg/.test(cat);
+}
+function isBarProduct(p) { return !isKitchenProduct(p); }
+function productOptions(selected, dest) {
+  let list = S.products.filter((p) => p.isAvailable !== false);
+  if (dest === 'KITCHEN') {
+    list = list.filter(isKitchenProduct);
+  } else if (dest === 'BAR') {
+    list = list.filter(isBarProduct);
+  }
+  if (!list.length) {
+    return `<option value="">No ${dest === 'KITCHEN' ? 'kitchen food' : 'bar'} items found</option>`;
+  }
+  return list.map((p) => {
+    const q = stockOf(p.id);
+    const stockTxt = p.trackStock === false
+      ? 'Kitchen Fresh'
+      : (q === undefined ? '0 btl' : q <= 0 ? 'Out of stock' : `${q} btl in stock`);
+    return `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)} — ${money(p.mrp)} [${stockTxt}]</option>`;
+  }).join('');
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
@@ -2548,21 +2571,32 @@ async function createTable(e) {
 }
 
 function tableById(id) { return S.tables.find((t) => t.id === id); }
-function kotLineHtml() {
+function kotLineHtml(dest = 'BAR') {
   return `<div class="row kot-line" style="flex-wrap:nowrap;">
-    <select class="input input-sm grow kot-product" aria-label="Product">${productOptions()}</select>
+    <select class="input input-sm grow kot-product" aria-label="Product">${productOptions(null, dest)}</select>
     <input class="input input-sm kot-qty" type="number" min="1" value="1" style="width:70px;" aria-label="Quantity" />
     <button type="button" class="btn-ghost" onclick="this.parentElement.remove()" aria-label="Remove line">✕</button></div>`;
 }
-function openKotModal(tableId) {
+function onKotDestChange(dest) {
+  const container = document.getElementById('kotLines');
+  if (container) {
+    container.innerHTML = kotLineHtml(dest);
+  }
+}
+function openKotModal(tableId, initialDest = 'BAR') {
   const t = tableById(tableId);
   if (!t) return;
   if (!S.products.length) { toast('Catalog not loaded.', 'error'); return; }
   openModal('New KOT — ' + t.name, `<div class="stack">
-    <label class="field" for="kotDest">Destination<select id="kotDest" class="input"><option value="BAR">🍸 Bar</option><option value="KITCHEN">🍳 Kitchen</option></select></label>
-    <div id="kotLines" class="stack">${kotLineHtml()}</div>
-    <button type="button" class="btn-sec btn-sm" onclick="document.getElementById('kotLines').insertAdjacentHTML('beforeend', kotLineHtml())">+ Add item</button>
-    <label class="field" for="kotNotes">Notes<input id="kotNotes" class="input" maxlength="500" /></label>
+    <label class="field" for="kotDest">Destination
+      <select id="kotDest" class="input" onchange="onKotDestChange(this.value)">
+        <option value="BAR" ${initialDest === 'BAR' ? 'selected' : ''}>🍸 Bar (Drinks &amp; Liquor)</option>
+        <option value="KITCHEN" ${initialDest === 'KITCHEN' ? 'selected' : ''}>🍳 Kitchen (Food &amp; Snacks)</option>
+      </select>
+    </label>
+    <div id="kotLines" class="stack">${kotLineHtml(initialDest)}</div>
+    <button type="button" class="btn-sec btn-sm" onclick="document.getElementById('kotLines').insertAdjacentHTML('beforeend', kotLineHtml(document.getElementById('kotDest')?.value || 'BAR'))">+ Add item</button>
+    <label class="field" for="kotNotes">Notes<input id="kotNotes" class="input" maxlength="500" placeholder="e.g. Less spicy, extra ice" /></label>
     <div class="row"><button type="button" class="btn-primary" id="kotCreateBtn" onclick="createKot('${t.id}')">Create KOT</button><button type="button" class="btn-sec" onclick="closeModal()">Cancel</button></div>
   </div>`);
 }
@@ -2585,16 +2619,26 @@ async function viewKots(tableId) {
   openModal('KOTs — ' + t.name, '<div class="state">⏳ Loading…</div>');
   try {
     const { kotOrders } = await api(`/kot/session/${t.currentSessionId}?branchId=${S.branchId}`);
-    $('modalBody').innerHTML = kotOrders.length ? kotOrders.map((o, idx) => `<div class="card pad stack" style="margin-bottom:10px;">
-      <div class="row between"><b>KOT ${idx + 1}</b>${statusBadge(o.status)}</div>
-      ${o.items.map((i) => {
-        const next = KOT_NEXT[i.status] || [];
-        return `<div class="row between small"><span>${esc(productName(i.productId))} × ${i.quantity}</span>
-        <label class="sr-only" for="ks-${i.id}">Status of ${esc(productName(i.productId))}</label>
-        <select id="ks-${i.id}" class="input input-sm" style="width:auto;" ${next.length ? '' : 'disabled'} onchange="setKotItemStatus('${o.id}','${i.id}',this.value,'${t.id}')">
-          ${[i.status, ...next].map((s) => `<option ${s === i.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`;
-      }).join('')}
-    </div>`).join('') : '<div class="state">No KOTs for this table yet.</div>';
+    $('modalBody').innerHTML = kotOrders.length ? kotOrders.map((o, idx) => {
+      const isKitchen = o.destination === 'KITCHEN';
+      const badge = isKitchen
+        ? '<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;font-weight:600;">🍳 Kitchen Order</span>'
+        : '<span class="badge" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;font-weight:600;">🍸 Bar Order</span>';
+      return `<div class="card pad stack" style="margin-bottom:10px;">
+        <div class="row between">
+          <span style="display:flex;align-items:center;gap:8px;">${badge} <b>KOT ${idx + 1}</b></span>
+          ${statusBadge(o.status)}
+        </div>
+        ${o.items.map((i) => {
+          const next = KOT_NEXT[i.status] || [];
+          const name = i.productName || productName(i.productId);
+          return `<div class="row between small"><span>${esc(name)}${i.servingLabel ? ` (${esc(i.servingLabel)})` : ''} × ${i.quantity}</span>
+          <label class="sr-only" for="ks-${i.id}">Status of ${esc(name)}</label>
+          <select id="ks-${i.id}" class="input input-sm" style="width:auto;" ${next.length ? '' : 'disabled'} onchange="setKotItemStatus('${o.id}','${i.id}',this.value,'${t.id}')">
+            ${[i.status, ...next].map((s) => `<option ${s === i.status ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`;
+        }).join('')}
+      </div>`;
+    }).join('') : '<div class="state">No KOTs for this table yet.</div>';
   } catch (e) { errorState($('modalBody'), e); }
 }
 // Same one-way flow as kot.engine: PENDING → PREPARING → SERVED; PENDING/PREPARING may be CANCELLED.
@@ -3057,6 +3101,20 @@ function renderSupplierInvoiceDetail() {
         <input id="invEditNotes" class="input input-sm" value="${esc(inv.notes || '')}" ${editable ? '' : 'disabled'} maxlength="1000" />
       </label>
     </div>
+    ${(inv.retailerCreditBalance || inv.previousCredit || inv.challanAmount || inv.specialExciseCess) ? `
+    <div style="background:var(--card-bg, #f8fafc); border:1px solid var(--border, #e2e8f0); border-radius:8px; padding:12px; margin-bottom:12px;">
+      <div class="row between" style="margin-bottom:8px;">
+        <b class="small" style="color:var(--primary, #2563eb);">🏛️ Excise Depot Reconciliation (TSBCL)</b>
+        ${inv.retailerCreditBalance ? `<span class="badge badge-green small">Balance: ${money(inv.retailerCreditBalance)}</span>` : ''}
+      </div>
+      <div class="row" style="gap:16px; flex-wrap:wrap; font-size:12px;">
+        <div>Previous Credit: <b class="mono">${money(inv.previousCredit || '0.00')}</b></div>
+        <div>e-Challan Paid: <b class="mono" style="color:green;">+${money(inv.challanAmount || '0.00')}</b> ${inv.challanNumber ? `<span class="muted small">(${esc(inv.challanNumber)})</span>` : ''}</div>
+        <div>Sub Total: <b class="mono">${money(inv.subTotal || '0.00')}</b></div>
+        <div>Total Deducted: <b class="mono" style="color:crimson;">-${money(inv.totalInvoiceAmount || inv.totalAmount || '0.00')}</b></div>
+        <div>Retailer Balance: <b class="mono" style="color:var(--primary); font-weight:bold;">${money(inv.retailerCreditBalance || '0.00')}</b></div>
+      </div>
+    </div>` : ''}
     <div class="table-wrap">
       <table class="table table-compact" id="invEditTable">
         <thead><tr><th>#</th><th>Description</th><th>Catalog product</th><th class="right">Bottles</th><th class="right">Cost</th><th class="right">MRP</th><th class="right">Line total</th><th>Flags</th>${editable ? '<th></th>' : ''}</tr></thead>

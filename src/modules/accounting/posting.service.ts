@@ -12,13 +12,15 @@ import {
   creditRepaymentLines,
   expenseLines,
   supplierInvoiceLines,
+  supplierChallanPaymentLines,
   type PostingLine,
 } from './ledger.engine.js';
+import { Decimal } from 'decimal.js';
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
 export type VoucherType = 'SALES' | 'PURCHASE' | 'PAYMENT' | 'RECEIPT' | 'JOURNAL' | 'CONTRA';
-export type SourceType = 'BILL' | 'BILL_VOID' | 'SUPPLIER_INVOICE' | 'EXPENSE' | 'CREDIT_REPAYMENT' | 'MANUAL';
+export type SourceType = 'BILL' | 'BILL_VOID' | 'SUPPLIER_INVOICE' | 'SUPPLIER_CHALLAN' | 'EXPENSE' | 'CREDIT_REPAYMENT' | 'MANUAL';
 
 export interface VoucherHeader {
   branchId: string;
@@ -163,6 +165,21 @@ export async function postBillVoided({ bill, voidedById }: DomainEventMap['bill.
 }
 
 export async function postSupplierInvoiceApproved({ invoice, items }: DomainEventMap['supplierInvoice.approved'], tx: Tx) {
+  if (invoice.challanAmount && new Decimal(invoice.challanAmount).gt(0)) {
+    const challanNarration = invoice.challanNumber
+      ? `e-Challan/DD payment ${invoice.challanNumber} for ${invoice.supplierName}`
+      : `e-Challan/DD advance payment for ${invoice.supplierName}`;
+    await postByCode(tx, {
+      branchId:    invoice.branchId,
+      voucherDate: dateOf(invoice.invoiceDate, invoice.approvedAt, invoice.createdAt),
+      voucherType: 'PAYMENT',
+      narration:   challanNarration,
+      sourceType:  'SUPPLIER_CHALLAN',
+      sourceId:    invoice.id,
+      createdById: invoice.approvedById ?? invoice.createdById,
+    }, supplierChallanPaymentLines(invoice.challanAmount));
+  }
+
   return postByCode(tx, {
     branchId:    invoice.branchId,
     voucherDate: dateOf(invoice.invoiceDate, invoice.approvedAt, invoice.createdAt),
@@ -171,7 +188,7 @@ export async function postSupplierInvoiceApproved({ invoice, items }: DomainEven
     sourceType:  'SUPPLIER_INVOICE',
     sourceId:    invoice.id,
     createdById: invoice.approvedById ?? invoice.createdById,
-  }, supplierInvoiceLines(items));
+  }, supplierInvoiceLines(items, invoice.mrpRoundingOff, invoice.specialExciseCess, invoice.tcsAmount, invoice.turnoverTax));
 }
 
 export async function postCreditRepayment({ customer, txn }: DomainEventMap['credit.repayment'], tx: Tx) {

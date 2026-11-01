@@ -64,6 +64,20 @@
       "when": 1793441366585,
       "tag": "0008_payments_mail_reset_dunning_agent",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793517859537,
+      "tag": "0009_conscious_vulture",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793527500000,
+      "tag": "0010_depot_reconciliation",
+      "breakpoints": true
     }
   ]
 }
