@@ -2276,10 +2276,10 @@ function renderBills() {
   const list = S.bills.filter((b) => !q || b.billNumber.toLowerCase().includes(q));
   if (!list.length) { empty(el, S.bills.length ? 'No bills match the search.' : 'No bills for this date.'); return; }
   const canVoid = can('manager');
-  el.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Bill No.</th><th>Time</th><th>Payment</th><th>Status</th><th class="right">GST</th><th class="right">Total</th><th>Actions</th></tr></thead><tbody>
+  el.innerHTML = `<div class="table-wrap"><table class="table"><thead><tr><th>Bill No.</th><th>Time</th><th>Payment</th><th>Status</th><th class="right">Gross</th><th class="right">Discount</th><th class="right">GST</th><th class="right">Total</th><th>Actions</th></tr></thead><tbody>
     ${list.map((b) => `<tr class="bill-row" data-bill-number="${esc(b.billNumber)}">
       <td><b>${esc(b.billNumber)}</b></td><td>${fmtTime(b.createdAt)}</td><td>${payBadge(b.paymentMode)}</td><td>${statusBadge(b.status)}</td>
-      <td class="right mono">${money(b.taxAmount)}</td><td class="right mono"><b>${money(b.total)}</b></td>
+      <td class="right mono">${money(b.subtotal || b.total)}</td><td class="right mono">${parseFloat(b.discount || '0') > 0 ? `<span class="pos font-semibold">-₹${money(b.discount)}</span>` : '—'}</td><td class="right mono">${money(b.taxAmount)}</td><td class="right mono"><b>${money(b.total)}</b></td>
       <td class="row" style="flex-wrap:nowrap;"><button type="button" class="btn-sec btn-sm" onclick="viewBill('${b.id}')">View</button>
         ${canVoid && b.status === 'PAID' ? `<button type="button" class="btn-danger btn-sm" onclick="openVoid('${b.id}')">Void</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
@@ -2299,7 +2299,7 @@ async function viewBill(id) {
       </tbody><tfoot>
         <tr><td colspan="4">Gross (MRP)</td><td class="right mono">${money(b.subtotal)}</td></tr>
         <tr><td colspan="4">GST included</td><td class="right mono">${money(b.taxAmount)}</td></tr>
-        <tr><td colspan="4">Discount</td><td class="right mono">${money(b.discount)}</td></tr>
+        ${parseFloat(b.discount || '0') > 0 ? `<tr class="pos"><td colspan="4">🏷️ Discount Applied</td><td class="right mono font-bold">-${money(b.discount)}</td></tr>` : ''}
         <tr><td colspan="4">Total</td><td class="right mono">${money(b.total)}</td></tr>
       </tfoot></table></div>
       ${b.status === 'VOIDED' ? `<div class="neg small">Voided ${fmtDateTime(b.voidedAt)} — ${esc(b.voidReason)}</div>` : ''}

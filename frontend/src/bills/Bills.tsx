@@ -24,6 +24,7 @@ type Bill = {
   subtotal: string;
   taxAmount: string;
   discount: string;
+  roundOff?: string | null;
   total: string;
   items: BillItem[];
   voidedAt?: string | null;
@@ -223,6 +224,8 @@ export function Bills() {
                   <th className="p-3">Time</th>
                   <th className="p-3">Payment</th>
                   <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Gross</th>
+                  <th className="p-3 text-right">Discount</th>
                   <th className="p-3 text-right">GST</th>
                   <th className="p-3 text-right">Total</th>
                   <th className="p-3 text-center">Actions</th>
@@ -250,6 +253,18 @@ export function Bills() {
                       >
                         {b.status}
                       </span>
+                    </td>
+                    <td className="p-3 text-right font-mono text-gray-500">
+                      ₹{parseFloat(b.subtotal || b.total || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="p-3 text-right font-mono">
+                      {parseFloat(b.discount || '0') > 0 ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                          -₹{parseFloat(b.discount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="p-3 text-right font-mono text-gray-500">
                       ₹{parseFloat(b.taxAmount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -354,13 +369,18 @@ export function Bills() {
 
               {modalType === 'view' && selectedBill && (
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="px-2 py-0.5 text-xs rounded font-bold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
                       {selectedBill.status}
                     </span>
                     <span className="px-2 py-0.5 text-xs rounded font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
                       {selectedBill.paymentMode}
                     </span>
+                    {parseFloat(selectedBill.discount || '0') > 0 && (
+                      <span className="px-2 py-0.5 text-xs rounded font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 flex items-center gap-1">
+                        <span>🏷️</span> Discount: -₹{parseFloat(selectedBill.discount).toFixed(2)}
+                      </span>
+                    )}
                     <span className="text-xs text-gray-500">
                       {new Date(selectedBill.createdAt).toLocaleString()}
                     </span>
@@ -394,13 +414,31 @@ export function Bills() {
                           <td colSpan={3} className="p-2">Gross (MRP)</td>
                           <td className="p-2 text-right font-mono">₹{parseFloat(selectedBill.subtotal || '0').toFixed(2)}</td>
                         </tr>
+                        {parseFloat(selectedBill.discount || '0') > 0 && (
+                          <tr className="text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20">
+                            <td colSpan={3} className="p-2 font-semibold flex items-center gap-1">
+                              <span>🏷️</span> Discount Applied
+                            </td>
+                            <td className="p-2 text-right font-mono font-bold">-₹{parseFloat(selectedBill.discount).toFixed(2)}</td>
+                          </tr>
+                        )}
                         <tr>
-                          <td colSpan={3} className="p-2">GST Included</td>
-                          <td className="p-2 text-right font-mono">₹{parseFloat(selectedBill.taxAmount || '0').toFixed(2)}</td>
+                          <td colSpan={3} className="p-2 text-gray-500">GST Included</td>
+                          <td className="p-2 text-right font-mono text-gray-500">₹{parseFloat(selectedBill.taxAmount || '0').toFixed(2)}</td>
                         </tr>
-                        <tr>
-                          <td colSpan={3} className="p-2">Total</td>
-                          <td className="p-2 text-right font-mono">₹{parseFloat(selectedBill.total || '0').toFixed(2)}</td>
+                        {selectedBill.roundOff && parseFloat(selectedBill.roundOff) !== 0 && (
+                          <tr className="text-gray-500">
+                            <td colSpan={3} className="p-2">Round Off</td>
+                            <td className="p-2 text-right font-mono">
+                              {parseFloat(selectedBill.roundOff) > 0 ? '+' : ''}₹{parseFloat(selectedBill.roundOff).toFixed(2)}
+                            </td>
+                          </tr>
+                        )}
+                        <tr className="border-t text-sm font-bold dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40">
+                          <td colSpan={3} className="p-2">Final Total</td>
+                          <td className="p-2 text-right font-mono text-purple-600 dark:text-purple-400 font-bold">
+                            ₹{parseFloat(selectedBill.total || '0').toFixed(2)}
+                          </td>
                         </tr>
                       </tfoot>
                     </table>
@@ -420,4 +458,3 @@ export function Bills() {
     </div>
   );
 }
-
