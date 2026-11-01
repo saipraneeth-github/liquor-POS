@@ -77,3 +77,79 @@ describe('computeVoidStockDeltas', () => {
     expect(deltas[0].delta).toBeGreaterThan(0);
   });
 });
+
+import { deductMl, restoreMl } from '../../src/modules/menu/serving.engine.js';
+
+describe('deductMl', () => {
+  it('deducts from open ml without opening new bottle', () => {
+    const result = deductMl({ quantity: 5, openMl: 100 }, 60, 750);
+    expect(result).toEqual({ state: { quantity: 5, openMl: 40 }, bottlesOpened: 0 });
+  });
+
+  it('opens a new bottle if open ml is insufficient', () => {
+    const result = deductMl({ quantity: 5, openMl: 30 }, 60, 750);
+    expect(result).toEqual({ state: { quantity: 4, openMl: 720 }, bottlesOpened: 1 });
+  });
+
+  it('opens multiple bottles if requested ml is larger than bottle capacity', () => {
+    const result = deductMl({ quantity: 5, openMl: 0 }, 1600, 750);
+    expect(result).toEqual({ state: { quantity: 2, openMl: 650 }, bottlesOpened: 3 }); // 3 * 750 = 2250, 2250 - 1600 = 650
+  });
+
+  it('returns null if not enough sealed bottles', () => {
+    const result = deductMl({ quantity: 1, openMl: 30 }, 1600, 750);
+    expect(result).toBeNull();
+  });
+
+  it('exact bottle multiple from zero open ml', () => {
+    const result = deductMl({ quantity: 5, openMl: 0 }, 1500, 750);
+    expect(result).toEqual({ state: { quantity: 3, openMl: 0 }, bottlesOpened: 2 });
+  });
+
+  it('exact bottle multiple with some open ml', () => {
+    const result = deductMl({ quantity: 5, openMl: 100 }, 1500, 750);
+    expect(result).toEqual({ state: { quantity: 3, openMl: 100 }, bottlesOpened: 2 });
+  });
+
+  it('handles exact amount remaining in open bottle', () => {
+    const result = deductMl({ quantity: 5, openMl: 60 }, 60, 750);
+    expect(result).toEqual({ state: { quantity: 5, openMl: 0 }, bottlesOpened: 0 });
+  });
+
+  it('rejects zero or negative ml', () => {
+    expect(() => deductMl({ quantity: 5, openMl: 0 }, 0, 750)).toThrow();
+    expect(() => deductMl({ quantity: 5, openMl: 0 }, -10, 750)).toThrow();
+  });
+
+  it('handles small fractional ml requests (e.g., 0.5ml)', () => {
+    const result = deductMl({ quantity: 5, openMl: 1 }, 0.5, 750);
+    expect(result).toEqual({ state: { quantity: 5, openMl: 0.5 }, bottlesOpened: 0 });
+  });
+});
+
+describe('restoreMl', () => {
+  it('restores ml to open bottle', () => {
+    const result = restoreMl({ quantity: 5, openMl: 40 }, 60, 750);
+    expect(result).toEqual({ quantity: 5, openMl: 100 });
+  });
+
+  it('restores to a full sealed bottle if ml exceeds bottle capacity', () => {
+    const result = restoreMl({ quantity: 5, openMl: 700 }, 60, 750);
+    expect(result).toEqual({ quantity: 6, openMl: 10 });
+  });
+
+  it('restores multiple sealed bottles', () => {
+    const result = restoreMl({ quantity: 5, openMl: 0 }, 1600, 750);
+    expect(result).toEqual({ quantity: 7, openMl: 100 });
+  });
+
+  it('exact bottle multiple restore', () => {
+    const result = restoreMl({ quantity: 5, openMl: 0 }, 1500, 750);
+    expect(result).toEqual({ quantity: 7, openMl: 0 });
+  });
+
+  it('rejects zero or negative ml', () => {
+    expect(() => restoreMl({ quantity: 5, openMl: 0 }, 0, 750)).toThrow();
+    expect(() => restoreMl({ quantity: 5, openMl: 0 }, -10, 750)).toThrow();
+  });
+});
