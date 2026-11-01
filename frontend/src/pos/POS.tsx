@@ -1,7 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Plus, Minus, Trash2, RefreshCw } from 'lucide-react';
-import { getCategoryInfo, CategoryIcon } from '../components/category-icons';
+import {
+  getCategoryInfo,
+  CategoryIcon,
+  classifyProductCategory,
+  CATEGORY_DEFINITIONS,
+  type LiquorCategoryKey,
+} from '../components/category-icons';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter, showToast } from '../lib/print';
 
@@ -73,6 +79,7 @@ export function POS() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<LiquorCategoryKey>('ALL');
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -206,11 +213,49 @@ export function POS() {
     };
   }, [syncQueue]);
 
-  const filteredProducts = products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.brand ?? '').toLowerCase().includes(search.toLowerCase())
-  );
+  const categoriesList = useMemo(() => {
+    const counts: Record<LiquorCategoryKey, number> = {
+      ALL: products.length,
+      WHISKY: 0,
+      SCOTCH: 0,
+      BEER: 0,
+      WINE: 0,
+      VODKA: 0,
+      RUM: 0,
+      GIN: 0,
+      BRANDY: 0,
+      FOOD: 0,
+      OTHER: 0,
+    };
+
+    for (const p of products) {
+      const k = classifyProductCategory(p);
+      counts[k] = (counts[k] || 0) + 1;
+    }
+
+    return CATEGORY_DEFINITIONS.map((def) => ({
+      ...def,
+      count: counts[def.id] || 0,
+    })).filter((def) => def.id === 'ALL' || def.count > 0);
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return products.filter((p) => {
+      const matchesSearch =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        (p.brand ?? '').toLowerCase().includes(q) ||
+        (p.barcode ?? '').toLowerCase().includes(q) ||
+        (p.categoryName ?? '').toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+
+      if (selectedCategory === 'ALL') return true;
+      const catKey = classifyProductCategory(p);
+      return catKey === selectedCategory;
+    });
+  }, [products, search, selectedCategory]);
 
   const addToCart = (product: Product, serving?: Serving) => {
     const line: CartItem = {
@@ -379,7 +424,68 @@ export function POS() {
             <RefreshCw size={18} className={loadingProducts ? 'animate-spin' : ''} />
           </button>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto" id="posCatalog">
+
+        {/* Category Filter Pills (Whisky, Scotch, Beer, Wine, Vodka, Rum, etc.) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 shrink-0" id="posCategoryFilters">
+          {categoriesList.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              id={`catFilter-${cat.id.toLowerCase()}`}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 border cursor-pointer ${
+                selectedCategory === cat.id
+                  ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span>{cat.emoji}</span>
+              <span>{cat.label}</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                  selectedCategory === cat.id
+                    ? 'bg-purple-700 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                {cat.count}
+              </span>
+            </button>
+          ))}
+          {selectedCategory !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('ALL')}
+              className="text-xs text-purple-600 dark:text-purple-400 hover:underline px-2 py-1 whitespace-nowrap font-medium cursor-pointer"
+            >
+              Clear filter
+            </button>
+          )}
+        </div>
+
+        {filteredProducts.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-gray-500 bg-white dark:bg-gray-800 rounded-lg border border-dashed border-gray-300 dark:border-gray-700">
+            <span className="text-3xl mb-2">🍹</span>
+            <p className="font-semibold text-gray-700 dark:text-gray-200">No products found</p>
+            <p className="text-xs mt-1">
+              {search ? `No items matching "${search}"` : ''}
+              {selectedCategory !== 'ALL' ? ` in ${selectedCategory.toLowerCase()}` : ''}
+            </p>
+            {(search || selectedCategory !== 'ALL') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setSelectedCategory('ALL');
+                }}
+                className="mt-3 px-3 py-1.5 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 rounded font-medium hover:bg-purple-200 cursor-pointer"
+              >
+                Reset filters
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto" id="posCatalog">
           {filteredProducts.map((p) => {
             const stockQty = p.currentStock ?? p.stockQuantity ?? 0;
             const isTracked = p.trackStock !== false;
@@ -442,7 +548,8 @@ export function POS() {
               </button>
             );
           })}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Cart + checkout */}

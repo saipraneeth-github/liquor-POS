@@ -1,8 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
-import { X } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { X, Search, Plus, Minus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter, errorMessage } from '../lib/print';
+import {
+  classifyProductCategory,
+  CATEGORY_DEFINITIONS,
+  getCategoryInfo,
+  type LiquorCategoryKey,
+} from '../components/category-icons';
 
 type Table = {
   id: string;
@@ -97,11 +103,93 @@ export function Tables() {
 
   // New KOT Form State
   const [kotDest, setKotDest] = useState<'BAR' | 'KITCHEN'>('BAR');
+  const [kotCategoryFilter, setKotCategoryFilter] = useState<LiquorCategoryKey>('ALL');
+  const [kotSearch, setKotSearch] = useState('');
   const [kotItems, setKotItems] = useState<{ productId: string; servingId?: string; quantity: number }[]>([
     { productId: '', quantity: 1 }
   ]);
   const [kotNotes, setKotNotes] = useState('');
   const [kotSubmitting, setKotSubmitting] = useState(false);
+
+  const addItemToKot = (product: Product, servingId?: string) => {
+    setKotItems((prev) => {
+      const idx = prev.findIndex((it) => it.productId === product.id && (it.servingId ?? '') === (servingId ?? ''));
+      if (idx >= 0) {
+        return prev.map((it, i) => (i === idx ? { ...it, quantity: it.quantity + 1 } : it));
+      }
+      if (prev.length === 1 && !prev[0].productId) {
+        return [{ productId: product.id, servingId, quantity: 1 }];
+      }
+      return [...prev, { productId: product.id, servingId, quantity: 1 }];
+    });
+  };
+
+  const updateKotItemQty = (index: number, delta: number) => {
+    setKotItems((prev) =>
+      prev.map((it, i) => (i === index ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it))
+    );
+  };
+
+  const availableKotProducts = useMemo(() => {
+    const q = kotSearch.trim().toLowerCase();
+    return products.filter((p) => {
+      if (p.isAvailable === false) return false;
+
+      const matchesDest = kotDest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p);
+      if (!matchesDest) return false;
+
+      if (kotCategoryFilter !== 'ALL') {
+        const catKey = classifyProductCategory(p);
+        if (catKey !== kotCategoryFilter) return false;
+      }
+
+      if (q) {
+        const matchesQuery =
+          p.name.toLowerCase().includes(q) ||
+          ((p as any).brand ?? '').toLowerCase().includes(q) ||
+          ((p as any).categoryName ?? '').toLowerCase().includes(q);
+        if (!matchesQuery) return false;
+      }
+
+      return true;
+    });
+  }, [products, kotDest, kotCategoryFilter, kotSearch]);
+
+  const kotCategoryTabs = useMemo(() => {
+    const destProds = products.filter(
+      (p) => p.isAvailable !== false && (kotDest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p))
+    );
+
+    const counts: Record<LiquorCategoryKey, number> = {
+      ALL: destProds.length,
+      WHISKY: 0,
+      SCOTCH: 0,
+      BEER: 0,
+      WINE: 0,
+      VODKA: 0,
+      RUM: 0,
+      GIN: 0,
+      BRANDY: 0,
+      FOOD: 0,
+      OTHER: 0,
+    };
+
+    for (const p of destProds) {
+      const k = classifyProductCategory(p);
+      counts[k] = (counts[k] || 0) + 1;
+    }
+
+    if (kotDest === 'KITCHEN') {
+      return [
+        { id: 'ALL' as LiquorCategoryKey, label: 'All Dishes', emoji: '🍽️', count: counts.ALL },
+        ...(counts.FOOD > 0 ? [{ id: 'FOOD' as LiquorCategoryKey, label: 'Kitchen Dishes', emoji: '🍳', count: counts.FOOD }] : []),
+      ];
+    }
+
+    return CATEGORY_DEFINITIONS.filter((def) => def.id !== 'FOOD')
+      .map((def) => ({ ...def, count: counts[def.id] || 0 }))
+      .filter((def) => def.id === 'ALL' || def.count > 0);
+  }, [products, kotDest]);
 
   // View KOTs State
   const [tableKots, setTableKots] = useState<KotOrder[]>([]);
@@ -187,6 +275,8 @@ export function Tables() {
 
   const handleOpenKotModal = (dest: 'BAR' | 'KITCHEN' = 'BAR') => {
     setKotDest(dest);
+    setKotCategoryFilter('ALL');
+    setKotSearch('');
     const validProds = products.filter(
       (p) => p.isAvailable !== false && (dest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p))
     );
@@ -462,7 +552,7 @@ export function Tables() {
       {/* Global Modals for Table & KOT Actions */}
       {activeModal && (
         <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full overflow-hidden border dark:border-gray-700">
+          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full overflow-hidden border dark:border-gray-700 ${activeModal === 'newKot' ? 'max-w-3xl' : 'max-w-lg'}`}>
             <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
               <h2 className="text-lg font-bold" id="modalTitle">
                 {activeModal === 'actions' && `${selectedTable?.name} - occupied`}
@@ -627,153 +717,368 @@ export function Tables() {
                 );
                 return (
                   <form onSubmit={handleCreateKot} className="space-y-4">
-                    <div>
-                      <label htmlFor="kotDest" className="block text-xs font-semibold mb-1 text-gray-500">
-                        Destination
-                      </label>
+                    {/* Destination toggle */}
+                    <div className="flex items-center justify-between gap-3 bg-gray-50 dark:bg-gray-750 p-2.5 rounded-lg border dark:border-gray-700">
+                      <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                        Order Destination:
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setKotDest('BAR');
+                            setKotCategoryFilter('ALL');
+                            setKotSearch('');
+                          }}
+                          className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                            kotDest === 'BAR'
+                              ? 'bg-purple-600 text-white shadow-sm'
+                              : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          <span>🍸</span> Bar (Drinks &amp; Liquor)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setKotDest('KITCHEN');
+                            setKotCategoryFilter('ALL');
+                            setKotSearch('');
+                          }}
+                          className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                            kotDest === 'KITCHEN'
+                              ? 'bg-purple-600 text-white shadow-sm'
+                              : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          <span>🍳</span> Kitchen (Food &amp; Snacks)
+                        </button>
+                      </div>
                       <select
                         id="kotDest"
                         value={kotDest}
                         onChange={(e) => {
                           const newDest = e.target.value as 'BAR' | 'KITCHEN';
                           setKotDest(newDest);
-                          const validProds = products.filter(
-                            (p) => p.isAvailable !== false && (newDest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p))
-                          );
-                          setKotItems([{ productId: validProds[0]?.id || '', quantity: 1 }]);
+                          setKotCategoryFilter('ALL');
+                          setKotSearch('');
                         }}
-                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        className="sr-only"
+                        aria-hidden="true"
+                        tabIndex={-1}
                       >
-                        <option value="BAR">🍸 Bar (Drinks &amp; Liquor)</option>
-                        <option value="KITCHEN">🍳 Kitchen (Food &amp; Snacks)</option>
+                        <option value="BAR">BAR</option>
+                        <option value="KITCHEN">KITCHEN</option>
                       </select>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {kotDest === 'KITCHEN'
-                          ? 'Showing food dishes and snacks only for Kitchen KOT.'
-                          : 'Showing bar drinks, peg servings, and counter bottles.'}
-                      </p>
                     </div>
 
-                    <div id="kotLines" className="space-y-3">
-                      {kotItems.map((item, idx) => (
-                        <div key={idx} className="kot-line flex gap-2 items-center">
-                          <select
-                            className="kot-product flex-1 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                            aria-label="Product"
-                            value={item.productId}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setKotItems((prev) =>
-                                prev.map((it, i) => (i === idx ? { ...it, productId: val, servingId: undefined } : it))
-                              );
-                            }}
+                    {/* Category Filter Pills */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-semibold text-gray-500">
+                        <span>Filter by Category</span>
+                        {kotCategoryFilter !== 'ALL' && (
+                          <button
+                            type="button"
+                            onClick={() => setKotCategoryFilter('ALL')}
+                            className="text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
                           >
-                            {availableProducts.length === 0 ? (
-                              <option value="">No {kotDest === 'KITCHEN' ? 'kitchen food' : 'bar'} items found</option>
-                            ) : (
-                              availableProducts.map((p) => {
-                                const stockQty = p.currentStock ?? p.stockQuantity ?? 0;
-                                const isTracked = p.trackStock !== false;
-                                let stockLabel = '';
-                                if (isTracked) {
-                                  stockLabel = stockQty <= 0
-                                    ? ' [⚠️ Out of Stock]'
-                                    : ` [Stock: ${stockQty} btl${p.openMl ? `, ${p.openMl}ml open` : ''}]`;
-                                } else {
-                                  stockLabel = ' [Kitchen Fresh]';
-                                }
-                                return (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name} {p.mrp ? `(₹${parseFloat(p.mrp)})` : ''}{stockLabel}
-                                  </option>
-                                );
-                              })
-                            )}
-                          </select>
-                          {(products.find((p) => p.id === item.productId)?.servings ?? []).length > 0 && (
-                            <select
-                              className="kot-serving w-36 p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                              aria-label="Serving"
-                              value={item.servingId ?? ''}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setKotItems((prev) => prev.map((it, i) => (i === idx ? { ...it, servingId: val || undefined } : it)));
-                              }}
+                            Show all categories
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-none" id="kotCategoryFilters">
+                        {kotCategoryTabs.map((cat) => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => setKotCategoryFilter(cat.id)}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5 border cursor-pointer ${
+                              kotCategoryFilter === cat.id
+                                ? 'bg-purple-600 text-white border-purple-600 shadow-sm font-semibold'
+                                : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-650'
+                            }`}
+                          >
+                            <span>{cat.emoji}</span>
+                            <span>{cat.label}</span>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                kotCategoryFilter === cat.id
+                                  ? 'bg-purple-700 text-white'
+                                  : 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+                              }`}
                             >
-                              <option value="">Bottle rate</option>
-                              {products.find((p) => p.id === item.productId)!.servings!.map((s) => (
-                                <option key={s.id} value={s.id}>{s.label} — ₹{parseFloat(s.price)}</option>
-                              ))}
-                            </select>
-                          )}
-                          <input
-                            type="number"
-                            min={1}
-                            max={50}
-                            className="kot-qty w-20 p-2 border rounded text-sm text-right dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                            value={item.quantity}
-                            onChange={(e) => {
-                              const q = parseInt(e.target.value) || 1;
-                              setKotItems((prev) =>
-                                prev.map((it, i) => (i === idx ? { ...it, quantity: q } : it))
-                              );
-                            }}
-                          />
-                          {kotItems.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => setKotItems((prev) => prev.filter((_, i) => i !== idx))}
-                              className="p-1.5 text-gray-400 hover:text-red-500 rounded text-sm"
-                              aria-label="Remove line"
-                              title="Remove item"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                      ))}
+                              {cat.count}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setKotItems((prev) => [...prev, { productId: availableProducts[0]?.id || '', quantity: 1 }])
-                      }
-                      className="text-xs text-purple-600 dark:text-purple-400 font-semibold cursor-pointer"
-                    >
-                      + Add item
-                    </button>
+                    {/* Search Bar */}
+                    <div className="relative">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                      <input
+                        type="search"
+                        id="kotSearch"
+                        value={kotSearch}
+                        onChange={(e) => setKotSearch(e.target.value)}
+                        placeholder={`Search ${kotDest === 'BAR' ? 'whisky, scotch, beer, wine, vodka, brands...' : 'food dishes, snacks...'}`}
+                        className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                      {kotSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setKotSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5 rounded cursor-pointer"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
 
+                    {/* Quick-Add Drink Catalog Grid */}
+                    <div>
+                      <div className="text-xs font-semibold text-gray-500 mb-1.5 flex items-center justify-between">
+                        <span>Available {kotDest === 'BAR' ? 'Drinks' : 'Kitchen Items'} ({availableKotProducts.length})</span>
+                        <span className="text-[11px] text-gray-400">Click + Add to select</span>
+                      </div>
+                      {availableKotProducts.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-gray-500 bg-gray-50 dark:bg-gray-750 rounded-lg border border-dashed dark:border-gray-700">
+                          No items match "{kotSearch}"
+                          {kotCategoryFilter !== 'ALL' ? ` in ${kotCategoryFilter.toLowerCase()}` : ''}.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1.5 border rounded-lg dark:border-gray-700 bg-gray-50/50 dark:bg-gray-750/30">
+                          {availableKotProducts.map((p) => {
+                            const stockQty = p.currentStock ?? p.stockQuantity ?? 0;
+                            const isTracked = p.trackStock !== false;
+                            const isOut = isTracked && stockQty <= 0;
+                            const catInfo = getCategoryInfo(p.categoryName, p.name);
+                            const inKotCount = kotItems.filter((i) => i.productId === p.id).reduce((sum, i) => sum + i.quantity, 0);
+
+                            return (
+                              <div
+                                key={p.id}
+                                className={`p-2 bg-white dark:bg-gray-800 rounded-lg border text-xs flex items-center justify-between gap-2 shadow-xs transition-colors ${
+                                  isOut
+                                    ? 'opacity-60 border-red-200 dark:border-red-900/50'
+                                    : inKotCount > 0
+                                    ? 'border-purple-300 dark:border-purple-600 bg-purple-50/20 dark:bg-purple-950/20'
+                                    : 'border-gray-200 dark:border-gray-700 hover:border-purple-200'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span>{catInfo.emoji}</span>
+                                    <span className="font-semibold truncate text-gray-800 dark:text-gray-100" title={p.name}>
+                                      {p.name}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                                    <span className="font-mono font-semibold text-purple-600 dark:text-purple-400">
+                                      ₹{parseFloat(p.mrp || '0')}
+                                    </span>
+                                    {isTracked ? (
+                                      isOut ? (
+                                        <span className="text-red-600 dark:text-red-400 font-semibold">Out of stock</span>
+                                      ) : (
+                                        <span className="text-emerald-700 dark:text-emerald-400">
+                                          Stock: {stockQty} btl{p.openMl ? `, ${p.openMl}ml open` : ''}
+                                        </span>
+                                      )
+                                    ) : (
+                                      <span className="text-gray-400">Kitchen</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="shrink-0 flex items-center gap-1.5">
+                                  {inKotCount > 0 && (
+                                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 rounded">
+                                      {inKotCount} in KOT
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => addItemToKot(p)}
+                                    className="p-1 px-2.5 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/60 dark:hover:bg-purple-800 text-purple-700 dark:text-purple-300 rounded font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1"
+                                  >
+                                    <Plus size={13} />
+                                    <span>Add</span>
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Order Lines (View & Count) */}
+                    <div>
+                      <div className="flex items-center justify-between text-xs font-semibold text-gray-500 mb-1.5">
+                        <span>Selected Items ({kotItems.filter((i) => i.productId).length} items, {kotItems.reduce((sum, i) => sum + (i.productId ? i.quantity : 0), 0)} total)</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setKotItems((prev) => [
+                              ...prev,
+                              { productId: availableProducts[0]?.id || products[0]?.id || '', quantity: 1 },
+                            ])
+                          }
+                          className="text-xs text-purple-600 dark:text-purple-400 font-semibold hover:underline cursor-pointer"
+                        >
+                          + Add custom row
+                        </button>
+                      </div>
+
+                      <div id="kotLines" className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                        {kotItems.map((item, idx) => {
+                          const prod = products.find((p) => p.id === item.productId);
+                          const hasServings = (prod?.servings ?? []).length > 0;
+
+                          return (
+                            <div
+                              key={idx}
+                              className="kot-line p-2.5 bg-white dark:bg-gray-750 border dark:border-gray-700 rounded-lg flex flex-wrap sm:flex-nowrap items-center gap-2"
+                            >
+                              <select
+                                className="kot-product flex-1 min-w-[180px] p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                aria-label="Product"
+                                value={item.productId}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setKotItems((prev) =>
+                                    prev.map((it, i) => (i === idx ? { ...it, productId: val, servingId: undefined } : it))
+                                  );
+                                }}
+                              >
+                                {availableProducts.map((p) => {
+                                  const sQty = p.currentStock ?? p.stockQuantity ?? 0;
+                                  const isTrk = p.trackStock !== false;
+                                  const sLabel = isTrk
+                                    ? sQty <= 0
+                                      ? ' [⚠️ Out of Stock]'
+                                      : ` [Stock: ${sQty} btl${p.openMl ? `, ${p.openMl}ml open` : ''}]`
+                                    : ' [Kitchen]';
+                                  return (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} {p.mrp ? `(₹${parseFloat(p.mrp)})` : ''}{sLabel}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+
+                              {hasServings && (
+                                <select
+                                  className="kot-serving w-32 p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white shrink-0"
+                                  aria-label="Serving"
+                                  value={item.servingId ?? ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setKotItems((prev) =>
+                                      prev.map((it, i) => (i === idx ? { ...it, servingId: val || undefined } : it))
+                                    );
+                                  }}
+                                >
+                                  <option value="">Bottle rate</option>
+                                  {prod!.servings!.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.label} — ₹{parseFloat(s.price)}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+
+                              {/* Stepper ([-] [ count ] [+]) for easy counting */}
+                              <div className="flex items-center border rounded-lg dark:border-gray-600 overflow-hidden shrink-0 bg-gray-50 dark:bg-gray-700">
+                                <button
+                                  type="button"
+                                  onClick={() => updateKotItemQty(idx, -1)}
+                                  className="p-1.5 px-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                  title="Decrease quantity"
+                                  aria-label="Decrease quantity"
+                                >
+                                  <Minus size={12} />
+                                </button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={50}
+                                  className="kot-qty w-12 p-1 text-xs text-center font-bold bg-transparent dark:text-white border-x dark:border-gray-600 focus:outline-none"
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const q = parseInt(e.target.value) || 1;
+                                    setKotItems((prev) =>
+                                      prev.map((it, i) => (i === idx ? { ...it, quantity: Math.max(1, q) } : it))
+                                    );
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => updateKotItemQty(idx, 1)}
+                                  className="p-1.5 px-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                  title="Increase quantity"
+                                  aria-label="Increase quantity"
+                                >
+                                  <Plus size={12} />
+                                </button>
+                              </div>
+
+                              {kotItems.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setKotItems((prev) => prev.filter((_, i) => i !== idx))}
+                                  className="p-1.5 text-gray-400 hover:text-red-500 rounded text-xs transition-colors cursor-pointer shrink-0"
+                                  aria-label="Remove line"
+                                  title="Remove item"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Order Notes */}
                     <div>
                       <label htmlFor="kotNotes" className="block text-xs font-semibold mb-1 text-gray-500">
-                        Notes
+                        Order Notes / Instructions
                       </label>
                       <input
                         id="kotNotes"
                         maxLength={500}
                         value={kotNotes}
                         onChange={(e) => setKotNotes(e.target.value)}
-                        placeholder="e.g. Less spicy, extra ice, no onions"
-                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                        placeholder="e.g. Less spicy, extra ice, soda on side"
+                        className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-xs"
                       />
                     </div>
 
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setActiveModal(null)}
-                        className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        id="kotCreateBtn"
-                        disabled={kotSubmitting || availableProducts.length === 0}
-                        className="px-4 py-2 bg-purple-600 text-white rounded text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
-                      >
-                        {kotSubmitting ? 'Sending...' : 'Create KOT'}
-                      </button>
+                    {/* Submit Actions */}
+                    <div className="flex justify-between items-center pt-2 border-t dark:border-gray-700">
+                      <div className="text-xs font-medium text-gray-500">
+                        Total Quantity: <span className="font-bold text-gray-800 dark:text-gray-100">{kotItems.reduce((sum, i) => sum + (i.productId ? i.quantity : 0), 0)}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveModal(null)}
+                          className="px-4 py-2 border rounded-lg text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          id="kotCreateBtn"
+                          disabled={kotSubmitting || !kotItems.some((i) => i.productId && i.quantity > 0)}
+                          className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+                        >
+                          {kotSubmitting ? 'Sending...' : `Create ${kotDest === 'BAR' ? 'Bar' : 'Kitchen'} KOT (${kotItems.reduce((sum, i) => sum + (i.productId ? i.quantity : 0), 0)})`}
+                        </button>
+                      </div>
                     </div>
                   </form>
                 );
