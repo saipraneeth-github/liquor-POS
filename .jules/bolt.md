@@ -9,3 +9,7 @@
 ## $(date +%Y-%m-%d) - Optimize stock updates using bulk CASE WHEN
 **Learning:** Sequential updates for stock decrementing inside a `for (const delta of deltas)` loop for bill processing can cause severe performance issues (N+1 queries) and DB lock contention. Drizzle lacks native batch conditional updates.
 **Action:** Use a single bulk update with SQL `CASE WHEN` to aggregate multiple `update` operations into one statement. By mapping deltas to `sql\`WHEN \${stock.productId} = \${d.productId} THEN \${-d.delta}\`` and wrapping in `CAST(CASE ... END AS integer)`, Drizzle/Postgres can decrement all items in one query. Make sure to track returned `productId`s to enforce full-batch stock availability checks.
+
+## 2026-10-31 - Optimize product updates with bulk CASE WHEN to replace Promise.all
+**Learning:** Sequential `tx.update()` statements for updating multiple products (e.g. `costPrice` and `mrp` during invoice approval) run concurrently via `Promise.all` can still result in N+1 queries being sent to the database, causing DB lock contention and slowing down transaction duration, especially with large invoices.
+**Action:** Replace `Promise.all` with a single bulk update using SQL `CASE WHEN` to aggregate multiple `update` operations into one statement. Iterate over a map of updates to dynamically construct conditional logic like `sql\`WHEN ${products.id} = ${id} THEN ${data.costPrice}\`` and wrap it in `CAST(CASE ... END AS numeric)`. This significantly improves database efficiency.

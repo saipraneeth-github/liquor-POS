@@ -204,10 +204,25 @@ export async function applyApprovedInvoice(
   await tx.insert(stockAudit).values(stockAuditInserts);
 
   // Batch update products
-  const productUpdates = Array.from(productUpdatesMap.entries()).map(([id, updateData]) =>
-    tx.update(products).set(updateData).where(eq(products.id, id))
-  );
-  await Promise.all(productUpdates);
+  const updatesArr = Array.from(productUpdatesMap.entries());
+  if (updatesArr.length > 0) {
+    // ⚡ Bolt Optimization: Batch update products with CASE WHEN
+    // Replaces O(N) sequential database updates with a single query.
+    // Impact: Eliminates N+1 queries during invoice approval, massively reducing DB lock contention and transaction duration.
+    const costPriceCaseSql = sql`CAST(CASE ${sql.join(
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costPrice !== undefined ? data.costPrice : products.costPrice}`),
+      sql` `
+    )} ELSE ${products.costPrice} END AS numeric)`;
+
+    const mrpCaseSql = sql`CAST(CASE ${sql.join(
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.mrp !== undefined ? data.mrp : products.mrp}`),
+      sql` `
+    )} ELSE ${products.mrp} END AS numeric)`;
+
+    await tx.update(products)
+      .set({ costPrice: costPriceCaseSql, mrp: mrpCaseSql })
+      .where(inArray(products.id, updatesArr.map(([id]) => id)));
+  }
 
   // Batch insert price audits if any
   if (priceAuditInserts.length > 0) {
