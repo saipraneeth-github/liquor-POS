@@ -729,6 +729,16 @@ export function Tables() {
                       </>
                     )}
                   </div>
+                  <div className="flex justify-end pt-3 border-t dark:border-gray-700">
+                    <button
+                      type="button"
+                      id="tblActDoneBtn"
+                      onClick={() => setActiveModal(null)}
+                      className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg text-xs font-semibold transition cursor-pointer"
+                    >
+                      Done / Close
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1266,15 +1276,15 @@ export function Tables() {
                           onClick={() => setActiveModal(null)}
                           className="px-4 py-2 border rounded-lg text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                         >
-                          Cancel
+                          Cancel / Done
                         </button>
                         <button
                           type="submit"
                           id="kotCreateBtn"
                           disabled={kotSubmitting || !kotItems.some((i) => i.productId && i.quantity > 0)}
-                          className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 disabled:opacity-50 transition-colors shadow-sm cursor-pointer"
+                          className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 disabled:opacity-50 transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
                         >
-                          {kotSubmitting ? 'Sending...' : `Create ${kotDest === 'BAR' ? 'Bar' : 'Kitchen'} KOT (${kotItems.reduce((sum, i) => sum + (i.productId ? i.quantity : 0), 0)})`}
+                          <span>✓</span> {kotSubmitting ? 'Submitting KOT...' : `Submit & Create ${kotDest === 'BAR' ? 'Bar' : 'Kitchen'} KOT (${kotItems.reduce((sum, i) => sum + (i.productId ? i.quantity : 0), 0)})`}
                         </button>
                       </div>
                     </div>
@@ -1428,6 +1438,52 @@ export function Tables() {
                         );
                       })
                     )}
+
+                    {/* Bottom Action Footer for KOT View Modal */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t dark:border-gray-700 bg-white dark:bg-gray-800 sticky bottom-0">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          id="kotBackToActions"
+                          onClick={() => setActiveModal('actions')}
+                          className="px-3.5 py-2 border rounded-lg text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition cursor-pointer"
+                        >
+                          ← Table Actions
+                        </button>
+                        <button
+                          type="button"
+                          id="kotAddNewBtn"
+                          onClick={() => handleOpenKotModal('BAR')}
+                          className="px-3 py-2 bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/40 dark:hover:bg-purple-900/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1"
+                        >
+                          <span>+</span> Add KOT
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {tableKots.some((o) => o.items.some((i) => i.status === 'PENDING' || i.status === 'PREPARING')) && (
+                          <button
+                            type="button"
+                            id="kotSubmitAllBtn"
+                            disabled={serveAllBusy}
+                            onClick={async () => {
+                              await handleServeAllSession(selectedTable!.currentSessionId!);
+                            }}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            <span>✅</span> Submit All Served
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          id="kotDoneBtn"
+                          onClick={() => setActiveModal(null)}
+                          className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-sm transition cursor-pointer flex items-center gap-1.5"
+                        >
+                          <span>✓</span> Done
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 );
               })()}
