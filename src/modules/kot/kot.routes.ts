@@ -8,7 +8,10 @@
  */
 
 import type { FastifyInstance } from 'fastify';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { db } from '../../db/client.js';
+import { kotOrders, tableSessions } from '../../db/schema.js';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
 import {
@@ -79,12 +82,25 @@ export async function kotRoutes(app: FastifyInstance) {
   app.post('/kot/:kotOrderId/serve-all', { preHandler: [requireRole('steward')] }, async (req, reply) => {
     const params = z.object({ kotOrderId: z.string().uuid() }).safeParse(req.params);
     if (!params.success) return reply.status(404).send({ error: 'KOT order not found' });
-    const body = z.object({ branchId: z.string().uuid() }).safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: 'branchId is required' });
+
+    const rawBranchId = (req.body as any)?.branchId || (req.query as any)?.branchId;
+    let targetBranchId: string;
+
+    if (rawBranchId && typeof rawBranchId === 'string' && z.string().uuid().safeParse(rawBranchId).success) {
+      targetBranchId = rawBranchId;
+    } else {
+      const [order] = await db
+        .select({ id: kotOrders.id, branchId: kotOrders.branchId })
+        .from(kotOrders)
+        .where(eq(kotOrders.id, params.data.kotOrderId));
+      if (!order) return reply.status(404).send({ error: 'KOT order not found' });
+      targetBranchId = order.branchId;
+    }
+
     const user = getUser(req);
-    if (!(await assertBranchAccess(user, body.data.branchId, reply))) return;
+    if (!(await assertBranchAccess(user, targetBranchId, reply))) return;
     try {
-      const updated = await serveAllKotOrderItems(params.data.kotOrderId, body.data.branchId);
+      const updated = await serveAllKotOrderItems(params.data.kotOrderId, targetBranchId);
       return reply.send({ count: updated.length, items: updated });
     } catch (err) {
       return sendError(reply, err, 'Serve all failed');
@@ -95,12 +111,25 @@ export async function kotRoutes(app: FastifyInstance) {
   app.post('/kot/session/:sessionId/serve-all', { preHandler: [requireRole('steward')] }, async (req, reply) => {
     const params = SessionParams.safeParse(req.params);
     if (!params.success) return reply.status(404).send({ error: 'Session not found' });
-    const body = z.object({ branchId: z.string().uuid() }).safeParse(req.body);
-    if (!body.success) return reply.status(400).send({ error: 'branchId is required' });
+
+    const rawBranchId = (req.body as any)?.branchId || (req.query as any)?.branchId;
+    let targetBranchId: string;
+
+    if (rawBranchId && typeof rawBranchId === 'string' && z.string().uuid().safeParse(rawBranchId).success) {
+      targetBranchId = rawBranchId;
+    } else {
+      const [session] = await db
+        .select({ id: tableSessions.id, branchId: tableSessions.branchId })
+        .from(tableSessions)
+        .where(eq(tableSessions.id, params.data.sessionId));
+      if (!session) return reply.status(404).send({ error: 'Session not found' });
+      targetBranchId = session.branchId;
+    }
+
     const user = getUser(req);
-    if (!(await assertBranchAccess(user, body.data.branchId, reply))) return;
+    if (!(await assertBranchAccess(user, targetBranchId, reply))) return;
     try {
-      const updated = await serveAllSessionKotItems(params.data.sessionId, body.data.branchId);
+      const updated = await serveAllSessionKotItems(params.data.sessionId, targetBranchId);
       return reply.send({ count: updated.length, items: updated });
     } catch (err) {
       return sendError(reply, err, 'Serve all failed');

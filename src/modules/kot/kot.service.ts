@@ -168,7 +168,7 @@ export async function serveAllKotOrderItems(kotOrderId: string, branchId: string
       .where(eq(kotItems.kotOrderId, kotOrderId));
 
     let orderStatus: 'PENDING' | 'PREPARING' | 'SERVED' | 'CANCELLED' = 'PENDING';
-    if (allItems.every((i) => i.status === 'SERVED' || i.status === 'CANCELLED')) {
+    if (allItems.length > 0 && allItems.every((i) => i.status === 'SERVED' || i.status === 'CANCELLED')) {
       orderStatus = allItems.every((i) => i.status === 'CANCELLED') ? 'CANCELLED' : 'SERVED';
     } else if (allItems.some((i) => i.status === 'PREPARING' || i.status === 'SERVED')) {
       orderStatus = 'PREPARING';
@@ -205,7 +205,7 @@ export async function serveAllSessionKotItems(tableSessionId: string, branchId: 
         .where(eq(kotItems.kotOrderId, orderId));
 
       let orderStatus: 'PENDING' | 'PREPARING' | 'SERVED' | 'CANCELLED' = 'PENDING';
-      if (allItems.every((i) => i.status === 'SERVED' || i.status === 'CANCELLED')) {
+      if (allItems.length > 0 && allItems.every((i) => i.status === 'SERVED' || i.status === 'CANCELLED')) {
         orderStatus = allItems.every((i) => i.status === 'CANCELLED') ? 'CANCELLED' : 'SERVED';
       } else if (allItems.some((i) => i.status === 'PREPARING' || i.status === 'SERVED')) {
         orderStatus = 'PREPARING';

@@ -333,25 +333,33 @@ export function Tables() {
 
   const handleUpdateKotStatus = async (orderId: string, itemId: string, newStatus: string) => {
     try {
-      await api.patch(`/kot/${orderId}/items/${itemId}`, { status: newStatus, branchId });
+      const effectiveBranchId = branchId || (selectedTable as any)?.branchId || '';
+      await api.patch(`/kot/${orderId}/items/${itemId}`, { status: newStatus, branchId: effectiveBranchId });
       showToast(`Item marked ${newStatus}`, 'success');
       // Refresh KOTs
       if (selectedTable?.currentSessionId) {
         const res = await api.get<{ kotOrders: KotOrder[] }>(
-          `/kot/session/${selectedTable.currentSessionId}?branchId=${branchId}`
+          `/kot/session/${selectedTable.currentSessionId}?branchId=${effectiveBranchId}`
         );
         setTableKots(res.kotOrders || []);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Update failed';
-      showToast(`Update failed: ${msg}`, 'error');
+      showToast(`Update failed: ${errorMessage(err)}`, 'error');
     }
   };
 
-  const handleServeAllSession = async (sessionId: string) => {
+  const handleServeAllSession = async (sessionId?: string | null) => {
+    const sId = sessionId || selectedTable?.currentSessionId;
+    if (!sId) {
+      showToast('No active table session found', 'error');
+      return;
+    }
     setServeAllBusy(true);
     try {
-      const res = await api.post<{ count: number }>(`/kot/session/${sessionId}/serve-all`, { branchId });
+      const effectiveBranchId = branchId || (selectedTable as any)?.branchId || '';
+      const res = await api.post<{ count: number }>(`/kot/session/${sId}/serve-all`, {
+        branchId: effectiveBranchId,
+      });
       showToast(
         res.count > 0
           ? `All active items marked as SERVED (${res.count} items)`
@@ -360,25 +368,28 @@ export function Tables() {
       );
       // Refresh KOTs
       const kotRes = await api.get<{ kotOrders: KotOrder[] }>(
-        `/kot/session/${sessionId}?branchId=${branchId}`
+        `/kot/session/${sId}?branchId=${effectiveBranchId}`
       );
       setTableKots(kotRes.kotOrders || []);
       await loadTables();
       loadProducts();
-      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
+      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId: effectiveBranchId } }));
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Serve all failed';
-      showToast('Failed to mark all served: ' + msg, 'error');
+      showToast('Failed to mark all served: ' + errorMessage(err), 'error');
     } finally {
       setServeAllBusy(false);
     }
   };
 
   const handleServeAllKot = async (orderId: string) => {
-    if (!selectedTable?.currentSessionId) return;
+    const sId = selectedTable?.currentSessionId;
+    if (!orderId) return;
     setServeAllBusy(true);
     try {
-      const res = await api.post<{ count: number }>(`/kot/${orderId}/serve-all`, { branchId });
+      const effectiveBranchId = branchId || (selectedTable as any)?.branchId || '';
+      const res = await api.post<{ count: number }>(`/kot/${orderId}/serve-all`, {
+        branchId: effectiveBranchId,
+      });
       showToast(
         res.count > 0
           ? `KOT items marked as SERVED (${res.count} items)`
@@ -386,16 +397,17 @@ export function Tables() {
         'success'
       );
       // Refresh KOTs
-      const kotRes = await api.get<{ kotOrders: KotOrder[] }>(
-        `/kot/session/${selectedTable.currentSessionId}?branchId=${branchId}`
-      );
-      setTableKots(kotRes.kotOrders || []);
+      if (sId) {
+        const kotRes = await api.get<{ kotOrders: KotOrder[] }>(
+          `/kot/session/${sId}?branchId=${effectiveBranchId}`
+        );
+        setTableKots(kotRes.kotOrders || []);
+      }
       await loadTables();
       loadProducts();
-      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
+      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId: effectiveBranchId } }));
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Serve KOT failed';
-      showToast('Failed to serve KOT: ' + msg, 'error');
+      showToast('Failed to serve KOT: ' + errorMessage(err), 'error');
     } finally {
       setServeAllBusy(false);
     }
@@ -686,7 +698,7 @@ export function Tables() {
                       type="button"
                       id="tblActServeAll"
                       disabled={serveAllBusy}
-                      onClick={() => handleServeAllSession(selectedTable!.currentSessionId!)}
+                      onClick={() => handleServeAllSession(selectedTable?.currentSessionId)}
                       className="px-4 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 text-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-sm"
                       title="Mark all pending and preparing items as SERVED with one click"
                     >
@@ -1332,7 +1344,7 @@ export function Tables() {
                           type="button"
                           id="tblServeAllModalBtn"
                           disabled={serveAllBusy}
-                          onClick={() => handleServeAllSession(selectedTable!.currentSessionId!)}
+                          onClick={() => handleServeAllSession(selectedTable?.currentSessionId)}
                           className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-semibold disabled:opacity-50 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                           title="Mark all pending and preparing items across all KOTs as SERVED"
                         >
@@ -1455,7 +1467,7 @@ export function Tables() {
                             id="kotSubmitAllBtn"
                             disabled={serveAllBusy}
                             onClick={async () => {
-                              await handleServeAllSession(selectedTable!.currentSessionId!);
+                              await handleServeAllSession(selectedTable?.currentSessionId);
                             }}
                             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                           >

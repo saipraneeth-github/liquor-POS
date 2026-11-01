@@ -171,10 +171,18 @@ describe('tables and KOT', () => {
     expect(sSession.statusCode).toBe(200);
     expect(sSession.json().count).toBeGreaterThanOrEqual(2);
 
-    // Calling serve-all again when all are served returns count 0
-    const sAgain = await inject('POST', `/kot/session/${sessionId}/serve-all`, ctx.auth('steward'), { branchId: ctx.branchId });
+    // Calling serve-all again when all are served returns count 0 (even without branchId in body)
+    const sAgain = await inject('POST', `/kot/session/${sessionId}/serve-all`, ctx.auth('steward'), {});
     expect(sAgain.statusCode).toBe(200);
     expect(sAgain.json().count).toBe(0);
+
+    // Create a new KOT k3 to test serve-all with empty body
+    const k3 = (await inject('POST', '/kot', ctx.auth('steward'), {
+      tableSessionId: sessionId, branchId: ctx.branchId, items: [{ productId: ctx.products[0].id, quantity: 1 }],
+    })).json().kotOrder;
+    const sAuto = await inject('POST', `/kot/${k3.id}/serve-all`, ctx.auth('steward'), {});
+    expect(sAuto.statusCode).toBe(200);
+    expect(sAuto.json().count).toBe(1);
   });
 
   it('closes the table; KOT on a closed session → 404; closing again → 409', async () => {
