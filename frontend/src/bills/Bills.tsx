@@ -26,6 +26,9 @@ type Bill = {
   discount: string;
   roundOff?: string | null;
   total: string;
+  customerId?: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
   items: BillItem[];
   voidedAt?: string | null;
   voidReason?: string | null;
@@ -239,9 +242,18 @@ export function Bills() {
                       {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="p-3">
-                      <span className="px-2 py-0.5 text-xs rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-medium">
+                      <span className={`px-2 py-0.5 text-xs rounded font-medium ${
+                        b.paymentMode === 'CREDIT'
+                          ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
+                          : 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300'
+                      }`}>
                         {b.paymentMode}
                       </span>
+                      {b.customerName && (
+                        <div className="text-[11px] text-gray-500 font-medium truncate max-w-[130px]" title={b.customerName}>
+                          👤 {b.customerName}
+                        </div>
+                      )}
                     </td>
                     <td className="p-3">
                       <span
@@ -385,6 +397,19 @@ export function Bills() {
                       {new Date(selectedBill.createdAt).toLocaleString()}
                     </span>
                   </div>
+
+                  {selectedBill.paymentMode === 'CREDIT' && selectedBill.customerName && (
+                    <div className="p-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded text-xs flex justify-between items-center">
+                      <div>
+                        <span className="font-semibold text-amber-900 dark:text-amber-200">Khata Customer:</span>{' '}
+                        <span className="font-bold">{selectedBill.customerName}</span>
+                        {selectedBill.customerPhone && <span className="text-gray-500"> ({selectedBill.customerPhone})</span>}
+                      </div>
+                      <span className="px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 text-[10px] font-bold">
+                        UDHAR / CREDIT
+                      </span>
+                    </div>
+                  )}
 
                   <div className="border rounded dark:border-gray-700 overflow-hidden">
                     <table className="w-full text-left text-xs">

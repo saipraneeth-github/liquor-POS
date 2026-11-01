@@ -498,7 +498,16 @@ export async function voidBill(
 // ─── BILL LOOKUP ─────────────────────────────────────────────────────────────
 
 export async function getBillHeader(billId: string) {
-  const [bill] = await db.select().from(bills).where(eq(bills.id, billId)).limit(1);
+  const [bill] = await db
+    .select({
+      ...getTableColumns(bills),
+      customerName: customers.name,
+      customerPhone: customers.phone,
+    })
+    .from(bills)
+    .leftJoin(customers, eq(bills.customerId, customers.id))
+    .where(eq(bills.id, billId))
+    .limit(1);
   return bill ?? null;
 }
 
@@ -529,7 +538,15 @@ export async function listBills(query: ListBillsQuery) {
   const where = and(...conditions);
 
   const [rows, [{ count }]] = await Promise.all([
-    db.select().from(bills).where(where)
+    db
+      .select({
+        ...getTableColumns(bills),
+        customerName: customers.name,
+        customerPhone: customers.phone,
+      })
+      .from(bills)
+      .leftJoin(customers, eq(bills.customerId, customers.id))
+      .where(where)
       .orderBy(desc(bills.createdAt), desc(bills.billNumber))
       .limit(query.limit)
       .offset(query.offset),

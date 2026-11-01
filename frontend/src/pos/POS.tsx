@@ -93,6 +93,13 @@ export function POS() {
   const [creditQuery, setCreditQuery] = useState('');
   const [creditResults, setCreditResults] = useState<KhataCustomer[]>([]);
   const [creditCustomer, setCreditCustomer] = useState<KhataCustomer | null>(null);
+  const [loadingCredit, setLoadingCredit] = useState(false);
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [newCustName, setNewCustName] = useState('');
+  const [newCustPhone, setNewCustPhone] = useState('');
+  const [newCustLimit, setNewCustLimit] = useState('5000');
+  const [newCustAllow, setNewCustAllow] = useState(true);
+  const [creatingCust, setCreatingCust] = useState(false);
   const [checkoutModal, setCheckoutModal] = useState<{
     title: string;
     billId?: string;
@@ -286,21 +293,80 @@ export function POS() {
     );
   };
 
+  const loadCustomers = useCallback((q?: string) => {
+    if (!branchId) return;
+    setLoadingCredit(true);
+    const searchParam = q?.trim() ? `?search=${encodeURIComponent(q.trim())}&limit=25` : '?limit=25';
+    fetch(`/api/v1/customers/${branchId}${searchParam}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    })
+      .then((r) => (r.ok ? r.json() : { customers: [] }))
+      .then((d) => setCreditResults(d.customers || []))
+      .catch(() => setCreditResults([]))
+      .finally(() => setLoadingCredit(false));
+  }, [branchId]);
+
   useEffect(() => {
-    if (paymentMode !== 'CREDIT' || !branchId || !creditQuery.trim()) {
+    if (paymentMode !== 'CREDIT' || !branchId) {
       setCreditResults([]);
       return;
     }
     const timer = setTimeout(() => {
-      fetch(`/api/v1/customers/${branchId}?search=${encodeURIComponent(creditQuery.trim())}&limit=8`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      })
-        .then((r) => (r.ok ? r.json() : { customers: [] }))
-        .then((d) => setCreditResults(d.customers || []))
-        .catch(() => setCreditResults([]));
-    }, 200);
+      loadCustomers(creditQuery);
+    }, creditQuery.trim() ? 250 : 0);
     return () => clearTimeout(timer);
-  }, [paymentMode, branchId, creditQuery]);
+  }, [paymentMode, branchId, creditQuery, loadCustomers]);
+
+  const handleCreateCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!branchId) return;
+    const phoneTrimmed = newCustPhone.trim();
+    if (!/^[6-9]\d{9}$/.test(phoneTrimmed)) {
+      showToast('Enter a valid 10-digit mobile number starting with 6–9.', 'error');
+      return;
+    }
+    if (!newCustName.trim()) {
+      showToast('Customer name is required.', 'error');
+      return;
+    }
+
+    setCreatingCust(true);
+    try {
+      const isManager = ['manager', 'owner'].includes(user?.role || '');
+      const body: any = {
+        name: newCustName.trim(),
+        phone: phoneTrimmed,
+      };
+      if (isManager) {
+        if (newCustLimit.trim()) body.creditLimit = newCustLimit.trim();
+        body.creditAllowed = newCustAllow;
+      }
+      const res = await fetch(`/api/v1/customers/${branchId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create customer');
+      }
+      showToast(`Customer created: ${data.customer.name}`, 'success');
+      setCreditCustomer(data.customer);
+      setShowAddCustomer(false);
+      setNewCustName('');
+      setNewCustPhone('');
+      setNewCustLimit('5000');
+      setNewCustAllow(true);
+      loadCustomers();
+    } catch (err: any) {
+      showToast(err.message || 'Could not create customer', 'error');
+    } finally {
+      setCreatingCust(false);
+    }
+  };
 
   const cartSubtotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.qty, 0);
   const discountPctNum = Math.max(0, Math.min(100, parseFloat(discountPercent) || 0));
@@ -315,6 +381,13 @@ export function POS() {
       }
       if (!creditCustomer.creditAllowed || !creditCustomer.isActive) {
         showToast('Credit is not allowed for this customer.', 'error');
+        return;
+      }
+      const limit = parseFloat(creditCustomer.creditLimit || '0');
+      const used = parseFloat(creditCustomer.currentCredit || '0');
+      if (limit > 0 && (used + cartTotal) > limit) {
+        const rem = Math.max(0, limit - used);
+        showToast(`Cannot proceed: Bill (₹${cartTotal.toFixed(2)}) exceeds customer's remaining credit (₹${rem.toFixed(2)}).`, 'error');
         return;
       }
     }
@@ -338,7 +411,12 @@ export function POS() {
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok && res.status !== 200) throw new Error('checkout failed');
+      if (!res.ok && res.status !== 200) {
+        const errJson = await res.json().catch(() => null);
+        const errMsg = errJson?.error || errJson?.message || 'Checkout failed';
+        showToast(errMsg, 'error');
+        return;
+      }
       const data = await res.json();
       const custName = creditCustomer?.name;
       setCart([]);
@@ -690,52 +768,229 @@ export function POS() {
             ))}
           </div>
           {paymentMode === 'CREDIT' && (
-            <div id="creditBox" className="space-y-1.5 text-xs">
-              <input
-                id="creditSearch"
-                className="w-full p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
-                placeholder="Search khata customer…"
-                value={creditQuery}
-                onChange={(e) => setCreditQuery(e.target.value)}
-              />
-              {creditResults.length > 0 && (
-                <div id="creditResults" className="max-h-28 overflow-y-auto border rounded divide-y dark:border-gray-700 dark:divide-gray-700">
-                  {creditResults.map((c) => {
-                    const rem = parseFloat(c.creditLimit) - parseFloat(c.currentCredit);
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        className="list-btn w-full p-1.5 text-left flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-                        onClick={() => {
-                          setCreditCustomer(c);
-                          setCreditResults([]);
-                          setCreditQuery('');
-                        }}
-                      >
-                        <span>
-                          <b>{c.name}</b> <span className="text-gray-500">({c.phone})</span>
-                        </span>
-                        <span className="font-mono">₹{rem.toFixed(2)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+            <div id="creditBox" className="space-y-2 text-xs bg-amber-50/50 dark:bg-amber-950/20 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800">
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-1">
+                  <span>📖</span> Khata / Customer Credit
+                </span>
+                {!showAddCustomer && (
+                  <button
+                    type="button"
+                    id="btnQuickAddCust"
+                    onClick={() => setShowAddCustomer(true)}
+                    className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer flex items-center gap-0.5"
+                  >
+                    <span>+</span> Add Customer
+                  </button>
+                )}
+              </div>
+
+              {/* Inline Quick Add Customer Form */}
+              {showAddCustomer && (
+                <form onSubmit={handleCreateCustomer} className="p-2 bg-white dark:bg-gray-800 rounded border border-purple-200 dark:border-purple-800 space-y-2">
+                  <div className="flex justify-between items-center border-b pb-1 dark:border-gray-700">
+                    <span className="font-bold text-xs text-purple-700 dark:text-purple-300">New Khata Customer</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCustomer(false)}
+                      className="text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div>
+                    <label htmlFor="newCustName" className="block text-[10px] text-gray-500 font-semibold mb-0.5">Customer Name *</label>
+                    <input
+                      id="newCustName"
+                      required
+                      placeholder="e.g. Ramesh Reddy"
+                      value={newCustName}
+                      onChange={(e) => setNewCustName(e.target.value)}
+                      className="w-full p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="newCustPhone" className="block text-[10px] text-gray-500 font-semibold mb-0.5">Mobile Phone (10 digits) *</label>
+                    <input
+                      id="newCustPhone"
+                      required
+                      maxLength={10}
+                      placeholder="9876543210"
+                      value={newCustPhone}
+                      onChange={(e) => setNewCustPhone(e.target.value)}
+                      className="w-full p-1.5 border rounded text-xs font-mono dark:bg-gray-700 dark:border-gray-600"
+                    />
+                  </div>
+                  {['manager', 'owner'].includes(user?.role || '') ? (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label htmlFor="newCustLimit" className="block text-[10px] text-gray-500 font-semibold mb-0.5">Credit Limit (₹)</label>
+                        <input
+                          id="newCustLimit"
+                          type="number"
+                          min="0"
+                          step="100"
+                          placeholder="5000"
+                          value={newCustLimit}
+                          onChange={(e) => setNewCustLimit(e.target.value)}
+                          className="w-full p-1.5 border rounded text-xs font-mono dark:bg-gray-700 dark:border-gray-600"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 pt-3">
+                        <input
+                          id="newCustAllow"
+                          type="checkbox"
+                          checked={newCustAllow}
+                          onChange={(e) => setNewCustAllow(e.target.checked)}
+                          className="rounded text-purple-600"
+                        />
+                        <label htmlFor="newCustAllow" className="text-[11px] font-semibold text-gray-700 dark:text-gray-300 cursor-pointer">
+                          Allow Credit
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-gray-500 bg-gray-50 dark:bg-gray-700 p-1.5 rounded">
+                      ℹ️ Profile registered by cashier. Setting credit limit requires Manager authorization.
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCustomer(false)}
+                      className="px-2 py-1 text-xs border rounded hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      id="newCustSubmit"
+                      disabled={creatingCust}
+                      className="px-2.5 py-1 text-xs bg-purple-600 text-white rounded font-semibold hover:bg-purple-700 disabled:opacity-50 cursor-pointer"
+                    >
+                      {creatingCust ? 'Saving...' : 'Save & Select'}
+                    </button>
+                  </div>
+                </form>
               )}
-              {creditCustomer && (
-                <div id="creditCustomerCard" className="p-2 border rounded bg-gray-50 dark:bg-gray-900/50 space-y-0.5">
-                  <div className="flex justify-between items-center">
-                    <b>{creditCustomer.name}</b>
-                    <button type="button" className="text-gray-500 hover:underline cursor-pointer" onClick={() => setCreditCustomer(null)}>
+
+              {/* Customer selection */}
+              {!creditCustomer ? (
+                <div className="space-y-1.5">
+                  <div className="relative">
+                    <input
+                      id="creditSearch"
+                      className="w-full p-1.5 pr-6 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
+                      placeholder="Search name or phone…"
+                      value={creditQuery}
+                      onChange={(e) => setCreditQuery(e.target.value)}
+                    />
+                    {creditQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setCreditQuery('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {loadingCredit ? (
+                    <div className="p-2 text-center text-xs text-gray-500 animate-pulse">Loading khata customers...</div>
+                  ) : creditResults.length > 0 ? (
+                    <div id="creditResults" className="max-h-36 overflow-y-auto border rounded divide-y dark:border-gray-700 dark:divide-gray-700 bg-white dark:bg-gray-800">
+                      {creditResults.map((c) => {
+                        const limit = parseFloat(c.creditLimit || '0');
+                        const used = parseFloat(c.currentCredit || '0');
+                        const rem = Math.max(0, limit - used);
+                        const disabled = !c.creditAllowed || !c.isActive;
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="list-btn w-full p-2 text-left flex justify-between items-center hover:bg-amber-50/60 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                            onClick={() => {
+                              setCreditCustomer(c);
+                              setCreditQuery('');
+                            }}
+                          >
+                            <div className="truncate pr-1">
+                              <b className="text-gray-800 dark:text-gray-200">{c.name}</b>{' '}
+                              <span className="text-[11px] text-gray-500 font-mono">({c.phone})</span>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              {disabled ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 dark:bg-gray-700 font-semibold">Disabled</span>
+                              ) : rem <= 0 ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/40 font-semibold">Limit ₹0</span>
+                              ) : (
+                                <span className="text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400">₹{rem.toFixed(2)}</span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-2 text-center text-xs text-gray-500 bg-white dark:bg-gray-800 border rounded">
+                      No customer found. Click <b className="text-purple-600 cursor-pointer hover:underline" onClick={() => setShowAddCustomer(true)}>+ Add Customer</b>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div id="creditCustomerCard" className="p-2.5 border rounded bg-white dark:bg-gray-800 space-y-1.5 shadow-xs">
+                  <div className="flex justify-between items-center border-b pb-1 dark:border-gray-700">
+                    <div>
+                      <b className="text-sm text-gray-800 dark:text-gray-100">{creditCustomer.name}</b>
+                      <span className="text-xs text-gray-500 font-mono ml-1.5">({creditCustomer.phone})</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="text-xs text-purple-600 dark:text-purple-400 hover:underline font-semibold cursor-pointer"
+                      onClick={() => setCreditCustomer(null)}
+                    >
                       Change
                     </button>
                   </div>
-                  <div className="text-gray-500">
-                    Limit ₹{parseFloat(creditCustomer.creditLimit).toLocaleString('en-IN', { minimumFractionDigits: 2 })} · Remaining{' '}
-                    <b id="creditRemaining">
-                      ₹{(parseFloat(creditCustomer.creditLimit) - parseFloat(creditCustomer.currentCredit)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </b>
-                  </div>
+
+                  {(() => {
+                    const limit = parseFloat(creditCustomer.creditLimit || '0');
+                    const used = parseFloat(creditCustomer.currentCredit || '0');
+                    const rem = Math.max(0, limit - used);
+                    const projected = used + cartTotal;
+                    const exceeds = limit > 0 && projected > limit;
+
+                    return (
+                      <div className="space-y-1">
+                        <div className="grid grid-cols-3 gap-1 text-[11px] text-center pt-0.5">
+                          <div className="bg-gray-50 dark:bg-gray-700/50 p-1 rounded">
+                            <span className="text-gray-400 text-[10px] block">Limit</span>
+                            <span className="font-mono font-semibold">₹{limit.toFixed(2)}</span>
+                          </div>
+                          <div className="bg-gray-50 dark:bg-gray-700/50 p-1 rounded">
+                            <span className="text-gray-400 text-[10px] block">Used</span>
+                            <span className="font-mono font-semibold text-amber-600">₹{used.toFixed(2)}</span>
+                          </div>
+                          <div className="bg-gray-50 dark:bg-gray-700/50 p-1 rounded">
+                            <span className="text-gray-400 text-[10px] block">Available</span>
+                            <span id="creditRemaining" className="font-mono font-bold text-emerald-600 dark:text-emerald-400">₹{rem.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        {exceeds && (
+                          <div className="p-1.5 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-[11px] font-semibold flex items-center gap-1">
+                            <span>⚠️</span> Exceeds credit limit by ₹{(projected - limit).toFixed(2)}
+                          </div>
+                        )}
+                        {!creditCustomer.creditAllowed && (
+                          <div className="p-1.5 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-[11px] font-semibold flex items-center gap-1">
+                            <span>⚠️</span> Credit is disabled for this customer!
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
