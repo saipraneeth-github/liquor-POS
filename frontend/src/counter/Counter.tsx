@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -479,9 +480,19 @@ export function Counter() {
 
       {confirmModal && (
         <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-bold mb-2" id="confirmTitle">{confirmModal.title}</h3>
-            <p className="text-gray-600 mb-6 text-sm" id="confirmText">{confirmModal.message}</p>
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex justify-between items-start mb-2">
+              <h3 className="text-lg font-bold" id="confirmTitle">{confirmModal.title}</h3>
+              <button
+                type="button"
+                onClick={() => setConfirmModal(null)}
+                className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm" id="confirmText">{confirmModal.message}</p>
             <div className="flex justify-end gap-3">
               <button
                 type="button"

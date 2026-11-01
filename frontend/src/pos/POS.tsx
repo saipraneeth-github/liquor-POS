@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { X } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
 
@@ -321,7 +322,17 @@ export function POS() {
       {servingPicker && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" id="servingPicker" onClick={() => setServingPicker(null)}>
           <div className="bg-white dark:bg-gray-800 p-5 rounded shadow-lg max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-bold mb-3">{servingPicker.name}</h2>
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-lg font-bold">{servingPicker.name}</h2>
+              <button
+                type="button"
+                onClick={() => setServingPicker(null)}
+                className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X size={18} />
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               {servingPicker.servings!.map((s) => (
                 <button
@@ -343,7 +354,15 @@ export function POS() {
       {/* Post-checkout modal */}
       {checkoutModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" id="checkoutModal">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-lg max-w-sm w-full text-center">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-lg max-w-sm w-full text-center relative">
+            <button
+              type="button"
+              onClick={() => setCheckoutModal(null)}
+              className="absolute top-4 right-4 p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              aria-label="Close dialog"
+            >
+              <X size={18} />
+            </button>
             <h2 className="text-xl font-bold mb-2" id="checkoutTitle">{checkoutModal.title}</h2>
             <div className="text-2xl text-purple-600 font-mono mb-4" id="checkoutBillNo">
               {checkoutModal.billNumber}

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
@@ -301,10 +302,10 @@ export function Bills() {
               <button
                 type="button"
                 onClick={() => setModalType(null)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl font-bold"
+                className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 aria-label="Close dialog"
               >
-                ✕
+                <X size={20} />
               </button>
             </div>
 

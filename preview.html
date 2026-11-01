@@ -794,7 +794,7 @@
   <div class="card modal-card">
     <div class="row between" style="margin-bottom:12px;">
       <h2 class="h2" id="modalTitle">—</h2>
-      <button type="button" class="btn-ghost" onclick="closeModal()" aria-label="Close dialog">✕</button>
+      <button type="button" class="btn-ghost" onclick="closeModal()" aria-label="Close dialog" style="font-size:20px; line-height:1; padding:4px 8px;">&times;</button>
     </div>
     <div id="modalBody"></div>
   </div>
@@ -1080,6 +1080,7 @@ async function api(path, opts) { return (await apiFull(path, opts)).data; }
 // ─── THEME ───────────────────────────────────────────────────────────────────
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
+  document.documentElement.classList.toggle('dark', theme === 'dark');
   const icon = theme === 'dark' ? '🌙' : '☀️';
   for (const id of ['themeToggle', 'loginThemeBtn']) {
     const b = $(id);

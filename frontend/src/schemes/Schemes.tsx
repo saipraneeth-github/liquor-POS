@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -15,6 +16,9 @@ interface Scheme {
   endDate: string;
   status: string;
   alertActive?: boolean;
+  branchId?: string;
+  alertThresholdPct?: string | number;
+  notes?: string | null;
 }
 
 interface SchemeAlert {
@@ -47,6 +51,94 @@ export function Schemes() {
   const [pQty, setPQty] = useState('0');
   const [pValue, setPValue] = useState('0');
   const [pNotes, setPNotes] = useState('');
+
+  // Edit Scheme modal (Super Admin / Admin / Manager)
+  const [editScheme, setEditScheme] = useState<Scheme | null>(null);
+  const [editForm, setEditForm] = useState({
+    supplierName: '',
+    schemeName: '',
+    targetType: 'QTY' as 'QTY' | 'VALUE',
+    targetValue: '',
+    startDate: '',
+    endDate: '',
+    alertThresholdPct: '80',
+    rewardDescription: '',
+    status: 'ACTIVE',
+    notes: '',
+  });
+  const [editSlabs, setEditSlabs] = useState<{ minCases: number; freeBottles: number; discountPerCase: string }[]>([]);
+  const [updating, setUpdating] = useState(false);
+
+  const openEditModal = async (scheme: Scheme) => {
+    setEditScheme(scheme);
+    setEditForm({
+      supplierName: scheme.supplierName,
+      schemeName: scheme.schemeName,
+      targetType: scheme.targetType,
+      targetValue: scheme.targetValue,
+      startDate: scheme.startDate ? scheme.startDate.slice(0, 10) : '',
+      endDate: scheme.endDate ? scheme.endDate.slice(0, 10) : '',
+      alertThresholdPct: scheme.alertThresholdPct ? String(scheme.alertThresholdPct) : '80',
+      rewardDescription: scheme.rewardDescription,
+      status: scheme.status,
+      notes: scheme.notes || '',
+    });
+    try {
+      const res = await api.get<{ slabs: { minCases: number; freeBottles: number; discountPerCase: string }[] }>(`/schemes/${scheme.id}/slabs`);
+      setEditSlabs(res.slabs || []);
+    } catch {
+      setEditSlabs([]);
+    }
+  };
+
+  const handleUpdateScheme = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editScheme) return;
+    const tgt = parseFloat(editForm.targetValue.trim());
+    if (isNaN(tgt) || tgt <= 0) {
+      showToast('Target must be a positive number.', 'error');
+      return;
+    }
+    if (Date.parse(editForm.endDate) < Date.parse(editForm.startDate)) {
+      showToast('End date must be on or after start date.', 'error');
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      await api.patch('/schemes/' + editScheme.id, {
+        supplierName: editForm.supplierName.trim(),
+        schemeName: editForm.schemeName.trim(),
+        targetType: editForm.targetType,
+        targetValue: editForm.targetValue.trim(),
+        rewardDescription: editForm.rewardDescription.trim(),
+        startDate: editForm.startDate,
+        endDate: editForm.endDate,
+        alertThresholdPct: editForm.alertThresholdPct.trim(),
+        status: editForm.status,
+        notes: editForm.notes.trim() || undefined,
+      });
+
+      // Update slabs if scheme is active
+      if (editForm.status === 'ACTIVE' && editSlabs.length > 0) {
+        await api.post('/schemes/' + editScheme.id + '/slabs', {
+          slabs: editSlabs.map((s) => ({
+            minCases: Number(s.minCases),
+            freeBottles: Number(s.freeBottles || 0),
+            discountPerCase: String(s.discountPerCase || '0'),
+          })),
+        });
+      }
+
+      showToast('Scheme updated successfully.');
+      setEditScheme(null);
+      loadData();
+    } catch (err: any) {
+      showToast('Failed to update scheme: ' + (err.message || 'Error'), 'error');
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     const host = document.getElementById('toastHost');
@@ -214,7 +306,7 @@ export function Schemes() {
                 <div className="row flex items-center gap-2 pt-1">
                   <button
                     type="button"
-                    className="btn-sec btn-sm px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border text-xs"
+                    className="btn-sec btn-sm px-2.5 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded border border-gray-300 dark:border-gray-600 text-xs font-medium"
                     onClick={() => {
                       setPurchaseScheme(s);
                       setPQty('0');
@@ -223,6 +315,14 @@ export function Schemes() {
                     }}
                   >
                     + Purchase
+                  </button>
+                  <button
+                    type="button"
+                    id={`editSchemeBtn-${s.id}`}
+                    className="btn-sec btn-sm px-2.5 py-1 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-800 text-xs font-medium flex items-center gap-1"
+                    onClick={() => openEditModal(s)}
+                  >
+                    ✏️ Edit Scheme
                   </button>
                 </div>
               </div>
@@ -344,8 +444,18 @@ export function Schemes() {
 
       {purchaseScheme && (
         <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-bold mb-4" id="modalTitle">Record purchase — {purchaseScheme.schemeName}</h3>
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-lg font-bold" id="modalTitle">Record purchase — {purchaseScheme.schemeName}</h3>
+              <button
+                type="button"
+                onClick={() => setPurchaseScheme(null)}
+                className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X size={20} />
+              </button>
+            </div>
             <form onSubmit={handleSavePurchase} className="flex flex-col gap-3">
               <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="spQty">
                 Cases
@@ -397,7 +507,234 @@ export function Schemes() {
           </div>
         </div>
       )}
+
+      {editScheme && (
+        <div id="modal" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-2xl shadow-2xl max-w-xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start border-b dark:border-gray-700 pb-3">
+              <div>
+                <h3 className="text-lg font-bold" id="modalTitle">Edit Scheme — {editScheme.schemeName}</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Update supplier scheme targets, timelines, rewards, and case slabs.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditScheme(null)}
+                className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateScheme} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-medium">
+                <label className="flex flex-col gap-1">
+                  Supplier
+                  <input
+                    className="input p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                    required
+                    value={editForm.supplierName}
+                    onChange={(e) => setEditForm({ ...editForm, supplierName: e.target.value })}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  Scheme Name
+                  <input
+                    className="input p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                    required
+                    value={editForm.schemeName}
+                    onChange={(e) => setEditForm({ ...editForm, schemeName: e.target.value })}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  Target Type
+                  <select
+                    className="input p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                    value={editForm.targetType}
+                    onChange={(e) => setEditForm({ ...editForm, targetType: e.target.value as 'QTY' | 'VALUE' })}
+                  >
+                    <option value="QTY">Quantity (Cases)</option>
+                    <option value="VALUE">Value (₹)</option>
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  Target {editForm.targetType === 'VALUE' ? '(₹)' : '(Cases)'}
+                  <input
+                    className="input p-2 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600"
+                    required
+                    inputMode="decimal"
+                    value={editForm.targetValue}
+                    onChange={(e) => setEditForm({ ...editForm, targetValue: e.target.value })}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  Start Date
+                  <input
+                    className="input p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                    type="date"
+                    required
+                    value={editForm.startDate}
+                    onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  End Date
+                  <input
+                    className="input p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                    type="date"
+                    required
+                    value={editForm.endDate}
+                    onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  Alert at %
+                  <input
+                    className="input p-2 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600"
+                    inputMode="decimal"
+                    value={editForm.alertThresholdPct}
+                    onChange={(e) => setEditForm({ ...editForm, alertThresholdPct: e.target.value })}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  Status
+                  <select
+                    className="input p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                    value={editForm.status}
+                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                  >
+                    <option value="ACTIVE">ACTIVE</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="EXPIRED">EXPIRED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1 sm:col-span-2">
+                  Reward Description
+                  <input
+                    className="input p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                    required
+                    value={editForm.rewardDescription}
+                    onChange={(e) => setEditForm({ ...editForm, rewardDescription: e.target.value })}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1 sm:col-span-2">
+                  Notes
+                  <textarea
+                    rows={2}
+                    className="input p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600"
+                    value={editForm.notes}
+                    onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                    placeholder="Optional scheme terms, contract notes, or distributor instructions"
+                  />
+                </label>
+              </div>
+
+              {/* Slabs section */}
+              <div className="border-t dark:border-gray-700 pt-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Case Slabs & Rewards</span>
+                  <button
+                    type="button"
+                    className="text-xs px-2.5 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 rounded font-medium"
+                    onClick={() => setEditSlabs([...editSlabs, { minCases: (editSlabs.length + 1) * 10, freeBottles: 1, discountPerCase: '0.00' }])}
+                  >
+                    + Add Slab
+                  </button>
+                </div>
+                {editSlabs.length === 0 ? (
+                  <p className="text-xs text-gray-500 italic">No slabs configured (flat target scheme).</p>
+                ) : (
+                  <div className="space-y-2">
+                    {editSlabs.map((sl, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center text-xs">
+                        <div>
+                          <span className="text-[10px] text-gray-500 block">Min Cases</span>
+                          <input
+                            type="number"
+                            min="0"
+                            className="w-full p-1.5 border rounded font-mono dark:bg-gray-700 dark:border-gray-600"
+                            value={sl.minCases}
+                            onChange={(e) => {
+                              const next = [...editSlabs];
+                              next[idx].minCases = Number(e.target.value);
+                              setEditSlabs(next);
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-gray-500 block">Free Bottles</span>
+                          <input
+                            type="number"
+                            min="0"
+                            className="w-full p-1.5 border rounded font-mono dark:bg-gray-700 dark:border-gray-600"
+                            value={sl.freeBottles}
+                            onChange={(e) => {
+                              const next = [...editSlabs];
+                              next[idx].freeBottles = Number(e.target.value);
+                              setEditSlabs(next);
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-gray-500 block">Discount / Case (₹)</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            className="w-full p-1.5 border rounded font-mono dark:bg-gray-700 dark:border-gray-600"
+                            value={sl.discountPerCase}
+                            onChange={(e) => {
+                              const next = [...editSlabs];
+                              next[idx].discountPerCase = e.target.value;
+                              setEditSlabs(next);
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="text-red-500 hover:text-red-700 p-1 text-base mt-3"
+                          onClick={() => setEditSlabs(editSlabs.filter((_, i) => i !== idx))}
+                          aria-label="Remove slab"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t dark:border-gray-700">
+                <button
+                  type="button"
+                  className="px-4 py-2 border rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                  onClick={() => setEditScheme(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updating}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                >
+                  {updating ? 'Saving Changes…' : 'Save Scheme Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
-

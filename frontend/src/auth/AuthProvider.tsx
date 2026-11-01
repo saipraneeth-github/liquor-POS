@@ -10,6 +10,7 @@ export type User = {
   syndicateId?: string | null;
   /** OK, or why the business is locked: TRIAL_EXPIRED / OVERDUE (SUSPENDED never gets this far). */
   access?: 'OK' | 'TRIAL_EXPIRED' | 'OVERDUE' | 'SUSPENDED';
+  pages?: { routePath: string; canAccess: boolean }[];
 };
 
 export type BranchOption = { id: string; name: string; code: string };
@@ -80,7 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     api.get<BranchOption[]>('/branches')
       .then((list) => {
         setBranches(list);
-        setSelected((cur) => (cur && list.some((b) => b.id === cur) ? cur : list[0]?.id ?? null));
+        setSelected((cur) => {
+          const next = cur && list.some((b) => b.id === cur) ? cur : list[0]?.id ?? null;
+          if (next) {
+            try { localStorage.setItem(ACTIVE_BRANCH_KEY, next); } catch {}
+          }
+          return next;
+        });
       })
       .catch(() => setBranches([]));
   }, [isOwner, rawUser?.id]);

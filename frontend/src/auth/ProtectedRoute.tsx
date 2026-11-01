@@ -26,7 +26,7 @@ const pageMinRole: Record<string, string> = {
 };
 
 // Pages tied to one SaaS role: the Platform console is Super Admin only, Business Settings is Admin only
-const pageOnlyRole: Record<string, string> = { '/platform': 'super_admin', '/settings': 'admin' };
+const pageOnlyRole: Record<string, string> = { '/platform': 'super_admin' };
 
 export function ProtectedRoute() {
   const { user, saasRole, loading } = useAuth();

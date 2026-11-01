@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -1159,13 +1160,13 @@ export function Inventory() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg font-medium cursor-pointer transition-colors"
                     onClick={() => {
                       setActiveInvoice(null);
                       setWizardStep(1);
                     }}
                   >
-                    ✕ Close &amp; Back
+                    <X size={14} /> Close &amp; Back
                   </button>
                 </div>
               </div>
@@ -1910,10 +1911,11 @@ export function Inventory() {
               </div>
               <button
                 type="button"
-                className="text-gray-400 hover:text-gray-700 text-lg p-1 cursor-pointer"
+                className="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer transition-colors"
                 onClick={() => setCreateProductModal(null)}
+                aria-label="Close dialog"
               >
-                ✕
+                <X size={20} />
               </button>
             </div>
 
@@ -2100,10 +2102,20 @@ export function Inventory() {
       {/* Confirmation Modal */}
       {confirmModal && (
         <div id="modal" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
-            <h3 className="text-lg font-bold text-gray-900" id="confirmTitle">
-              {confirmModal.title}
-            </h3>
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold" id="confirmTitle">
+                {confirmModal.title}
+              </h3>
+              <button
+                type="button"
+                className="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                onClick={() => setConfirmModal(null)}
+                aria-label="Close dialog"
+              >
+                <X size={20} />
+              </button>
+            </div>
             <p className="text-gray-600 text-sm leading-relaxed" id="confirmText">
               {confirmModal.message}
             </p>

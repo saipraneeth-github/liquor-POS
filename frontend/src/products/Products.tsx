@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -62,21 +63,26 @@ export function Products() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [prodRes, stockRes] = await Promise.all([
-        api.get<{ products: Product[]; categories?: Category[] }>('/products'),
+      const [prodRes, catRes, stockRes] = await Promise.all([
+        api.get<Product[] | { products: Product[]; categories?: Category[] }>('/products'),
+        api.get<Category[] | { categories: Category[] }>('/categories').catch(() => []),
         branchId ? api.get<any[]>('/inventory/stock/' + branchId).catch(() => []) : Promise.resolve([]),
       ]);
-      setProducts(prodRes.products);
-      if (prodRes.categories) {
-        setCategories(prodRes.categories);
-        if (prodRes.categories.length && !npCategory) {
-          setNpCategory(prodRes.categories[0].id);
-        }
+
+      const prodList = Array.isArray(prodRes) ? prodRes : (prodRes as any)?.products ?? [];
+      setProducts(prodList);
+
+      const catList = Array.isArray(catRes) ? catRes : (catRes as any)?.categories ?? [];
+      setCategories(catList);
+      if (catList.length && !npCategory) {
+        setNpCategory(catList[0].id);
       }
 
       const sm: Record<string, number> = {};
-      for (const s of stockRes) {
-        sm[s.productId] = s.quantity;
+      if (Array.isArray(stockRes)) {
+        for (const s of stockRes) {
+          sm[s.productId] = s.quantity;
+        }
       }
       setStockMap(sm);
     } catch (err: any) {
@@ -154,7 +160,7 @@ export function Products() {
   };
 
   const q = search.trim().toLowerCase();
-  const filtered = products.filter(
+  const filtered = (products || []).filter(
     (p) =>
       !q ||
       p.name.toLowerCase().includes(q) ||
@@ -166,8 +172,8 @@ export function Products() {
     <section className="page active" id="page-products" aria-labelledby="prodTitle">
       <div className="row between flex justify-between items-center mb-4">
         <div>
-          <h2 className="h1 text-xl font-bold" id="prodTitle">🍷 Product Catalog</h2>
-          <div className="muted small text-xs text-gray-500">
+          <h2 className="h1 text-xl font-bold text-gray-900 dark:text-gray-100" id="prodTitle">🍷 Product Catalog</h2>
+          <div className="muted small text-xs text-gray-500 dark:text-gray-400">
             MRP is set here (manager+) and every change is audited. Prices cannot be changed at the counter.
           </div>
         </div>
@@ -177,7 +183,7 @@ export function Products() {
         <label htmlFor="prodSearch" className="sr-only">Search products</label>
         <input
           id="prodSearch"
-          className="input p-2 border rounded text-sm w-full max-w-xs"
+          className="input p-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded text-sm w-full max-w-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
           style={{ maxWidth: '320px' }}
           placeholder="Search name, brand or barcode"
           value={search}
@@ -185,17 +191,17 @@ export function Products() {
         />
       </div>
 
-      <div className="card table-wrap bg-white rounded shadow overflow-x-auto mb-6" id="prodTable">
+      <div className="card table-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow overflow-x-auto mb-6" id="prodTable">
         {loading ? (
-          <div className="p-8 text-center text-gray-500">Loading products…</div>
+          <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading products…</div>
         ) : filtered.length === 0 ? (
-          <div className="state p-8 text-center text-gray-500">
+          <div className="state p-8 text-center text-gray-500 dark:text-gray-400">
             {products.length ? 'No products match.' : 'No products yet.'}
           </div>
         ) : (
           <table className="table w-full text-left">
             <thead>
-              <tr className="border-b text-xs text-gray-500 bg-gray-50">
+              <tr className="border-b border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50">
                 <th className="py-2 px-3">Product</th>
                 <th className="py-2 px-3">Category</th>
                 <th className="py-2 px-3">Barcode</th>
@@ -206,30 +212,30 @@ export function Products() {
             </thead>
             <tbody>
               {filtered.map((p) => (
-                <tr key={p.id} className="border-b hover:bg-gray-50 text-sm">
+                <tr key={p.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-sm text-gray-900 dark:text-gray-100">
                   <td className="py-2 px-3">
                     <b>{p.name}</b>
-                    <div className="muted small text-xs text-gray-500">
+                    <div className="muted small text-xs text-gray-500 dark:text-gray-400">
                       {p.brand || ''}
                       {p.volumeMl ? ` · ${p.volumeMl}ml` : ''}
                       {p.packQuantity ? ` · ${p.packQuantity}/case` : ''}
                     </div>
                   </td>
                   <td className="py-2 px-3">
-                    <span className="tag px-2 py-0.5 bg-gray-100 rounded text-xs">
+                    <span className="tag px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs">
                       {p.categoryName || '—'}
                     </span>
                   </td>
-                  <td className="py-2 px-3 font-mono text-xs text-gray-600">{p.barcode || '—'}</td>
-                  <td className="py-2 px-3 text-right font-mono font-bold">₹{parseFloat(p.mrp).toFixed(2)}</td>
-                  <td className="py-2 px-3 text-right font-mono">
+                  <td className="py-2 px-3 font-mono text-xs text-gray-600 dark:text-gray-400">{p.barcode || '—'}</td>
+                  <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">₹{parseFloat(p.mrp).toFixed(2)}</td>
+                  <td className="py-2 px-3 text-right font-mono text-gray-700 dark:text-gray-300">
                     {stockMap[p.id] !== undefined ? stockMap[p.id] : '—'}
                   </td>
                   {isManager && (
                     <td className="py-2 px-3 text-right">
                       <button
                         type="button"
-                        className="btn-sec btn-sm px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border text-xs"
+                        className="btn-sec btn-sm px-2 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded border border-gray-300 dark:border-gray-600 text-xs transition-colors"
                         onClick={() => handleOpenMrp(p)}
                       >
                         Edit MRP
@@ -244,15 +250,15 @@ export function Products() {
       </div>
 
       {isManager && (
-        <details className="card mgr-only bg-white rounded shadow p-4">
-          <summary className="font-semibold text-sm cursor-pointer">+ Add product</summary>
+        <details className="card mgr-only bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded shadow p-4">
+          <summary className="font-semibold text-sm cursor-pointer select-none">+ Add product</summary>
           <div className="pad pt-4">
             <form className="form-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4" onSubmit={handleCreateProduct}>
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npCategory">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npCategory">
                 Category
                 <select
                   id="npCategory"
-                  className="input p-2 border rounded text-sm"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   required
                   value={npCategory}
                   onChange={(e) => setNpCategory(e.target.value)}
@@ -265,11 +271,11 @@ export function Products() {
                 </select>
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npName">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npName">
                 Name
                 <input
                   id="npName"
-                  className="input p-2 border rounded text-sm"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   required
                   maxLength={200}
                   value={npName}
@@ -277,11 +283,11 @@ export function Products() {
                 />
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npBrand">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npBrand">
                 Brand
                 <input
                   id="npBrand"
-                  className="input p-2 border rounded text-sm"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   required
                   maxLength={200}
                   value={npBrand}
@@ -289,11 +295,11 @@ export function Products() {
                 />
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npVolume">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npVolume">
                 Volume (ml)
                 <input
                   id="npVolume"
-                  className="input p-2 border rounded text-sm"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   type="number"
                   min="1"
                   value={npVolume}
@@ -301,11 +307,11 @@ export function Products() {
                 />
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npPack">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npPack">
                 Bottles / case
                 <input
                   id="npPack"
-                  className="input p-2 border rounded text-sm"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   type="number"
                   min="1"
                   max="1000"
@@ -314,11 +320,11 @@ export function Products() {
                 />
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npMrp">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npMrp">
                 MRP (₹)
                 <input
                   id="npMrp"
-                  className="input p-2 border rounded text-sm font-mono"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   required
                   inputMode="decimal"
                   value={npMrp}
@@ -326,33 +332,33 @@ export function Products() {
                 />
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npCost">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npCost">
                 Cost price (₹)
                 <input
                   id="npCost"
-                  className="input p-2 border rounded text-sm font-mono"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   inputMode="decimal"
                   value={npCost}
                   onChange={(e) => setNpCost(e.target.value)}
                 />
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npBarcode">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npBarcode">
                 Barcode
                 <input
                   id="npBarcode"
-                  className="input p-2 border rounded text-sm font-mono"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   maxLength={64}
                   value={npBarcode}
                   onChange={(e) => setNpBarcode(e.target.value)}
                 />
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="npSku">
+              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npSku">
                 SKU
                 <input
                   id="npSku"
-                  className="input p-2 border rounded text-sm font-mono"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   maxLength={64}
                   value={npSku}
                   onChange={(e) => setNpSku(e.target.value)}
@@ -361,7 +367,7 @@ export function Products() {
 
               <div className="col-span-full pt-2">
                 <button
-                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm disabled:opacity-50"
+                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm disabled:opacity-50 transition-colors"
                   type="submit"
                   disabled={creating}
                 >
@@ -375,17 +381,27 @@ export function Products() {
 
       {editProduct && (
         <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-bold mb-1" id="modalTitle">Update MRP — {editProduct.name}</h3>
-            <div className="muted small text-xs text-gray-500 mb-4">
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
+            <div className="flex justify-between items-start mb-1">
+              <h3 className="text-lg font-bold" id="modalTitle">Update MRP — {editProduct.name}</h3>
+              <button
+                type="button"
+                onClick={() => setEditProduct(null)}
+                className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="muted small text-xs text-gray-500 dark:text-gray-400 mb-4">
               Current MRP ₹{parseFloat(editProduct.mrp).toFixed(2)}. The change is recorded in the price audit log under your name.
             </div>
             <form onSubmit={handleSaveMrp} className="flex flex-col gap-4">
-              <label className="field flex flex-col gap-1 text-sm font-medium" htmlFor="newMrpInput">
+              <label className="field flex flex-col gap-1 text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="newMrpInput">
                 New MRP (₹)
                 <input
                   id="newMrpInput"
-                  className="input p-2 border rounded font-mono"
+                  className="input p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded font-mono focus:ring-2 focus:ring-primary/20 focus:outline-none"
                   inputMode="decimal"
                   required
                   value={newMrp}
@@ -395,7 +411,7 @@ export function Products() {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  className="btn-sec px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border text-sm font-medium"
+                  className="btn-sec px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded border border-gray-300 dark:border-gray-600 text-sm font-medium transition-colors"
                   onClick={() => setEditProduct(null)}
                 >
                   Cancel
@@ -403,7 +419,7 @@ export function Products() {
                 <button
                   type="submit"
                   id="mrpSaveBtn"
-                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium disabled:opacity-50"
+                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
                   disabled={savingMrp}
                 >
                   {savingMrp ? 'Saving…' : 'Save & audit'}

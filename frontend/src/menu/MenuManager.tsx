@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { errorMessage, showToast } from '../lib/print';
@@ -429,7 +430,7 @@ export function MenuManager({ kind }: { kind: MenuKind }) {
                     <input className="input-base" placeholder="Label" value={s.label} onChange={(e) => updateServing(idx, { label: e.target.value })} />
                     <input className="input-base font-mono" type="number" min="1" placeholder="ml" title="Leave empty for a whole bottle" value={s.volumeMl ?? ''} onChange={(e) => updateServing(idx, { volumeMl: e.target.value ? Number(e.target.value) : null })} />
                     <input className="input-base font-mono" inputMode="decimal" placeholder="Rate ₹" value={s.price} onChange={(e) => updateServing(idx, { price: e.target.value })} />
-                    <button type="button" className="text-red-600 text-sm px-1 cursor-pointer" aria-label="Remove serving" onClick={() => setForm({ ...form, servings: form.servings.filter((_, i) => i !== idx) })}>✕</button>
+                    <button type="button" className="p-1 rounded text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer transition-colors" aria-label="Remove serving" onClick={() => setForm({ ...form, servings: form.servings.filter((_, i) => i !== idx) })}><X size={16} /></button>
                   </div>
                 ))}
               </div>

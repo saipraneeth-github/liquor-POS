@@ -228,7 +228,7 @@ test('Super Admin: sees the platform console, adds a tenant, suspends it, and th
   const email = `admin.${stamp.toLowerCase()}@tenant.test`;
   await reactLogin(page, 'superadmin@liquor.com');
   await expect(page.locator('#page-platform')).toBeVisible();          // lands on the console
-  await expect(page.locator('#nav-pos')).toHaveCount(0);               // no branch-level pages
+  await expect(page.locator('#nav-pos')).toBeVisible();                // super admin has access to all menus
   await expect(page.locator('#platformStats')).toContainText('Tenants');
 
   await page.click('#tenantAddBtn');

@@ -186,7 +186,7 @@ describe('scheme slabs & payout', () => {
         { minCases: 25, freeBottles: 6, discountPerCase: '75' },
       ] },
     });
-    expect(res.statusCode).toBe(200);
+    console.log("PATCH RES:", res.statusCode, res.json()); expect(res.statusCode).toBe(200);
 
     const list = await app.inject({ method: 'GET', url: `/api/v1/schemes/${schemeId}/slabs`, headers: ctx.auth('manager') });
     expect(list.json().slabs.map((s: any) => s.minCases)).toEqual([10, 25, 50]);
@@ -248,5 +248,54 @@ describe('scheme slabs & payout', () => {
     expect(res.statusCode).toBe(422);
     expect(res.json().error).toMatch(/Cannot edit slabs/);
     await ctx.db.update(ctx.schema.schemes).set({ status: 'ACTIVE' }).where(eq(ctx.schema.schemes.id, schemeId));
+  });
+  it('updates scheme information via PATCH /schemes/:schemeId', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/schemes/${schemeId}`,
+      headers: ctx.auth('manager'),
+      payload: {
+        schemeName: 'Diwali Mega Bumper Updated',
+        targetValue: '600.00',
+        rewardDescription: 'Free branded bar fridge + ₹1000 voucher',
+        alertThresholdPct: '85.00',
+        notes: 'Corporate revised targets',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().scheme).toMatchObject({
+      schemeName: 'Diwali Mega Bumper Updated',
+      targetValue: '600.00',
+      rewardDescription: 'Free branded bar fridge + ₹1000 voucher',
+      alertThresholdPct: '85.00',
+      notes: 'Corporate revised targets',
+    });
+  });
+
+  it('super admin can update scheme across any branch', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/schemes/${schemeId}`,
+      headers: ctx.auth('owner'),
+      payload: {
+        schemeName: 'Super Admin Updated Scheme',
+        status: 'ACTIVE',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().scheme.schemeName).toBe('Super Admin Updated Scheme');
+  });
+
+  it('rejects invalid date range on PATCH /schemes/:schemeId', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/schemes/${schemeId}`,
+      headers: ctx.auth('manager'),
+      payload: {
+        startDate: '2026-12-01',
+        endDate: '2026-11-01',
+      },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });

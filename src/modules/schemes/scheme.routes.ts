@@ -19,6 +19,7 @@ import {
   getSchemeAlerts,
   getSchemeById,
   createScheme,
+  updateScheme,
   recordSchemePurchase,
   getSchemeSlabs,
   replaceSchemeSlabs,
@@ -43,6 +44,28 @@ const CreateSchemeSchema = z.object({
   alertThresholdPct: DECIMAL.refine((v) => Number(v) <= 100, 'alertThresholdPct must be <= 100').optional(),
   notes:             z.string().max(1000).optional(),
 }).refine((d) => Date.parse(d.endDate) >= Date.parse(d.startDate), {
+  message: 'endDate must be on or after startDate',
+  path: ['endDate'],
+});
+
+
+const UpdateSchemeSchema = z.object({
+  supplierName:      z.string().trim().min(1).max(200).optional(),
+  schemeName:        z.string().trim().min(1).max(200).optional(),
+  targetType:        z.enum(['VALUE', 'QTY']).optional(),
+  targetValue:       DECIMAL.refine((v) => Number(v) > 0, 'targetValue must be positive').optional(),
+  rewardDescription: z.string().trim().min(1).max(1000).optional(),
+  startDate:         DATE.optional(),
+  endDate:           DATE.optional(),
+  alertThresholdPct: DECIMAL.refine((v) => Number(v) <= 100, 'alertThresholdPct must be <= 100').optional(),
+  notes:             z.string().max(1000).optional(),
+  status:            z.enum(['ACTIVE', 'EXPIRED', 'COMPLETED', 'CANCELLED']).optional(),
+}).refine((d) => {
+  if (d.startDate && d.endDate) {
+    return Date.parse(d.endDate) >= Date.parse(d.startDate);
+  }
+  return true;
+}, {
   message: 'endDate must be on or after startDate',
   path: ['endDate'],
 });
@@ -91,6 +114,26 @@ export async function schemeRoutes(app: FastifyInstance) {
       return sendError(reply, err, 'Scheme creation failed');
     }
   });
+  // Update scheme (manager+, super admin has access to all branches)
+  app.patch('/schemes/:schemeId', { preHandler: [requireRole('manager')] }, async (req, reply) => {
+    const params = SchemeParams.safeParse(req.params);
+    if (!params.success) return reply.status(404).send({ error: 'Scheme not found' });
+    const body = UpdateSchemeSchema.safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: 'Validation failed', details: body.error.flatten() });
+
+    const scheme = await getSchemeById(params.data.schemeId);
+    if (!scheme) return reply.status(404).send({ error: 'Scheme not found' });
+    const user = getUser(req);
+    if (!(await assertBranchAccess(user, scheme.branchId, reply))) return;
+
+    try {
+      const updated = await updateScheme(params.data.schemeId, body.data);
+      return reply.send({ scheme: updated });
+    } catch (err) {
+      return sendError(reply, err, 'Updating scheme failed');
+    }
+  });
+
 
   // Get alerts
   app.get('/schemes/:branchId/alerts', { preHandler: [requireRole('manager')] }, async (req, reply) => {

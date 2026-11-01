@@ -7,7 +7,7 @@
   --color-secondary-foreground: #1e293b;
 }
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark, .dark *));
 
 .input-base {
   width: 100%;
@@ -17,11 +17,146 @@
   font-size: 0.875rem;
   background: transparent;
 }
-.dark .input-base { border-color: #4b5563; }
+.dark .input-base {
+  border-color: #4b5563;
+  color: #f8fafc;
+}
 
 /* Tailwind 4 draws plain `border` in currentColor (black); keep borders soft unless a colour is given */
 @layer base {
   *, ::after, ::before, ::backdrop, ::file-selector-button {
     border-color: var(--color-gray-200, currentColor);
   }
+  .dark *, .dark ::after, .dark ::before, .dark ::backdrop, .dark ::file-selector-button {
+    border-color: var(--color-gray-700, #374151);
+  }
+
+  body {
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  .dark body {
+    background-color: #0f172a;
+    color: #f8fafc;
+  }
+}
+
+/* Comprehensive Dark Mode Rules */
+.dark {
+  color-scheme: dark;
+}
+
+/* Dark mode surfaces for cards, panels, stat-cards, modals, and white boxes */
+.dark .card,
+.dark .stat-card,
+.dark .table-wrap,
+.dark .panel,
+.dark details.card,
+.dark .bg-white:not([data-force-light]) {
+  background-color: #1e293b;
+  color: #f8fafc;
+  border-color: #334155;
+}
+
+/* High-contrast text readability in dark mode */
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .card b,
+.dark .card strong,
+.dark .card h1,
+.dark .card h2,
+.dark .card h3,
+.dark .card h4,
+.dark .card h5,
+.dark .card h6 {
+  color: #f8fafc;
+}
+
+.dark .text-gray-700,
+.dark .text-slate-700 {
+  color: #e2e8f0;
+}
+
+.dark .text-gray-600,
+.dark .text-gray-500,
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .muted {
+  color: #94a3b8;
+}
+
+/* Sub-containers and light grey fills inside cards */
+.dark .bg-gray-50,
+.dark .bg-gray-100,
+.dark .bg-slate-50,
+.dark .bg-slate-100 {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+/* Tables in dark mode */
+.dark table thead tr,
+.dark table thead tr th {
+  background-color: #0f172a;
+  color: #94a3b8;
+  border-color: #334155;
+}
+
+.dark table tbody tr {
+  border-color: #334155;
+  color: #f1f5f9;
+}
+
+.dark table tbody tr:hover {
+  background-color: #334155;
+}
+
+.dark table td {
+  color: inherit;
+}
+
+/* Form inputs, textareas, selects */
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="color"]):not([type="range"]),
+.dark select,
+.dark textarea,
+.dark .input {
+  background-color: #0f172a;
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus,
+.dark .input:focus {
+  border-color: #818cf8;
+  outline: none;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b;
+}
+
+/* Secondary buttons & gray-background action buttons */
+.dark .btn-sec,
+.dark button.bg-gray-100,
+.dark button.bg-gray-50 {
+  background-color: #334155;
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+.dark .btn-sec:hover,
+.dark button.bg-gray-100:hover,
+.dark button.bg-gray-50:hover {
+  background-color: #475569;
+}
+
+/* Tags and badges */
+.dark .tag,
+.dark .badge.bg-gray-100 {
+  background-color: #334155;
+  color: #cbd5e1;
 }

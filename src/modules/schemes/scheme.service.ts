@@ -94,6 +94,43 @@ export async function getSchemeById(schemeId: string) {
   return scheme ?? null;
 }
 
+export interface UpdateSchemeInput {
+  supplierName?: string;
+  schemeName?: string;
+  targetType?: 'VALUE' | 'QTY';
+  targetValue?: string;
+  rewardDescription?: string;
+  startDate?: string;
+  endDate?: string;
+  alertThresholdPct?: string;
+  notes?: string;
+  status?: 'ACTIVE' | 'EXPIRED' | 'COMPLETED' | 'CANCELLED';
+}
+
+export async function updateScheme(schemeId: string, input: UpdateSchemeInput) {
+  const [existing] = await db.select().from(schemes).where(eq(schemes.id, schemeId)).limit(1);
+  if (!existing) throw new NotFoundError(`Scheme ${schemeId} not found.`);
+
+  const patch: Partial<typeof schemes.$inferInsert> = {};
+  if (input.supplierName !== undefined) patch.supplierName = input.supplierName;
+  if (input.schemeName !== undefined) patch.schemeName = input.schemeName;
+  if (input.targetType !== undefined) patch.targetType = input.targetType;
+  if (input.targetValue !== undefined) patch.targetValue = input.targetValue;
+  if (input.rewardDescription !== undefined) patch.rewardDescription = input.rewardDescription;
+  if (input.startDate !== undefined) patch.startDate = new Date(input.startDate);
+  if (input.endDate !== undefined) patch.endDate = new Date(input.endDate);
+  if (input.alertThresholdPct !== undefined) patch.alertThresholdPct = input.alertThresholdPct;
+  if (input.notes !== undefined) patch.notes = input.notes;
+  if (input.status !== undefined) patch.status = input.status;
+
+  const [updated] = await db
+    .update(schemes)
+    .set(patch)
+    .where(eq(schemes.id, schemeId))
+    .returning();
+  return updated;
+}
+
 export async function recordSchemePurchase(
   schemeId: string,
   qty: string,

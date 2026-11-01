@@ -81,16 +81,16 @@ export function Dashboard() {
     <section className="page active" id="page-dashboard" aria-labelledby="dashTitle">
       <div className="row between flex justify-between items-center mb-6">
         <div>
-          <h2 className="h1 text-2xl font-bold" id="dashTitle">
+          <h2 className="h1 text-2xl font-bold text-gray-900 dark:text-gray-100" id="dashTitle">
             {greeting}, {user?.name} 👋
           </h2>
-          <div className="muted small text-xs text-gray-500" id="dashSub">
+          <div className="muted small text-xs text-gray-500 dark:text-gray-400" id="dashSub">
             {todayStr}
           </div>
         </div>
         {isCashier && (
           <button
-            className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
+            className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm transition-colors"
             type="button"
             id="dashNewBill"
             onClick={() => navigate('/pos')}
@@ -102,16 +102,16 @@ export function Dashboard() {
 
       <div id="dashBody" className="stack flex flex-col gap-6">
         {!isCashier ? (
-          <div className="card pad stack p-6 bg-white rounded shadow flex flex-col gap-4 max-w-xl">
-            <div className="h2 text-lg font-bold">Steward access</div>
-            <div className="muted text-sm text-gray-600">
+          <div className="card pad stack p-6 bg-white dark:bg-gray-800 rounded shadow border border-gray-200 dark:border-gray-700 flex flex-col gap-4 max-w-xl">
+            <div className="h2 text-lg font-bold text-gray-900 dark:text-gray-100">Steward access</div>
+            <div className="muted text-sm text-gray-600 dark:text-gray-300">
               You are signed in as a steward. Use <b>Tables &amp; KOT</b> to see occupied tables, raise KOTs and update
               item status. Opening tables, billing, inventory and reports need a cashier or manager login.
             </div>
             <div>
               <button
                 type="button"
-                className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
+                className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm transition-colors"
                 id="dashTablesBtn"
                 onClick={() => navigate('/tables')}
               >
@@ -120,52 +120,52 @@ export function Dashboard() {
             </div>
           </div>
         ) : loading ? (
-          <div className="p-8 text-center text-gray-500">Loading today's figures…</div>
+          <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading today's figures…</div>
         ) : (
           <>
             <div className="stats grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="stat-card p-4 bg-white rounded shadow border">
-                <div className="stat-label text-xs text-gray-500 uppercase tracking-wider font-semibold">Today's sales (paid)</div>
-                <div className="stat-value font-mono text-2xl font-bold mt-1 text-emerald-600" id="dashSales">{sales}</div>
-                <div className="muted small text-xs text-gray-500 mt-1">{paidCount} paid bills</div>
+              <div className="stat-card p-4 bg-white dark:bg-gray-800 rounded shadow border border-gray-200 dark:border-gray-700">
+                <div className="stat-label text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold">Today's sales (paid)</div>
+                <div className="stat-value font-mono text-2xl font-bold mt-1 text-emerald-600 dark:text-emerald-400" id="dashSales">{sales}</div>
+                <div className="muted small text-xs text-gray-500 dark:text-gray-400 mt-1">{paidCount} paid bills</div>
               </div>
 
-              <div className="stat-card p-4 bg-white rounded shadow border">
-                <div className="stat-label text-xs text-gray-500 uppercase tracking-wider font-semibold">Bills today</div>
-                <div className="stat-value font-mono text-2xl font-bold mt-1" id="dashBills">{billsCount}</div>
-                <div className="muted small text-xs text-gray-500 mt-1">Total recorded</div>
+              <div className="stat-card p-4 bg-white dark:bg-gray-800 rounded shadow border border-gray-200 dark:border-gray-700">
+                <div className="stat-label text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold">Bills today</div>
+                <div className="stat-value font-mono text-2xl font-bold mt-1 text-gray-900 dark:text-gray-100" id="dashBills">{billsCount}</div>
+                <div className="muted small text-xs text-gray-500 dark:text-gray-400 mt-1">Total recorded</div>
               </div>
 
-              <div className="stat-card p-4 bg-white rounded shadow border">
-                <div className="stat-label text-xs text-gray-500 uppercase tracking-wider font-semibold">Tables occupied</div>
+              <div className="stat-card p-4 bg-white dark:bg-gray-800 rounded shadow border border-gray-200 dark:border-gray-700">
+                <div className="stat-label text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold">Tables occupied</div>
                 <div
-                  className={`stat-value font-mono text-2xl font-bold mt-1 ${tablesOccupied > 0 ? 'text-amber-600' : ''}`}
+                  className={`stat-value font-mono text-2xl font-bold mt-1 text-gray-900 dark:text-gray-100 ${tablesOccupied > 0 ? 'text-amber-600 dark:text-amber-400' : ''}`}
                   id="dashTables"
                 >
                   {tablesOccupied} / {tablesTotal}
                 </div>
-                <div className="muted small text-xs text-gray-500 mt-1">{Math.max(0, tablesTotal - tablesOccupied)} free</div>
+                <div className="muted small text-xs text-gray-500 dark:text-gray-400 mt-1">{Math.max(0, tablesTotal - tablesOccupied)} free</div>
               </div>
 
-              <div className="stat-card p-4 bg-white rounded shadow border">
-                <div className="stat-label text-xs text-gray-500 uppercase tracking-wider font-semibold">Low stock SKUs</div>
+              <div className="stat-card p-4 bg-white dark:bg-gray-800 rounded shadow border border-gray-200 dark:border-gray-700">
+                <div className="stat-label text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold">Low stock SKUs</div>
                 <div
-                  className={`stat-value font-mono text-2xl font-bold mt-1 ${lowStockCount > 0 ? 'text-red-600' : 'text-emerald-600'}`}
+                  className={`stat-value font-mono text-2xl font-bold mt-1 ${lowStockCount > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}
                   id="dashLow"
                 >
                   {lowStockCount}
                 </div>
-                <div className="muted small text-xs text-gray-500 mt-1">At or below reorder level</div>
+                <div className="muted small text-xs text-gray-500 dark:text-gray-400 mt-1">At or below reorder level</div>
               </div>
             </div>
 
             <div className="two-col grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="card bg-white rounded shadow p-4 flex flex-col gap-3">
-                <div className="row between flex justify-between items-center border-b pb-2">
-                  <div className="h2 text-base font-bold">Recent bills</div>
+              <div className="card bg-white dark:bg-gray-800 rounded shadow p-4 border border-gray-200 dark:border-gray-700 flex flex-col gap-3">
+                <div className="row between flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-2">
+                  <div className="h2 text-base font-bold text-gray-900 dark:text-gray-100">Recent bills</div>
                   <button
                     type="button"
-                    className="btn-ghost text-xs text-blue-600 hover:underline font-medium"
+                    className="btn-ghost text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
                     onClick={() => navigate('/bills')}
                   >
                     View all →
@@ -173,12 +173,12 @@ export function Dashboard() {
                 </div>
 
                 {recentBills.length === 0 ? (
-                  <div className="state p-6 text-center text-gray-500 text-sm">No bills yet today.</div>
+                  <div className="state p-6 text-center text-gray-500 dark:text-gray-400 text-sm">No bills yet today.</div>
                 ) : (
                   <div className="table-wrap overflow-x-auto text-sm">
                     <table className="table table-compact w-full text-left">
                       <thead>
-                        <tr className="border-b text-xs text-gray-500 bg-gray-50">
+                        <tr className="border-b border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50">
                           <th className="py-2 px-2">Bill</th>
                           <th className="py-2 px-2">Time</th>
                           <th className="py-2 px-2">Mode</th>
@@ -190,28 +190,30 @@ export function Dashboard() {
                         {recentBills.map((b) => (
                           <tr
                             key={b.id}
-                            className="border-b hover:bg-gray-50 cursor-pointer"
+                            className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer text-gray-900 dark:text-gray-100"
                             onClick={() => navigate('/bills')}
                           >
                             <td className="py-2 px-2 font-medium">{b.billNumber}</td>
-                            <td className="py-2 px-2 text-xs text-gray-500">
+                            <td className="py-2 px-2 text-xs text-gray-500 dark:text-gray-400">
                               {new Date(b.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                             </td>
                             <td className="py-2 px-2">
-                              <span className="badge text-xs px-2 py-0.5 rounded font-medium bg-gray-100">
+                              <span className="badge text-xs px-2 py-0.5 rounded font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
                                 {b.paymentMode}
                               </span>
                             </td>
                             <td className="py-2 px-2">
                               <span
                                 className={`badge text-xs px-2 py-0.5 rounded font-medium ${
-                                  b.status === 'PAID' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                  b.status === 'PAID'
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-300'
+                                    : 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
                                 }`}
                               >
                                 {b.status}
                               </span>
                             </td>
-                            <td className="py-2 px-2 text-right font-mono font-bold">
+                            <td className="py-2 px-2 text-right font-mono font-bold text-gray-900 dark:text-gray-100">
                               ₹{parseFloat(b.total).toFixed(2)}
                             </td>
                           </tr>
@@ -223,33 +225,33 @@ export function Dashboard() {
               </div>
 
               <div className="stack flex flex-col gap-4">
-                <div className="card pad stack p-4 bg-white rounded shadow flex flex-col gap-3">
-                  <div className="h2 text-base font-bold border-b pb-2">Quick actions</div>
+                <div className="card pad stack p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow flex flex-col gap-3">
+                  <div className="h2 text-base font-bold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700 pb-2">Quick actions</div>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      className="btn-sec p-2.5 bg-gray-50 hover:bg-gray-100 rounded border text-left text-sm font-medium"
+                      className="btn-sec p-2.5 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 text-left text-sm font-medium text-gray-900 dark:text-gray-100 transition-colors"
                       onClick={() => navigate('/pos')}
                     >
                       🛒 POS Billing
                     </button>
                     <button
                       type="button"
-                      className="btn-sec p-2.5 bg-gray-50 hover:bg-gray-100 rounded border text-left text-sm font-medium"
+                      className="btn-sec p-2.5 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 text-left text-sm font-medium text-gray-900 dark:text-gray-100 transition-colors"
                       onClick={() => navigate('/shift')}
                     >
                       ⏱ Cashier Shift
                     </button>
                     <button
                       type="button"
-                      className="btn-sec p-2.5 bg-gray-50 hover:bg-gray-100 rounded border text-left text-sm font-medium"
+                      className="btn-sec p-2.5 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 text-left text-sm font-medium text-gray-900 dark:text-gray-100 transition-colors"
                       onClick={() => navigate('/tables')}
                     >
                       🪑 Tables &amp; KOT
                     </button>
                     <button
                       type="button"
-                      className="btn-sec p-2.5 bg-gray-50 hover:bg-gray-100 rounded border text-left text-sm font-medium"
+                      className="btn-sec p-2.5 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 text-left text-sm font-medium text-gray-900 dark:text-gray-100 transition-colors"
                       onClick={() => navigate('/inventory')}
                     >
                       📦 Inventory
@@ -258,14 +260,14 @@ export function Dashboard() {
                       <>
                         <button
                           type="button"
-                          className="btn-sec p-2.5 bg-gray-50 hover:bg-gray-100 rounded border text-left text-sm font-medium"
+                          className="btn-sec p-2.5 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 text-left text-sm font-medium text-gray-900 dark:text-gray-100 transition-colors"
                           onClick={() => navigate('/closing')}
                         >
                           🔒 Day Closing
                         </button>
                         <button
                           type="button"
-                          className="btn-sec p-2.5 bg-gray-50 hover:bg-gray-100 rounded border text-left text-sm font-medium"
+                          className="btn-sec p-2.5 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 rounded border border-gray-200 dark:border-gray-600 text-left text-sm font-medium text-gray-900 dark:text-gray-100 transition-colors"
                           onClick={() => navigate('/accounting')}
                         >
                           📚 Accounting
@@ -282,4 +284,3 @@ export function Dashboard() {
     </section>
   );
 }
-

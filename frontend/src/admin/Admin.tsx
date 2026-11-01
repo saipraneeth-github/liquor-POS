@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { errorMessage } from '../lib/print';
@@ -386,9 +387,19 @@ export function Admin() {
 
       {editingUserId && (
         <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-bold mb-1" id="modalTitle">Page permissions</h3>
-            <div className="muted small text-xs text-gray-500 mb-4">
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex justify-between items-start mb-1">
+              <h3 className="text-lg font-bold" id="modalTitle">Page permissions</h3>
+              <button
+                type="button"
+                onClick={() => setEditingUserId(null)}
+                className="p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                aria-label="Close dialog"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="muted small text-xs text-gray-500 dark:text-gray-400 mb-4">
               Optional page matrix used by page-guarded features. Owners bypass it.
             </div>
 
