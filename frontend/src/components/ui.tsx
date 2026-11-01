@@ -4,12 +4,13 @@ import { X } from 'lucide-react';
 export const inr = (v: string | number) =>
   `₹${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-1">{hint}</span>}
+      {error && <span className="block text-xs text-red-600 dark:text-red-400 font-medium mt-1">⚠️ {error}</span>}
+      {hint && !error && <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-1">{hint}</span>}
     </label>
   );
 }

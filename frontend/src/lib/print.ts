@@ -1,13 +1,58 @@
 import { api } from '../api/client';
 
-/** api.* throws the raw response text; pull the `error` field out when it is JSON. */
+/** api.* throws the raw response text; pull the error/message and validation details out when it is JSON. */
 export function errorMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   try {
     const parsed = JSON.parse(raw);
-    return parsed.error || parsed.message || raw;
+    let msg = parsed.error || parsed.message || raw;
+    const d = parsed.details;
+    if (d && typeof d === 'object') {
+      const parts: string[] = [];
+      if (Array.isArray(d.formErrors) && d.formErrors.length) {
+        parts.push(...d.formErrors.map(String));
+      }
+      if (d.fieldErrors && typeof d.fieldErrors === 'object') {
+        for (const [k, v] of Object.entries(d.fieldErrors as Record<string, unknown>)) {
+          if (Array.isArray(v) && v.length) {
+            parts.push(`${k}: ${v.join(', ')}`);
+          } else if (typeof v === 'string' && v) {
+            parts.push(`${k}: ${v}`);
+          }
+        }
+      }
+      if (parts.length) {
+        const detailStr = parts.join('; ');
+        if (!msg.includes(detailStr)) {
+          msg = `${msg}: ${detailStr}`;
+        }
+      }
+    }
+    return msg;
   } catch {
     return raw;
+  }
+}
+
+/** Parses structured field errors from an API error response. */
+export function parseFieldErrors(err: unknown): Record<string, string> {
+  const raw = err instanceof Error ? err.message : String(err);
+  try {
+    const parsed = JSON.parse(raw);
+    const fields: Record<string, string> = {};
+    const d = parsed.details?.fieldErrors;
+    if (d && typeof d === 'object') {
+      for (const [k, v] of Object.entries(d as Record<string, unknown>)) {
+        if (Array.isArray(v) && v.length) {
+          fields[k] = String(v[0]);
+        } else if (typeof v === 'string') {
+          fields[k] = v;
+        }
+      }
+    }
+    return fields;
+  } catch {
+    return {};
   }
 }
 

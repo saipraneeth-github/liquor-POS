@@ -9,33 +9,35 @@ import { assertWithinBranchLimit, branchCountOf } from '../platform/platform.ser
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
-const GSTIN = z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be 15 alphanumeric characters');
+const GSTIN = z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be exactly 15 alphanumeric characters (e.g. 36AABCU9603R1ZM)');
 
-const PRINTER_HOST = z.string().trim().max(253).regex(/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/, 'Printer host must be a hostname or IP address');
+const PRINTER_HOST = z.string().trim().max(253, 'Printer host cannot exceed 253 characters').regex(/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/, 'Printer host must be a hostname or IP address');
 
-const BRANCH_NAME = z.string().trim().min(1).max(200).refine((s) => !/[<>]/.test(s), 'Branch name must not contain < or >');
+const BRANCH_NAME = z.string().trim().min(1, 'Branch name is required').max(200, 'Branch name cannot exceed 200 characters').refine((s) => !/[<>]/.test(s), 'Branch name must not contain < or >');
+
+const OPTIONAL_GSTIN = z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), GSTIN.optional());
 
 export const CreateBranchSchema = z.object({
   name:            BRANCH_NAME,
-  code:            z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,10}$/, 'code must be 2-10 letters/digits'),
-  address:         z.string().trim().max(500).optional(),
-  gstin:           GSTIN.optional(),
-  exciseLicenseNo: z.string().trim().max(100).optional(),
-  parentBranchId:  z.string().uuid().optional(),
-  syndicateId:     z.string().uuid().optional(),   // platform owner only
+  code:            z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,10}$/, 'Branch code must be 2–10 uppercase letters or numbers (e.g. MAIN, HYD01)'),
+  address:         z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().trim().max(500, 'Address cannot exceed 500 characters').optional()),
+  gstin:           OPTIONAL_GSTIN,
+  exciseLicenseNo: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().trim().max(100, 'Excise license cannot exceed 100 characters').optional()),
+  parentBranchId:  z.string().uuid('Invalid parent branch ID').optional(),
+  syndicateId:     z.string().uuid('Invalid syndicate ID').optional(),   // platform owner only
 });
 
 // code is immutable: it is baked into every issued bill number
 export const UpdateBranchSchema = z.object({
   name:            BRANCH_NAME.optional(),
-  address:         z.string().trim().max(500).nullable().optional(),
-  gstin:           GSTIN.nullable().optional(),
-  exciseLicenseNo: z.string().trim().max(100).nullable().optional(),
-  parentBranchId:  z.string().uuid().nullable().optional(),
+  address:         z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().trim().max(500, 'Address cannot exceed 500 characters').nullable().optional()),
+  gstin:           z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), GSTIN.nullable().optional()),
+  exciseLicenseNo: z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), z.string().trim().max(100, 'Excise license cannot exceed 100 characters').nullable().optional()),
+  parentBranchId:  z.string().uuid('Invalid parent branch ID').nullable().optional(),
   roundOff:        z.boolean().optional(),
   printViaAgent:   z.boolean().optional(),                            // print through the local print agent
-  printerHost:     PRINTER_HOST.nullable().optional(),                // ESC/POS network printer
-  printerPort:     z.number().int().min(1).max(65535).optional(),
+  printerHost:     z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? null : v), PRINTER_HOST.nullable().optional()),
+  printerPort:     z.number().int('Printer port must be an integer').min(1, 'Printer port must be between 1 and 65535').max(65535, 'Printer port must be between 1 and 65535').optional(),
   paperWidth:      z.enum(['58mm', '80mm']).optional(),
 }).refine((d) => Object.keys(d).length > 0, 'At least one field is required');
 

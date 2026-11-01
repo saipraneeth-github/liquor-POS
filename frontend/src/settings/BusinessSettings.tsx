@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { errorMessage, showToast } from '../lib/print';
+import { errorMessage, parseFieldErrors, showToast } from '../lib/print';
 import { useAuth } from '../auth/AuthProvider';
 import { Badge, Field, Modal, Stat } from '../components/ui';
 import { SubscriptionPanel } from '../billing/SubscriptionPanel';
@@ -13,6 +13,7 @@ interface Branch {
   code: string;
   address: string | null;
   gstin: string | null;
+  exciseLicenseNo: string | null;
   printerHost: string | null;
   printerPort: number;
   paperWidth: '58mm' | '80mm';
@@ -39,6 +40,7 @@ interface FormState {
   code: string;
   address: string;
   gstin: string;
+  exciseLicenseNo: string;
   printerHost: string;
   printerPort: string;
   paperWidth: '58mm' | '80mm';
@@ -48,7 +50,20 @@ interface FormState {
   agentOnline: boolean;
 }
 
-const blank: FormState = { name: '', code: '', address: '', gstin: '', printerHost: '', printerPort: '9100', paperWidth: '58mm', roundOff: false, printViaAgent: false, hasAgentToken: false, agentOnline: false };
+const blank: FormState = {
+  name: '',
+  code: '',
+  address: '',
+  gstin: '',
+  exciseLicenseNo: '',
+  printerHost: '',
+  printerPort: '9100',
+  paperWidth: '58mm',
+  roundOff: false,
+  printViaAgent: false,
+  hasAgentToken: false,
+  agentOnline: false,
+};
 
 /** Admin (business owner) console: plan usage, branches, GST details and the receipt printer of each branch. */
 export function BusinessSettings() {
@@ -73,7 +88,6 @@ export function BusinessSettings() {
     } catch (err) {
       showToast(errorMessage(err), 'error');
     }
-    loadJobs();
   };
 
   const [tenant, setTenant] = useState<TenantSummary | null>(null);
@@ -81,6 +95,7 @@ export function BusinessSettings() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<FormState | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
@@ -93,6 +108,7 @@ export function BusinessSettings() {
       setForm({ ...form, hasAgentToken: true, agentOnline: false });
     } catch (err) {
       setFormError(errorMessage(err));
+      setFieldErrors(parseFieldErrors(err));
     }
   };
 
@@ -105,6 +121,7 @@ export function BusinessSettings() {
       load();
     } catch (err) {
       setFormError(errorMessage(err));
+      setFieldErrors(parseFieldErrors(err));
     }
   };
 
@@ -129,8 +146,10 @@ export function BusinessSettings() {
 
   const openEdit = (b: Branch) => {
     setFormError(null);
+    setFieldErrors({});
     setForm({
       id: b.id, name: b.name, code: b.code, address: b.address ?? '', gstin: b.gstin ?? '',
+      exciseLicenseNo: b.exciseLicenseNo ?? '',
       printerHost: b.printerHost ?? '', printerPort: String(b.printerPort), paperWidth: b.paperWidth, roundOff: b.roundOff,
       printViaAgent: b.printViaAgent, hasAgentToken: b.hasAgentToken, agentOnline: b.agentOnline,
     });
@@ -142,12 +161,14 @@ export function BusinessSettings() {
     if (!form) return;
     setSaving(true);
     setFormError(null);
+    setFieldErrors({});
     try {
       if (form.id) {
         await api.patch(`/branches/${form.id}`, {
           name: form.name.trim(),
           address: form.address.trim() || null,
           gstin: form.gstin.trim() ? form.gstin.trim().toUpperCase() : null,
+          exciseLicenseNo: form.exciseLicenseNo.trim() || null,
           printerHost: form.printerHost.trim() || null,
           printerPort: Number(form.printerPort) || 9100,
           paperWidth: form.paperWidth,
@@ -160,13 +181,15 @@ export function BusinessSettings() {
           code: form.code.trim().toUpperCase(),
           ...(form.address.trim() ? { address: form.address.trim() } : {}),
           ...(form.gstin.trim() ? { gstin: form.gstin.trim().toUpperCase() } : {}),
+          ...(form.exciseLicenseNo.trim() ? { exciseLicenseNo: form.exciseLicenseNo.trim() } : {}),
         });
       }
       showToast(form.id ? 'Branch saved.' : 'Branch added.');
       setForm(null);
       load();
     } catch (err) {
-      setFormError(friendly(errorMessage(err)));
+      setFormError(errorMessage(err));
+      setFieldErrors(parseFieldErrors(err));
     } finally {
       setSaving(false);
     }
@@ -205,7 +228,7 @@ export function BusinessSettings() {
           id="branchAddBtn"
           disabled={atLimit}
           title={atLimit ? 'Branch limit of your plan reached' : undefined}
-          onClick={() => { setFormError(null); setForm({ ...blank }); }}
+          onClick={() => { setFormError(null); setFieldErrors({}); setForm({ ...blank }); }}
           className="px-4 py-2 text-sm font-semibold bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg cursor-pointer"
         >
           + Add branch
@@ -248,29 +271,39 @@ export function BusinessSettings() {
         ) : (
           <table className="w-full text-left text-sm" id="branchTable">
             <thead>
-              <tr className="border-b text-[11px] uppercase tracking-wider text-gray-500 bg-gray-50 dark:bg-gray-900/40 dark:border-gray-700">
-                <th className="py-2.5 px-4">Branch</th>
-                <th className="py-2.5 px-4">GSTIN</th>
-                <th className="py-2.5 px-4">Receipt printer</th>
-                <th className="py-2.5 px-4">Round-off</th>
-                <th className="py-2.5 px-4 text-right">Actions</th>
+              <tr className="border-b dark:border-gray-700 text-xs text-gray-500 uppercase tracking-wider">
+                <th className="py-3 px-4">Code</th>
+                <th className="py-3 px-4">Name</th>
+                <th className="py-3 px-4">GSTIN</th>
+                <th className="py-3 px-4">Receipt printer</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {branches.map((b) => (
-                <tr key={b.id} className="branch-row" data-branch-code={b.code}>
+                <tr key={b.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/40">
+                  <td className="py-3 px-4 font-mono font-bold">{b.code}</td>
                   <td className="py-3 px-4">
-                    <div className="font-medium">{b.name}</div>
-                    <div className="text-xs text-gray-500">{b.code}{b.address ? ` · ${b.address}` : ''}</div>
+                    <div className="font-semibold">{b.name}</div>
+                    {b.address && <div className="text-xs text-gray-500">{b.address}</div>}
                   </td>
-                  <td className="py-3 px-4 font-mono text-xs">{b.gstin ?? <Badge tone="warn">Missing</Badge>}</td>
-                  <td className="py-3 px-4 text-xs">
-                    {b.printerHost ? <span className="font-mono">{b.printerHost}:{b.printerPort}</span> : <span className="text-gray-500">Browser print</span>}
-                    <span className="text-gray-400"> · {b.paperWidth}</span>
+                  <td className="py-3 px-4 font-mono text-xs">{b.gstin ?? '—'}</td>
+                  <td className="py-3 px-4">
+                    {b.printViaAgent ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Badge tone="info">Agent</Badge>
+                        <span className="text-xs text-gray-500">{b.agentOnline ? 'online' : 'offline'}</span>
+                      </span>
+                    ) : b.printerHost ? (
+                      <span className="text-xs font-mono">{b.printerHost}:{b.printerPort} ({b.paperWidth})</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">Browser</span>
+                    )}
                   </td>
-                  <td className="py-3 px-4">{b.roundOff ? <Badge tone="info">On</Badge> : <Badge tone="muted">Off</Badge>}</td>
                   <td className="py-3 px-4 text-right">
-                    <button type="button" className="text-xs text-purple-600 hover:underline cursor-pointer" onClick={() => openEdit(b)}>Edit</button>
+                    <button type="button" className="px-3 py-1 text-xs border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" onClick={() => openEdit(b)}>
+                      Edit
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -282,31 +315,105 @@ export function BusinessSettings() {
       {form && (
         <Modal title={form.id ? `Edit ${form.name}` : 'Add branch'} onClose={() => setForm(null)} wide>
           <form onSubmit={save} className="space-y-4">
-            {formError && <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-xs rounded-lg">{formError}</div>}
+            {formError && (
+              <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-800 dark:text-red-200 text-xs rounded-lg flex items-start gap-2">
+                <span className="text-base leading-none">⚠️</span>
+                <div className="font-medium flex-1">{formError}</div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Branch name">
-                <input id="branchName" className="input-base" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required maxLength={200} />
+              <Field label="Branch name" error={fieldErrors.name}>
+                <input
+                  id="branchName"
+                  className={`input-base ${fieldErrors.name ? 'border-red-500 focus:border-red-500' : ''}`}
+                  value={form.name}
+                  onChange={(e) => {
+                    setForm({ ...form, name: e.target.value });
+                    if (fieldErrors.name) setFieldErrors({ ...fieldErrors, name: '' });
+                  }}
+                  required
+                  maxLength={200}
+                  placeholder="e.g. Jubilee Hills Store"
+                />
               </Field>
-              <Field label="Code" hint={form.id ? 'Fixed — it is part of every bill number.' : '2–10 letters/digits, used in bill numbers.'}>
-                <input id="branchCode" className="input-base font-mono uppercase" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} disabled={!!form.id} required={!form.id} maxLength={10} />
+              <Field
+                label="Code"
+                hint={form.id ? 'Fixed — it is part of every bill number.' : '2–10 uppercase letters/digits (e.g. MAIN, HYD01)'}
+                error={fieldErrors.code}
+              >
+                <input
+                  id="branchCode"
+                  className={`input-base font-mono uppercase ${fieldErrors.code ? 'border-red-500 focus:border-red-500' : ''}`}
+                  value={form.code}
+                  onChange={(e) => {
+                    setForm({ ...form, code: e.target.value.toUpperCase() });
+                    if (fieldErrors.code) setFieldErrors({ ...fieldErrors, code: '' });
+                  }}
+                  disabled={!!form.id}
+                  required={!form.id}
+                  maxLength={10}
+                  placeholder="e.g. MAIN"
+                />
               </Field>
             </div>
-            <Field label="Address (printed on bills)">
-              <input className="input-base" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} maxLength={500} />
+            <Field label="Address (printed on bills)" error={fieldErrors.address}>
+              <input
+                className={`input-base ${fieldErrors.address ? 'border-red-500 focus:border-red-500' : ''}`}
+                value={form.address}
+                onChange={(e) => {
+                  setForm({ ...form, address: e.target.value });
+                  if (fieldErrors.address) setFieldErrors({ ...fieldErrors, address: '' });
+                }}
+                maxLength={500}
+                placeholder="Street, City, State, PIN"
+              />
             </Field>
-            <Field label="GSTIN" hint="Printed on every invoice. The first two digits decide CGST+SGST vs IGST for B2B buyers.">
-              <input id="branchGstin" className="input-base font-mono" value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value })} maxLength={15} />
-            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                label="GSTIN"
+                hint="15 alphanumeric characters (optional)"
+                error={fieldErrors.gstin}
+              >
+                <input
+                  id="branchGstin"
+                  className={`input-base font-mono uppercase ${fieldErrors.gstin ? 'border-red-500 focus:border-red-500' : ''}`}
+                  value={form.gstin}
+                  onChange={(e) => {
+                    setForm({ ...form, gstin: e.target.value.toUpperCase() });
+                    if (fieldErrors.gstin) setFieldErrors({ ...fieldErrors, gstin: '' });
+                  }}
+                  maxLength={15}
+                  placeholder="e.g. 36AABCU9603R1ZM"
+                />
+              </Field>
+              <Field
+                label="Excise Licence"
+                hint="State excise depot license number (optional)"
+                error={fieldErrors.exciseLicenseNo}
+              >
+                <input
+                  id="branchExcise"
+                  className={`input-base font-mono ${fieldErrors.exciseLicenseNo ? 'border-red-500 focus:border-red-500' : ''}`}
+                  value={form.exciseLicenseNo}
+                  onChange={(e) => {
+                    setForm({ ...form, exciseLicenseNo: e.target.value });
+                    if (fieldErrors.exciseLicenseNo) setFieldErrors({ ...fieldErrors, exciseLicenseNo: '' });
+                  }}
+                  maxLength={100}
+                  placeholder="e.g. 2BCL2026/001"
+                />
+              </Field>
+            </div>
 
             {form.id && (
               <div className="border-t pt-4 dark:border-gray-700 space-y-3">
                 <div className="text-sm font-semibold">Receipt printer</div>
                 <div className="grid grid-cols-[1fr_110px_130px] gap-3">
-                  <Field label="Printer address" hint="LAN IP or hostname of an ESC/POS printer. Empty = print through the browser.">
-                    <input id="printerHost" className="input-base font-mono" placeholder="192.168.1.50" value={form.printerHost} onChange={(e) => setForm({ ...form, printerHost: e.target.value })} />
+                  <Field label="Printer address" hint="LAN IP or hostname of an ESC/POS printer. Empty = print through the browser." error={fieldErrors.printerHost}>
+                    <input id="printerHost" className={`input-base font-mono ${fieldErrors.printerHost ? 'border-red-500' : ''}`} placeholder="192.168.1.50" value={form.printerHost} onChange={(e) => setForm({ ...form, printerHost: e.target.value })} />
                   </Field>
-                  <Field label="Port">
-                    <input id="printerPort" className="input-base font-mono" type="number" min="1" max="65535" value={form.printerPort} onChange={(e) => setForm({ ...form, printerPort: e.target.value })} />
+                  <Field label="Port" error={fieldErrors.printerPort}>
+                    <input id="printerPort" className={`input-base font-mono ${fieldErrors.printerPort ? 'border-red-500' : ''}`} type="number" min="1" max="65535" value={form.printerPort} onChange={(e) => setForm({ ...form, printerPort: e.target.value })} />
                   </Field>
                   <Field label="Paper">
                     <select id="paperWidth" className="input-base" value={form.paperWidth} onChange={(e) => setForm({ ...form, paperWidth: e.target.value as '58mm' | '80mm' })}>
@@ -361,16 +468,4 @@ export function BusinessSettings() {
       )}
     </section>
   );
-}
-
-function friendly(raw: string): string {
-  try {
-    const parsed = JSON.parse(raw);
-    const fields = parsed?.details?.fieldErrors as Record<string, string[]> | undefined;
-    const first = fields && Object.entries(fields).find(([, v]) => v?.length);
-    if (first) return `${first[0]}: ${first[1][0]}`;
-    return parsed.error || raw;
-  } catch {
-    return raw;
-  }
 }
