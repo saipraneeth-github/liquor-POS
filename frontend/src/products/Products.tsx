@@ -1,6 +1,11 @@
-import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
-import { CategoryBadge } from '../components/category-icons';
+import { useState, useEffect, useMemo } from 'react';
+import { X, Search } from 'lucide-react';
+import {
+  CategoryBadge,
+  classifyProductCategory,
+  CATEGORY_DEFINITIONS,
+  type LiquorCategoryKey,
+} from '../components/category-icons';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -37,6 +42,7 @@ export function Products() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<LiquorCategoryKey>('ALL');
   const [loading, setLoading] = useState(false);
 
   // Edit MRP modal
@@ -165,14 +171,50 @@ export function Products() {
     }
   };
 
+  const categoriesList = useMemo(() => {
+    const counts: Record<LiquorCategoryKey, number> = {
+      ALL: products.length,
+      WHISKY: 0,
+      SCOTCH: 0,
+      BEER: 0,
+      WINE: 0,
+      VODKA: 0,
+      RUM: 0,
+      GIN: 0,
+      BRANDY: 0,
+      FOOD: 0,
+      OTHER: 0,
+    };
+    for (const p of products) {
+      const k = classifyProductCategory(p);
+      counts[k] = (counts[k] || 0) + 1;
+    }
+    return CATEGORY_DEFINITIONS.map((def) => ({
+      ...def,
+      count: counts[def.id] || 0,
+    })).filter((def) => def.id === 'ALL' || def.count > 0);
+  }, [products]);
+
   const q = search.trim().toLowerCase();
-  const filtered = (products || []).filter(
-    (p) =>
-      !q ||
-      p.name.toLowerCase().includes(q) ||
-      (p.brand || '').toLowerCase().includes(q) ||
-      (p.barcode || '').includes(q)
-  );
+  const filtered = useMemo(() => {
+    return (products || []).filter((p) => {
+      // Category filter
+      if (selectedCategory !== 'ALL') {
+        const catKey = classifyProductCategory(p);
+        if (catKey !== selectedCategory) return false;
+      }
+
+      // Search query filter
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        (p.brand || '').toLowerCase().includes(q) ||
+        (p.barcode || '').includes(q) ||
+        (p.categoryName || '').toLowerCase().includes(q) ||
+        (p.sku || '').toLowerCase().includes(q)
+      );
+    });
+  }, [products, selectedCategory, q]);
 
   return (
     <section className="page active" id="page-products" aria-labelledby="prodTitle">
@@ -185,16 +227,76 @@ export function Products() {
         </div>
       </div>
 
-      <div className="row mb-4">
-        <label htmlFor="prodSearch" className="sr-only">Search products</label>
-        <input
-          id="prodSearch"
-          className="input p-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded text-sm w-full max-w-xs focus:ring-2 focus:ring-primary/20 focus:outline-none"
-          style={{ maxWidth: '320px' }}
-          placeholder="Search name, brand or barcode"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="space-y-3 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative w-full max-w-xs">
+            <label htmlFor="prodSearch" className="sr-only">Search products</label>
+            <Search size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              id="prodSearch"
+              type="search"
+              className="input p-2 pl-8 pr-8 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded text-sm w-full focus:ring-2 focus:ring-purple-500/20 focus:outline-none"
+              placeholder="Search name, brand, category, barcode"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+            <span>Showing <b>{filtered.length}</b> of <b>{products.length}</b> products</span>
+            {(selectedCategory !== 'ALL' || search) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory('ALL');
+                  setSearch('');
+                }}
+                className="text-purple-600 dark:text-purple-400 font-semibold hover:underline cursor-pointer"
+              >
+                Reset filters
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Category Filter Pills (All, Whisky, Scotch, Beer, Wine, Vodka, Rum, Gin, Brandy, Food, Other) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-none" id="prodCategoryFilters">
+          {categoriesList.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              id={`prodCatFilter-${cat.id.toLowerCase()}`}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 border cursor-pointer ${
+                selectedCategory === cat.id
+                  ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
+              }`}
+            >
+              <span>{cat.emoji}</span>
+              <span>{cat.label}</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  selectedCategory === cat.id
+                    ? 'bg-purple-700 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                {cat.count}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="card table-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow overflow-x-auto mb-6" id="prodTable">
@@ -202,7 +304,9 @@ export function Products() {
           <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading products…</div>
         ) : filtered.length === 0 ? (
           <div className="state p-8 text-center text-gray-500 dark:text-gray-400">
-            {products.length ? 'No products match.' : 'No products yet.'}
+            {products.length
+              ? `No products match ${selectedCategory !== 'ALL' ? `category "${selectedCategory}"` : ''} ${q ? `query "${q}"` : ''}.`
+              : 'No products yet.'}
           </div>
         ) : (
           <table className="table w-full text-left">
