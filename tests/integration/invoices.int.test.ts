@@ -96,7 +96,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
       matchStatus: 'MATCHED',
       matchMethod: 'BARCODE',
       quantity: 12,
-      costPrice: '800.00',
+      costPrice: '800.000000',
       mrp: '1020.00',
       lineCostTotal: '9600.00',
     });
@@ -209,7 +209,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     expect(res1.statusCode).toBe(201);
     const body1 = res1.json();
     expect(body1.invoice.source).toBe('EXCEL');
-    expect(body1.items[0]).toMatchObject({ quantity: 24, costPrice: '800.00', lineCostTotal: '19200.00' });
+    expect(body1.items[0]).toMatchObject({ quantity: 24, costPrice: '800.000000', lineCostTotal: '19200.00' });
     expect(body1.items[0].flags).toContain('CASES_CONVERTED');
 
     // Duplicate live (branch, supplier, invoiceNumber) -> 409 with existingInvoiceId
