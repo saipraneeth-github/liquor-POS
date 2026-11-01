@@ -1428,33 +1428,33 @@ export function Inventory() {
 
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                           <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
-                            <span className="text-gray-500 text-[10px] block">Previous Credit (Opening)</span>
+                            <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Previous Credit (Opening)</span>
                             <span className="font-mono font-bold text-gray-900 dark:text-gray-100">
                               ₹{parseFloat(activeInvoice.invoice.previousCredit || '0.00').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
 
                           <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
-                            <span className="text-gray-500 text-[10px] block">e-Challan / DD Paid</span>
+                            <span className="text-gray-500 dark:text-slate-400 text-[10px] block">e-Challan / DD Paid</span>
                             <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                               +₹{parseFloat(activeInvoice.invoice.challanAmount || '0.00').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
                             {activeInvoice.invoice.challanNumber && (
-                              <span className="text-[9px] text-gray-400 block truncate" title={activeInvoice.invoice.challanNumber}>
+                              <span className="text-[9px] text-gray-400 dark:text-slate-400 block truncate" title={activeInvoice.invoice.challanNumber}>
                                 {activeInvoice.invoice.challanNumber}
                               </span>
                             )}
                           </div>
 
                           <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
-                            <span className="text-gray-500 text-[10px] block">Sub Total (Available Funds)</span>
+                            <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Sub Total (Available Funds)</span>
                             <span className="font-mono font-bold text-indigo-900 dark:text-indigo-200">
                               ₹{parseFloat(activeInvoice.invoice.subTotal || '0.00').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
 
                           <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
-                            <span className="text-gray-500 text-[10px] block">Retailer Credit Balance</span>
+                            <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Retailer Credit Balance</span>
                             <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
                               ₹{parseFloat(activeInvoice.invoice.retailerCreditBalance || '0.00').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
@@ -1468,25 +1468,25 @@ export function Inventory() {
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
                             <div>
-                              <span className="text-gray-500">(-) Net Goods Value:</span>{' '}
-                              <b className="font-mono">₹{parseFloat(activeInvoice.invoice.netInvoiceValue || activeInvoice.invoice.totalAmount || '0').toFixed(2)}</b>
+                              <span className="text-gray-500 dark:text-slate-400">(-) Net Goods Value:</span>{' '}
+                              <b className="font-mono text-slate-800 dark:text-slate-200">₹{parseFloat(activeInvoice.invoice.netInvoiceValue || activeInvoice.invoice.totalAmount || '0').toFixed(2)}</b>
                             </div>
                             {activeInvoice.invoice.turnoverTax && parseFloat(activeInvoice.invoice.turnoverTax) > 0 && (
                               <div>
-                                <span className="text-gray-500">(-) Turnover Tax:</span>{' '}
-                                <b className="font-mono">₹{parseFloat(activeInvoice.invoice.turnoverTax).toFixed(2)}</b>
+                                <span className="text-gray-500 dark:text-slate-400">(-) Turnover Tax:</span>{' '}
+                                <b className="font-mono text-slate-800 dark:text-slate-200">₹{parseFloat(activeInvoice.invoice.turnoverTax).toFixed(2)}</b>
                               </div>
                             )}
                             {activeInvoice.invoice.specialExciseCess && parseFloat(activeInvoice.invoice.specialExciseCess) > 0 && (
                               <div>
-                                <span className="text-gray-500">(-) Special Excise Cess:</span>{' '}
-                                <b className="font-mono">₹{parseFloat(activeInvoice.invoice.specialExciseCess).toFixed(2)}</b>
+                                <span className="text-gray-500 dark:text-slate-400">(-) Special Excise Cess:</span>{' '}
+                                <b className="font-mono text-slate-800 dark:text-slate-200">₹{parseFloat(activeInvoice.invoice.specialExciseCess).toFixed(2)}</b>
                               </div>
                             )}
                             {activeInvoice.invoice.tcsAmount && parseFloat(activeInvoice.invoice.tcsAmount) > 0 && (
                               <div>
-                                <span className="text-gray-500">(-) TCS (Sec 206C):</span>{' '}
-                                <b className="font-mono">₹{parseFloat(activeInvoice.invoice.tcsAmount).toFixed(2)}</b>
+                                <span className="text-gray-500 dark:text-slate-400">(-) TCS (Sec 206C):</span>{' '}
+                                <b className="font-mono text-slate-800 dark:text-slate-200">₹{parseFloat(activeInvoice.invoice.tcsAmount).toFixed(2)}</b>
                               </div>
                             )}
                             <div className="font-semibold text-indigo-900 dark:text-indigo-200">
@@ -1805,65 +1805,65 @@ export function Inventory() {
 
           {/* ── STEP 3: Confirmation & Inward Screen ──────────────────────────── */}
           {wizardStep === 3 && activeInvoice && (
-            <div className="bg-white rounded-xl shadow-sm border p-6 max-w-3xl mx-auto space-y-6">
+            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800 p-6 max-w-3xl mx-auto space-y-6">
               <div className="text-center space-y-1">
                 <div className="text-4xl">📦</div>
-                <h2 className="text-2xl font-bold text-gray-900">Step 3: Confirm Stock Inward</h2>
-                <p className="text-sm text-gray-600">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Step 3: Confirm Stock Inward</h2>
+                <p className="text-sm text-gray-600 dark:text-slate-400">
                   Please verify the summary below before adding these bottles to your live store stock.
                 </p>
               </div>
 
               {/* Big Metrics Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-blue-50/70 border border-blue-100 rounded-xl text-center">
-                  <div className="text-xs text-blue-600 font-bold uppercase tracking-wider">Total Bottles</div>
-                  <div className="text-2xl font-bold text-blue-900 mt-1 font-mono">{draftTotalBottles}</div>
-                  <div className="text-[11px] text-blue-700">across {activeInvoice.items.length} lines</div>
+                <div className="p-4 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-xl text-center">
+                  <div className="text-xs text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">Total Bottles</div>
+                  <div className="text-2xl font-bold text-blue-900 dark:text-blue-100 mt-1 font-mono">{draftTotalBottles}</div>
+                  <div className="text-[11px] text-blue-700 dark:text-blue-300">across {activeInvoice.items.length} lines</div>
                 </div>
 
-                <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-xl text-center">
-                  <div className="text-xs text-emerald-600 font-bold uppercase tracking-wider">Total Amount</div>
-                  <div className="text-2xl font-bold text-emerald-900 mt-1 font-mono">
+                <div className="p-4 bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/50 rounded-xl text-center">
+                  <div className="text-xs text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Total Amount</div>
+                  <div className="text-2xl font-bold text-emerald-900 dark:text-emerald-100 mt-1 font-mono">
                     ₹{parseFloat(activeInvoice.invoice.linesTotal || activeInvoice.invoice.totalAmount).toFixed(2)}
                   </div>
-                  <div className="text-[11px] text-emerald-700">purchase value</div>
+                  <div className="text-[11px] text-emerald-700 dark:text-emerald-300">purchase value</div>
                 </div>
 
-                <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-xl text-center">
-                  <div className="text-xs text-purple-600 font-bold uppercase tracking-wider">Bill Number</div>
-                  <div className="text-base font-bold text-purple-900 mt-2 font-mono truncate" title={activeInvoice.invoice.invoiceNumber}>
+                <div className="p-4 bg-purple-50/70 dark:bg-purple-950/40 border border-purple-100 dark:border-purple-900/50 rounded-xl text-center">
+                  <div className="text-xs text-purple-600 dark:text-purple-400 font-bold uppercase tracking-wider">Bill Number</div>
+                  <div className="text-base font-bold text-purple-900 dark:text-purple-100 mt-2 font-mono truncate" title={activeInvoice.invoice.invoiceNumber}>
                     {activeInvoice.invoice.invoiceNumber}
                   </div>
-                  <div className="text-[11px] text-purple-700">delivery challan</div>
+                  <div className="text-[11px] text-purple-700 dark:text-purple-300">delivery challan</div>
                 </div>
 
-                <div className="p-4 bg-amber-50/70 border border-amber-100 rounded-xl text-center">
-                  <div className="text-xs text-amber-600 font-bold uppercase tracking-wider">Depot / Supplier</div>
-                  <div className="text-base font-bold text-amber-900 mt-2 truncate" title={activeInvoice.invoice.supplierName}>
+                <div className="p-4 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/50 rounded-xl text-center">
+                  <div className="text-xs text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider">Depot / Supplier</div>
+                  <div className="text-base font-bold text-amber-900 dark:text-amber-100 mt-2 truncate" title={activeInvoice.invoice.supplierName}>
                     {activeInvoice.invoice.supplierName || 'Depot'}
                   </div>
-                  <div className="text-[11px] text-amber-700">source</div>
+                  <div className="text-[11px] text-amber-700 dark:text-amber-300">source</div>
                 </div>
               </div>
 
               {/* Summary List */}
-              <div className="border rounded-xl p-4 bg-gray-50/50 space-y-3">
-                <div className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <div className="border dark:border-slate-800 rounded-xl p-4 bg-gray-50/50 dark:bg-slate-800/40 space-y-3">
+                <div className="text-xs font-bold text-gray-700 dark:text-slate-300 uppercase tracking-wider">
                   Liquor Products to Add:
                 </div>
-                <div className="max-h-60 overflow-y-auto divide-y divide-gray-200 text-sm">
+                <div className="max-h-60 overflow-y-auto divide-y divide-gray-200 dark:divide-slate-800 text-sm">
                   {activeInvoice.items.map((it, i) => (
                     <div key={i} className="py-2 flex items-center justify-between">
                       <div>
-                        <div className="font-semibold text-gray-900">{it.productName || it.rawDescription}</div>
-                        <div className="text-xs text-gray-500">
+                        <div className="font-semibold text-gray-900 dark:text-slate-100">{it.productName || it.rawDescription}</div>
+                        <div className="text-xs text-gray-500 dark:text-slate-400">
                           MRP ₹{parseFloat(it.mrp).toFixed(2)} · Rate ₹{parseFloat(it.costPrice).toFixed(2)}
                         </div>
                       </div>
                       <div className="text-right">
-                        <span className="font-mono font-bold text-gray-900 text-base">+{it.quantity}</span>{' '}
-                        <span className="text-xs text-gray-500">bottles</span>
+                        <span className="font-mono font-bold text-gray-900 dark:text-slate-100 text-base">+{it.quantity}</span>{' '}
+                        <span className="text-xs text-gray-500 dark:text-slate-400">bottles</span>
                       </div>
                     </div>
                   ))}
@@ -1872,26 +1872,26 @@ export function Inventory() {
 
               {/* Excise Depot Account Summary */}
               {activeInvoice.invoice.retailerCreditBalance && (
-                <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs space-y-2">
+                <div className="p-4 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-xs space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-indigo-900 flex items-center gap-1.5">
+                    <span className="font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-1.5">
                       <span>🏛️</span> State Excise Depot Account Statement
                     </span>
-                    <span className="font-bold text-emerald-800">
+                    <span className="font-bold text-emerald-800 dark:text-emerald-300">
                       Balance: ₹{parseFloat(activeInvoice.invoice.retailerCreditBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
-                  <div className="text-gray-600 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                    <div>Opening Credit: <b className="font-mono">₹{parseFloat(activeInvoice.invoice.previousCredit || '0').toFixed(2)}</b></div>
-                    <div>Challan Paid: <b className="font-mono text-emerald-700">+₹{parseFloat(activeInvoice.invoice.challanAmount || '0').toFixed(2)}</b></div>
-                    <div>Total Deducted: <b className="font-mono text-rose-700">-₹{parseFloat(activeInvoice.invoice.totalInvoiceAmount || activeInvoice.invoice.totalAmount || '0').toFixed(2)}</b></div>
-                    <div>Closing Balance: <b className="font-mono text-indigo-900">₹{parseFloat(activeInvoice.invoice.retailerCreditBalance).toFixed(2)}</b></div>
+                  <div className="text-gray-600 dark:text-slate-300 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div>Opening Credit: <b className="font-mono text-gray-900 dark:text-slate-100">₹{parseFloat(activeInvoice.invoice.previousCredit || '0').toFixed(2)}</b></div>
+                    <div>Challan Paid: <b className="font-mono text-emerald-700 dark:text-emerald-400">+₹{parseFloat(activeInvoice.invoice.challanAmount || '0').toFixed(2)}</b></div>
+                    <div>Total Deducted: <b className="font-mono text-rose-700 dark:text-rose-400">-₹{parseFloat(activeInvoice.invoice.totalInvoiceAmount || activeInvoice.invoice.totalAmount || '0').toFixed(2)}</b></div>
+                    <div>Closing Balance: <b className="font-mono text-indigo-900 dark:text-indigo-300">₹{parseFloat(activeInvoice.invoice.retailerCreditBalance).toFixed(2)}</b></div>
                   </div>
                 </div>
               )}
 
               {/* Warning Notice */}
-              <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-start gap-2">
+              <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200 text-xs flex items-start gap-2">
                 <span>✓</span>
                 <div>
                   <b>What happens next:</b> Live stock counts will be updated immediately. A purchase journal entry
@@ -1900,10 +1900,10 @@ export function Inventory() {
               </div>
 
               {/* Primary Actions */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t dark:border-slate-800">
                 <button
                   type="button"
-                  className="min-h-[48px] px-6 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg border flex items-center gap-1.5 cursor-pointer"
+                  className="min-h-[48px] px-6 py-2.5 text-sm font-semibold text-gray-700 dark:text-slate-200 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg border dark:border-slate-700 flex items-center gap-1.5 cursor-pointer"
                   onClick={() => setWizardStep(2)}
                 >
                   <span>✏️</span> Edit or Fix Items
