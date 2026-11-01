@@ -120,9 +120,7 @@ export function Tables() {
   const [kotDest, setKotDest] = useState<'BAR' | 'KITCHEN'>('BAR');
   const [kotCategoryFilter, setKotCategoryFilter] = useState<LiquorCategoryKey>('ALL');
   const [kotSearch, setKotSearch] = useState('');
-  const [kotItems, setKotItems] = useState<{ productId: string; servingId?: string; quantity: number }[]>([
-    { productId: '', quantity: 1 }
-  ]);
+  const [kotItems, setKotItems] = useState<{ productId: string; servingId?: string; quantity: number }[]>([]);
   const [kotNotes, setKotNotes] = useState('');
   const [kotSubmitting, setKotSubmitting] = useState(false);
 
@@ -131,9 +129,6 @@ export function Tables() {
       const idx = prev.findIndex((it) => it.productId === product.id && (it.servingId ?? '') === (servingId ?? ''));
       if (idx >= 0) {
         return prev.map((it, i) => (i === idx ? { ...it, quantity: it.quantity + 1 } : it));
-      }
-      if (prev.length === 1 && !prev[0].productId) {
-        return [{ productId: product.id, servingId, quantity: 1 }];
       }
       return [...prev, { productId: product.id, servingId, quantity: 1 }];
     });
@@ -238,14 +233,6 @@ export function Tables() {
       const url = `/products?branchId=${branchId}`;
       const prods = await api.get<Product[]>(url);
       setProducts(prods || []);
-      if (prods && prods.length > 0) {
-        setKotItems((prev) => {
-          if (!prev.length || !prev[0].productId) {
-            return [{ productId: prods[0].id, quantity: 1 }];
-          }
-          return prev;
-        });
-      }
     } catch {
       // offline or error
     }
@@ -292,10 +279,7 @@ export function Tables() {
     setKotDest(dest);
     setKotCategoryFilter('ALL');
     setKotSearch('');
-    const validProds = products.filter(
-      (p) => p.isAvailable !== false && (dest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p))
-    );
-    setKotItems([{ productId: validProds[0]?.id || '', quantity: 1 }]);
+    setKotItems([]);
     setKotNotes('');
     setActiveModal('newKot');
   };
@@ -1141,99 +1125,103 @@ export function Tables() {
                       </div>
 
                       <div id="kotLines" className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                        {kotItems.map((item, idx) => {
-                          const prod = products.find((p) => p.id === item.productId);
-                          const hasServings = (prod?.servings ?? []).length > 0;
+                        {kotItems.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-gray-500 bg-gray-50 dark:bg-gray-750 rounded-lg border border-dashed dark:border-gray-700">
+                            No items added yet. Click <span className="font-semibold text-purple-600 dark:text-purple-400">+ Add</span> on any {kotDest === 'BAR' ? 'drink' : 'dish'} above, or click <span className="font-semibold text-purple-600 dark:text-purple-400">+ Add custom row</span>.
+                          </div>
+                        ) : (
+                          kotItems.map((item, idx) => {
+                            const prod = products.find((p) => p.id === item.productId);
+                            const hasServings = (prod?.servings ?? []).length > 0;
 
-                          return (
-                            <div
-                              key={idx}
-                              className="kot-line p-2.5 bg-white dark:bg-gray-750 border dark:border-gray-700 rounded-lg flex flex-wrap sm:flex-nowrap items-center gap-2"
-                            >
-                              <select
-                                className="kot-product flex-1 min-w-[180px] p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                aria-label="Product"
-                                value={item.productId}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setKotItems((prev) =>
-                                    prev.map((it, i) => (i === idx ? { ...it, productId: val, servingId: undefined } : it))
-                                  );
-                                }}
+                            return (
+                              <div
+                                key={idx}
+                                className="kot-line p-2.5 bg-white dark:bg-gray-750 border dark:border-gray-700 rounded-lg flex flex-wrap sm:flex-nowrap items-center gap-2"
                               >
-                                {availableProducts.map((p) => {
-                                  const sQty = p.currentStock ?? p.stockQuantity ?? 0;
-                                  const isTrk = p.trackStock !== false;
-                                  const sLabel = isTrk
-                                    ? sQty <= 0
-                                      ? ' [⚠️ Out of Stock]'
-                                      : ` [Stock: ${sQty} btl${p.openMl ? `, ${p.openMl}ml open` : ''}]`
-                                    : ' [Kitchen]';
-                                  return (
-                                    <option key={p.id} value={p.id}>
-                                      {p.name} {p.mrp ? `(₹${parseFloat(p.mrp)})` : ''}{sLabel}
-                                    </option>
-                                  );
-                                })}
-                              </select>
-
-                              {hasServings && (
                                 <select
-                                  className="kot-serving w-32 p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white shrink-0"
-                                  aria-label="Serving"
-                                  value={item.servingId ?? ''}
+                                  className="kot-product flex-1 min-w-[180px] p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                  aria-label="Product"
+                                  value={item.productId}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     setKotItems((prev) =>
-                                      prev.map((it, i) => (i === idx ? { ...it, servingId: val || undefined } : it))
+                                      prev.map((it, i) => (i === idx ? { ...it, productId: val, servingId: undefined } : it))
                                     );
                                   }}
                                 >
-                                  <option value="">Bottle rate</option>
-                                  {prod!.servings!.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.label} — ₹{parseFloat(s.price)}
-                                    </option>
-                                  ))}
+                                  {availableProducts.map((p) => {
+                                    const sQty = p.currentStock ?? p.stockQuantity ?? 0;
+                                    const isTrk = p.trackStock !== false;
+                                    const sLabel = isTrk
+                                      ? sQty <= 0
+                                        ? ' [⚠️ Out of Stock]'
+                                        : ` [Stock: ${sQty} btl${p.openMl ? `, ${p.openMl}ml open` : ''}]`
+                                      : ' [Kitchen]';
+                                    return (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name} {p.mrp ? `(₹${parseFloat(p.mrp)})` : ''}{sLabel}
+                                      </option>
+                                    );
+                                  })}
                                 </select>
-                              )}
 
-                              {/* Stepper ([-] [ count ] [+]) for easy counting */}
-                              <div className="flex items-center border rounded-lg dark:border-gray-600 overflow-hidden shrink-0 bg-gray-50 dark:bg-gray-700">
-                                <button
-                                  type="button"
-                                  onClick={() => updateKotItemQty(idx, -1)}
-                                  className="p-1.5 px-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
-                                  title="Decrease quantity"
-                                  aria-label="Decrease quantity"
-                                >
-                                  <Minus size={12} />
-                                </button>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={50}
-                                  className="kot-qty w-12 p-1 text-xs text-center font-bold bg-transparent dark:text-white border-x dark:border-gray-600 focus:outline-none"
-                                  value={item.quantity}
-                                  onChange={(e) => {
-                                    const q = parseInt(e.target.value) || 1;
-                                    setKotItems((prev) =>
-                                      prev.map((it, i) => (i === idx ? { ...it, quantity: Math.max(1, q) } : it))
-                                    );
-                                  }}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => updateKotItemQty(idx, 1)}
-                                  className="p-1.5 px-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
-                                  title="Increase quantity"
-                                  aria-label="Increase quantity"
-                                >
-                                  <Plus size={12} />
-                                </button>
-                              </div>
+                                {hasServings && (
+                                  <select
+                                    className="kot-serving w-32 p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white shrink-0"
+                                    aria-label="Serving"
+                                    value={item.servingId ?? ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setKotItems((prev) =>
+                                        prev.map((it, i) => (i === idx ? { ...it, servingId: val || undefined } : it))
+                                      );
+                                    }}
+                                  >
+                                    <option value="">Bottle rate</option>
+                                    {prod!.servings!.map((s) => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.label} — ₹{parseFloat(s.price)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
 
-                              {kotItems.length > 1 && (
+                                {/* Stepper ([-] [ count ] [+]) for easy counting */}
+                                <div className="flex items-center border rounded-lg dark:border-gray-600 overflow-hidden shrink-0 bg-gray-50 dark:bg-gray-700">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateKotItemQty(idx, -1)}
+                                    className="p-1.5 px-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                    title="Decrease quantity"
+                                    aria-label="Decrease quantity"
+                                  >
+                                    <Minus size={12} />
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={50}
+                                    className="kot-qty w-12 p-1 text-xs text-center font-bold bg-transparent dark:text-white border-x dark:border-gray-600 focus:outline-none"
+                                    value={item.quantity}
+                                    onChange={(e) => {
+                                      const q = parseInt(e.target.value) || 1;
+                                      setKotItems((prev) =>
+                                        prev.map((it, i) => (i === idx ? { ...it, quantity: Math.max(1, q) } : it))
+                                      );
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => updateKotItemQty(idx, 1)}
+                                    className="p-1.5 px-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                    title="Increase quantity"
+                                    aria-label="Increase quantity"
+                                  >
+                                    <Plus size={12} />
+                                  </button>
+                                </div>
+
                                 <button
                                   type="button"
                                   onClick={() => setKotItems((prev) => prev.filter((_, i) => i !== idx))}
@@ -1243,10 +1231,10 @@ export function Tables() {
                                 >
                                   <Trash2 size={14} />
                                 </button>
-                              )}
-                            </div>
-                          );
-                        })}
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </div>
 
