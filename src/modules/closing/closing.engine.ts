@@ -13,6 +13,13 @@ export interface CashFloatInput {
   cashWithdrawals?: string;
 }
 
+export interface SalesOverrideInput {
+  cashSales?: string;
+  cardSales?: string;
+  upiSales?: string;
+  creditSales?: string;
+}
+
 export interface DailyClosingReconciliationResult {
   openingCash: string;
   cashSales: string;
@@ -39,6 +46,7 @@ export function reconcileDailyClosing(
   bills: DailyBillSummaryInput[],
   cashFloat: CashFloatInput,
   actualCashCountedStr: string,
+  salesOverride?: SalesOverrideInput,
 ): DailyClosingReconciliationResult {
   const actualCash = new Decimal(actualCashCountedStr);
   if (actualCash.isNegative()) {
@@ -82,17 +90,23 @@ export function reconcileDailyClosing(
     }
   }
 
+  // Allow manager edits / adjustments
+  const finalCashSales = salesOverride?.cashSales !== undefined ? new Decimal(salesOverride.cashSales) : cashSales;
+  const finalCardSales = salesOverride?.cardSales !== undefined ? new Decimal(salesOverride.cardSales) : cardSales;
+  const finalUpiSales = salesOverride?.upiSales !== undefined ? new Decimal(salesOverride.upiSales) : upiSales;
+  const finalCreditSales = salesOverride?.creditSales !== undefined ? new Decimal(salesOverride.creditSales) : creditSales;
+
   // Credit sales are revenue but never reach the drawer
-  const grossSales = cashSales.plus(cardSales).plus(upiSales).plus(creditSales);
-  const expectedCashInDrawer = opening.plus(cashSales).minus(withdrawals);
+  const grossSales = finalCashSales.plus(finalCardSales).plus(finalUpiSales).plus(finalCreditSales);
+  const expectedCashInDrawer = opening.plus(finalCashSales).minus(withdrawals);
   const cashDiscrepancy = actualCash.minus(expectedCashInDrawer);
 
   return {
     openingCash: opening.toFixed(2),
-    cashSales: cashSales.toFixed(2),
-    cardSales: cardSales.toFixed(2),
-    upiSales: upiSales.toFixed(2),
-    creditSales: creditSales.toFixed(2),
+    cashSales: finalCashSales.toFixed(2),
+    cardSales: finalCardSales.toFixed(2),
+    upiSales: finalUpiSales.toFixed(2),
+    creditSales: finalCreditSales.toFixed(2),
     grossSales: grossSales.toFixed(2),
     totalTax: totalTax.toFixed(2),
     cashWithdrawals: withdrawals.toFixed(2),

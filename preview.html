@@ -735,6 +735,7 @@
             <label class="field" for="closingActualCash">Actual cash counted (₹) <input id="closingActualCash" class="input" inputmode="decimal" placeholder="0.00" required /></label>
             <label class="field" for="closingWithdrawals">Cash withdrawals (₹) <input id="closingWithdrawals" class="input" inputmode="decimal" placeholder="0.00" /></label>
             <label class="field" for="closingNotes">Notes (optional) <input id="closingNotes" class="input" maxlength="1000" placeholder="Anything unusual today" /></label>
+            <div id="closingLiveTotalBox" style="display:none;font-size:12px;margin:8px 0;padding:8px;background:#f3e8ff;border-radius:6px;border:1px solid #d8b4fe;"></div>
             <button id="btnSubmitClosing" class="btn-primary" type="button" style="padding:12px;" onclick="submitDayClosing()">Close Day &amp; Save Report</button>
             <div id="closingStatusMsg" role="status"></div>
           </div>
@@ -4022,7 +4023,33 @@ async function downloadTally() {
 function loadClosingPage() {
   if (!$('closingDate').value) $('closingDate').value = bizDate();
   $('closingDate').max = bizDate();
+  loadClosingPreview();
   loadClosingHistory();
+}
+async function loadClosingPreview() {
+  if (!S.branchId) return;
+  const date = $('closingDate').value || bizDate();
+  try {
+    const p = await api('/closing/preview?branchId=' + S.branchId + '&date=' + date);
+    if (p && p.sales) {
+      window._closingPreview = p;
+      const box = $('closingLiveTotalBox');
+      if (box) {
+        box.innerHTML = `<div style="font-size:11px;color:#6b21a8;margin-bottom:2px;">TODAY'S SALES BREAKDOWN:</div>
+          Cash: ${money(p.sales.cashSales)}  UPI: ${money(p.sales.upiSales)}  Card: ${money(p.sales.cardSales)}  Credit: ${money(p.sales.creditSales)}<br>
+          <b>Total Day Gross Sales: ${money(p.sales.grossSales)}</b> (${plural(p.sales.paidBillsCount, 'paid bill')})`;
+        box.style.display = 'block';
+      }
+      if (!$('closingOpeningCash').value) {
+        $('closingOpeningCash').value = p.suggestedOpeningCash || '2000.00';
+      }
+      if (!$('closingActualCash').value) {
+        const op = parseFloat($('closingOpeningCash').value) || 0;
+        const cs = parseFloat(p.sales.cashSales) || 0;
+        $('closingActualCash').value = (op + cs).toFixed(2);
+      }
+    }
+  } catch (e) { /* quiet fail */ }
 }
 async function loadClosingHistory() {
   const el = $('closingHistory');

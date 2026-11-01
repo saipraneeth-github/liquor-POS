@@ -82,4 +82,23 @@ describe('reconcileDailyClosing', () => {
     );
     expect(() => reconcileDailyClosing(sampleBills, cashFloat, 'invalid')).toThrow();
   });
+
+  it('allows manager overrides for cash, upi, and card sales and computes final total', () => {
+    // Overriding cashSales: 1600.00 (from 1500.00), cardSales: 2600.00, upiSales: 1400.00
+    // Expected cash in drawer = 5000 (opening) + 1600 (edited cash sales) - 1000 (withdrawals) = 5600.00
+    const overrides = {
+      cashSales: '1600.00',
+      cardSales: '2600.00',
+      upiSales: '1400.00',
+    };
+    const result = reconcileDailyClosing(sampleBills, cashFloat, '5600.00', overrides);
+    expect(result.cashSales).toBe('1600.00');
+    expect(result.cardSales).toBe('2600.00');
+    expect(result.upiSales).toBe('1400.00');
+    expect(result.grossSales).toBe('5600.00'); // 1600 + 2600 + 1400
+    expect(result.expectedCashInDrawer).toBe('5600.00');
+    expect(result.actualCashCounted).toBe('5600.00');
+    expect(result.cashDiscrepancy).toBe('0.00');
+    expect(result.isBalanced).toBe(true);
+  });
 });

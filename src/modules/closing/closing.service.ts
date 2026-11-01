@@ -11,6 +11,10 @@ export interface SubmitClosingInput {
   openingCash: string;
   actualCashCounted: string;
   cashWithdrawals?: string;
+  cashSales?: string;
+  cardSales?: string;
+  upiSales?: string;
+  creditSales?: string;
   notes?: string;
   businessDate?: string;   // YYYY-MM-DD; defaults to today
 }
@@ -29,8 +33,8 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
     .where(
       and(
         eq(dailyClosings.branchId, input.branchId),
-        // closing_date holds the business-day start; cast to date for calendar equality
-        sql`(${dailyClosings.closingDate})::date = ${businessDate}::date`,
+        gte(dailyClosings.closingDate, start),
+        lt(dailyClosings.closingDate, end),
       ),
     )
     .limit(1);
@@ -62,6 +66,15 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
     cashWithdrawals: input.cashWithdrawals,
   };
 
+  const salesOverride = (input.cashSales !== undefined || input.cardSales !== undefined || input.upiSales !== undefined || input.creditSales !== undefined)
+    ? {
+        cashSales: input.cashSales,
+        cardSales: input.cardSales,
+        upiSales: input.upiSales,
+        creditSales: input.creditSales,
+      }
+    : undefined;
+
   const recon = reconcileDailyClosing(
     dayBills.map((b) => ({
       id: b.id,
@@ -72,6 +85,7 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
     })),
     cashFloat,
     input.actualCashCounted,
+    salesOverride,
   );
 
   const [closingRecord] = await db
@@ -114,4 +128,77 @@ export async function listDailyClosings(branchIds: string[] | 'ALL') {
     .from(dailyClosings)
     .where(inArray(dailyClosings.branchId, branchIds))
     .orderBy(desc(dailyClosings.createdAt));
+}
+
+/** Pre-closing live preview for a business date: aggregates today's bills and checks if already closed. */
+export async function getDailyClosingPreview(branchId: string, requestedDate?: string) {
+  const businessDate = requestedDate ?? businessDateOf();
+  const { start, end } = businessDayBounds(businessDate);
+
+  const [existing] = await db
+    .select()
+    .from(dailyClosings)
+    .where(
+      and(
+        eq(dailyClosings.branchId, branchId),
+        gte(dailyClosings.closingDate, start),
+        lt(dailyClosings.closingDate, end),
+      ),
+    )
+    .limit(1);
+
+  const dayBills = await db
+    .select({
+      id: bills.id,
+      total: bills.total,
+      taxAmount: bills.taxAmount,
+      paymentMode: bills.paymentMode,
+      status: bills.status,
+    })
+    .from(bills)
+    .where(and(
+      eq(bills.branchId, branchId),
+      gte(bills.createdAt, start),
+      lt(bills.createdAt, end),
+    ));
+
+  const [lastClosing] = await db
+    .select({ actualCashCounted: dailyClosings.actualCashCounted })
+    .from(dailyClosings)
+    .where(eq(dailyClosings.branchId, branchId))
+    .orderBy(desc(dailyClosings.closingDate))
+    .limit(1);
+
+  const suggestedOpeningCash = lastClosing?.actualCashCounted ?? '2000.00';
+
+  const rawRecon = reconcileDailyClosing(
+    dayBills.map((b) => ({
+      id: b.id,
+      total: b.total,
+      taxAmount: b.taxAmount,
+      paymentMode: b.paymentMode ?? 'CASH',
+      status: b.status,
+    })),
+    { openingCash: suggestedOpeningCash, cashWithdrawals: '0' },
+    suggestedOpeningCash,
+  );
+
+  return {
+    branchId,
+    businessDate,
+    isAlreadyClosed: !!existing,
+    existingClosing: existing ?? null,
+    suggestedOpeningCash,
+    sales: {
+      cashSales: rawRecon.cashSales,
+      cardSales: rawRecon.cardSales,
+      upiSales: rawRecon.upiSales,
+      creditSales: rawRecon.creditSales,
+      grossSales: rawRecon.grossSales,
+      totalTax: rawRecon.totalTax,
+      paidBillsCount: rawRecon.paidBillsCount,
+      voidedBillsCount: rawRecon.voidedBillsCount,
+      totalBillsCount: rawRecon.totalBillsCount,
+    },
+  };
 }
