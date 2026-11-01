@@ -227,6 +227,7 @@ export function Counter() {
           loadSheet(posted);
           showToast('Counter sheet posted — stock corrected', 'success');
           loadRecent();
+          window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
         } catch (e: any) {
           showToast('Post failed: ' + e.message, 'error');
         }

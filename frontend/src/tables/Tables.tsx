@@ -129,18 +129,38 @@ export function Tables() {
     }
   }, [branchId]);
 
+  const loadProducts = useCallback(async () => {
+    if (!branchId) return;
+    try {
+      const url = `/products?branchId=${branchId}`;
+      const prods = await api.get<Product[]>(url);
+      setProducts(prods || []);
+      if (prods && prods.length > 0) {
+        setKotItems((prev) => {
+          if (!prev.length || !prev[0].productId) {
+            return [{ productId: prods[0].id, quantity: 1 }];
+          }
+          return prev;
+        });
+      }
+    } catch {
+      // offline or error
+    }
+  }, [branchId]);
+
   useEffect(() => {
     loadTables();
-    const url = branchId ? `/products?branchId=${branchId}` : '/products';
-    api.get<Product[]>(url)
-      .then((prods) => {
-        setProducts(prods || []);
-        if (prods && prods.length > 0) {
-          setKotItems([{ productId: prods[0].id, quantity: 1 }]);
-        }
-      })
-      .catch(() => {});
-  }, [loadTables, branchId]);
+    loadProducts();
+  }, [loadTables, loadProducts]);
+
+  // Listen for global stock updates
+  useEffect(() => {
+    const handleStockUpdate = () => {
+      loadProducts();
+    };
+    window.addEventListener('app:stock_updated', handleStockUpdate);
+    return () => window.removeEventListener('app:stock_updated', handleStockUpdate);
+  }, [loadProducts]);
 
   const handleTileClick = async (table: Table) => {
     if (table.status === 'OCCUPIED') {
@@ -198,6 +218,8 @@ export function Tables() {
       // Best effort: print the ticket on the branch's network printer when one is configured
       api.post(`/print/kot/${created.kotOrder.id}/send?queue=true`).catch(() => { /* no printer — use the Print button */ });
       setActiveModal(null);
+      loadProducts();
+      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'KOT failed';
       showToast('Failed to create KOT: ' + msg, 'error');
@@ -261,6 +283,8 @@ export function Tables() {
       // Best effort: print on the branch's network printer when one is configured
       api.post(`/print/bills/${res.bill.id}/send?queue=true`).catch(() => { /* use the Print button */ });
       await loadTables();
+      loadProducts();
+      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
     } catch (err: unknown) {
       showToast(errorMessage(err), 'error');
     } finally {

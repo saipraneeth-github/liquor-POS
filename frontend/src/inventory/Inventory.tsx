@@ -840,6 +840,7 @@ export function Inventory() {
           showToast(`✓ Success: ${totalBottles} bottles added to store inventory!`, 'success');
           await loadStock();
           loadInvoices();
+          window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
           setActiveInvoice(null);
           setWizardStep(1);
           setActiveTab('stock');

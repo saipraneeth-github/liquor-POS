@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../api/client';
 
 export type User = {
@@ -30,6 +30,7 @@ interface AuthContextType {
   branches: BranchOption[];
   activeBranchId: string | null;
   setActiveBranch: (id: string) => void;
+  refreshBranches: (preferBranchId?: string) => Promise<BranchOption[]>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -74,23 +75,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const refreshBranches = useCallback(async (preferBranchId?: string): Promise<BranchOption[]> => {
+    try {
+      const list = await api.get<BranchOption[]>('/branches');
+      setBranches(list);
+      setSelected((cur) => {
+        const candidate = preferBranchId && list.some((b) => b.id === preferBranchId)
+          ? preferBranchId
+          : (cur && list.some((b) => b.id === cur) ? cur : list[0]?.id ?? null);
+        if (candidate) {
+          try { localStorage.setItem(ACTIVE_BRANCH_KEY, candidate); } catch {}
+        }
+        return candidate;
+      });
+      return list;
+    } catch {
+      setBranches([]);
+      return [];
+    }
+  }, []);
+
   // Owners pick a branch to work in; load the ones they may access
   const isOwner = rawUser?.role === 'owner';
   useEffect(() => {
     if (!isOwner) return;
-    api.get<BranchOption[]>('/branches')
-      .then((list) => {
-        setBranches(list);
-        setSelected((cur) => {
-          const next = cur && list.some((b) => b.id === cur) ? cur : list[0]?.id ?? null;
-          if (next) {
-            try { localStorage.setItem(ACTIVE_BRANCH_KEY, next); } catch {}
-          }
-          return next;
-        });
-      })
-      .catch(() => setBranches([]));
-  }, [isOwner, rawUser?.id]);
+    refreshBranches();
+  }, [isOwner, rawUser?.id, refreshBranches]);
+
+  // React to cross-component or global branch updates
+  useEffect(() => {
+    const handleBranchesUpdated = (e: Event) => {
+      const preferId = (e as CustomEvent)?.detail?.branchId;
+      refreshBranches(preferId);
+    };
+    window.addEventListener('app:branches_updated', handleBranchesUpdated);
+    return () => window.removeEventListener('app:branches_updated', handleBranchesUpdated);
+  }, [refreshBranches]);
 
   const login = (token: string, next: User) => {
     localStorage.setItem('token', token);
@@ -111,7 +131,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, login, logout, error, loading, saasRole: saasRoleOf(rawUser), branches, activeBranchId: selected, setActiveBranch }}
+      value={{
+        user,
+        login,
+        logout,
+        error,
+        loading,
+        saasRole: saasRoleOf(rawUser),
+        branches,
+        activeBranchId: selected,
+        setActiveBranch,
+        refreshBranches,
+      }}
     >
       {children}
     </AuthContext.Provider>

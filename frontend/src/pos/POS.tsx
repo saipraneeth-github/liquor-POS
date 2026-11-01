@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Plus, Minus, Trash2 } from 'lucide-react';
+import { X, Plus, Minus, Trash2, RefreshCw } from 'lucide-react';
 import { getCategoryInfo, CategoryIcon } from '../components/category-icons';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter, showToast } from '../lib/print';
@@ -74,6 +74,7 @@ export function POS() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [queuedCount, setQueuedCount] = useState(0);
@@ -109,16 +110,37 @@ export function POS() {
   }, [sub, refreshQueueCount]);
 
   // Load products (with branch-specific stock levels)
-  useEffect(() => {
+  const loadProducts = useCallback(async () => {
     if (!user) return;
     const url = branchId ? `/api/v1/products?branchId=${branchId}` : '/api/v1/products';
-    fetch(url, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-    })
-      .then((r) => r.ok ? r.json() : [])
-      .then(setProducts)
-      .catch(() => { /* offline — products not available */ });
+    setLoadingProducts(true);
+    try {
+      const r = await fetch(url, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      if (r.ok) {
+        const data = await r.json();
+        setProducts(data || []);
+      }
+    } catch {
+      /* offline — products not available */
+    } finally {
+      setLoadingProducts(false);
+    }
   }, [user, branchId]);
+
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
+
+  // Listen to global stock updates (e.g. from table billing, invoice inward, or counter sheets)
+  useEffect(() => {
+    const handleStockUpdate = () => {
+      loadProducts();
+    };
+    window.addEventListener('app:stock_updated', handleStockUpdate);
+    return () => window.removeEventListener('app:stock_updated', handleStockUpdate);
+  }, [loadProducts]);
 
   // Restore last sync label from localStorage
   useEffect(() => {
@@ -167,7 +189,8 @@ export function POS() {
       }
     }
     refreshQueueCount();
-  }, [sub, branchId, refreshQueueCount]);
+    loadProducts();
+  }, [sub, branchId, refreshQueueCount, loadProducts]);
 
   // Online/offline event listeners + periodic auto-sync
   useEffect(() => {
@@ -291,6 +314,9 @@ export function POS() {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
       }).catch(() => { /* no printer reachable — the Print button still works */ });
+      // Immediately refresh live stock on the POS screen and notify any other tabs/screens
+      loadProducts();
+      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
     } catch {
       // Queue for offline sync
       const queued: QueuedBill = { clientRef, ownerSub: sub, queuedAt: new Date().toISOString(), body };
@@ -305,6 +331,11 @@ export function POS() {
         offline: true,
       });
     }
+  };
+
+  const closeCheckoutModal = () => {
+    setCheckoutModal(null);
+    loadProducts();
   };
 
   const offlineVisible = !isOnline || queuedCount > 0;
@@ -327,14 +358,27 @@ export function POS() {
 
       {/* Product search + catalog */}
       <div className="flex-1 flex flex-col min-w-0">
-        <input
-          id="posSearch"
-          type="search"
-          placeholder="Search products..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full p-2 mb-4 border rounded dark:bg-gray-700 dark:border-gray-600"
-        />
+        <div className="flex items-center gap-2 mb-4">
+          <input
+            id="posSearch"
+            type="search"
+            placeholder="Search products..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 p-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+          />
+          <button
+            type="button"
+            id="refreshStockBtn"
+            title="Refresh stock and catalog"
+            aria-label="Refresh stock"
+            onClick={() => loadProducts()}
+            disabled={loadingProducts}
+            className="p-2 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors flex items-center justify-center shrink-0 disabled:opacity-50"
+          >
+            <RefreshCw size={18} className={loadingProducts ? 'animate-spin' : ''} />
+          </button>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto" id="posCatalog">
           {filteredProducts.map((p) => {
             const stockQty = p.currentStock ?? p.stockQuantity ?? 0;
@@ -596,7 +640,7 @@ export function POS() {
           <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-lg max-w-sm w-full text-center relative">
             <button
               type="button"
-              onClick={() => setCheckoutModal(null)}
+              onClick={closeCheckoutModal}
               className="absolute top-4 right-4 p-1 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               aria-label="Close dialog"
             >
@@ -624,7 +668,7 @@ export function POS() {
             <div className="flex gap-2">
               <button
                 id="newBillBtn"
-                onClick={() => setCheckoutModal(null)}
+                onClick={closeCheckoutModal}
                 className="flex-1 bg-purple-600 text-white p-2 rounded"
               >
                 New Bill
@@ -633,7 +677,7 @@ export function POS() {
                 <button
                   id="checkoutHistoryBtn"
                   onClick={() => {
-                    setCheckoutModal(null);
+                    closeCheckoutModal();
                     navigate('/bills');
                   }}
                   className="flex-1 bg-gray-200 text-gray-800 p-2 rounded"

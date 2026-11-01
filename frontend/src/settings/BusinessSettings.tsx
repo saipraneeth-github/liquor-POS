@@ -67,7 +67,7 @@ const blank: FormState = {
 
 /** Admin (business owner) console: plan usage, branches, GST details and the receipt printer of each branch. */
 export function BusinessSettings() {
-  const { user, saasRole } = useAuth();
+  const { user, saasRole, refreshBranches, setActiveBranch } = useAuth();
   const hasTenant = saasRole !== 'super_admin';
   const activeBranch = user?.branchId;
   const [jobs, setJobs] = useState<PrintJob[]>([]);
@@ -163,6 +163,7 @@ export function BusinessSettings() {
     setFormError(null);
     setFieldErrors({});
     try {
+      let savedBranchId: string | undefined;
       if (form.id) {
         await api.patch(`/branches/${form.id}`, {
           name: form.name.trim(),
@@ -175,17 +176,24 @@ export function BusinessSettings() {
           roundOff: form.roundOff,
           printViaAgent: form.printViaAgent,
         });
+        savedBranchId = form.id;
       } else {
-        await api.post('/branches', {
+        const created = await api.post<{ id: string; name: string; code: string }>('/branches', {
           name: form.name.trim(),
           code: form.code.trim().toUpperCase(),
           ...(form.address.trim() ? { address: form.address.trim() } : {}),
           ...(form.gstin.trim() ? { gstin: form.gstin.trim().toUpperCase() } : {}),
           ...(form.exciseLicenseNo.trim() ? { exciseLicenseNo: form.exciseLicenseNo.trim() } : {}),
         });
+        if (created?.id) {
+          savedBranchId = created.id;
+          setActiveBranch(created.id);
+        }
       }
       showToast(form.id ? 'Branch saved.' : 'Branch added.');
       setForm(null);
+      await refreshBranches(savedBranchId);
+      window.dispatchEvent(new CustomEvent('app:branches_updated', { detail: { branchId: savedBranchId } }));
       load();
     } catch (err) {
       setFormError(errorMessage(err));
