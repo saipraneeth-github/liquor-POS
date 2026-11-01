@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { X, Wine, Plus, Minus, Trash2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
-import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
+import { printInBrowser, sendToNetworkPrinter, showToast } from '../lib/print';
 
 type Serving = { id: string; label: string; volumeMl: number | null; price: string };
 
@@ -29,10 +29,21 @@ type QueuedBill = {
     branchId: string;
     items: { productId: string; servingId?: string; quantity: number }[];
     customerGstin?: string;
+    customerId?: string;
     paymentMode: 'CASH' | 'CARD' | 'UPI' | 'CREDIT';
     discount: string;
     clientRef: string;
   };
+};
+
+type KhataCustomer = {
+  id: string;
+  name: string;
+  phone: string;
+  creditAllowed: boolean;
+  isActive: boolean;
+  creditLimit: string;
+  currentCredit: string;
 };
 
 function queueKey(sub: string) { return `lc_offline_bills:${sub}`; }
@@ -61,11 +72,18 @@ export function POS() {
   const [lastSync, setLastSync] = useState('');
   const [servingPicker, setServingPicker] = useState<Product | null>(null);
   const [buyerGstin, setBuyerGstin] = useState('');
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'CARD' | 'UPI' | 'CREDIT'>('CASH');
+  const [discount, setDiscount] = useState('');
+  const [creditQuery, setCreditQuery] = useState('');
+  const [creditResults, setCreditResults] = useState<KhataCustomer[]>([]);
+  const [creditCustomer, setCreditCustomer] = useState<KhataCustomer | null>(null);
   const [checkoutModal, setCheckoutModal] = useState<{
     title: string;
     billId?: string;
     billNumber: string;
     total: string;
+    paymentMode: string;
+    customerName?: string;
     offline: boolean;
   } | null>(null);
 
@@ -183,16 +201,53 @@ export function POS() {
     else addToCart(product);
   };
 
-  const cartTotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.qty, 0);
+  const updateCartQty = (key: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((item) => (cartKey(item) === key ? { ...item, qty: item.qty + delta } : item))
+        .filter((item) => item.qty > 0)
+    );
+  };
+
+  useEffect(() => {
+    if (paymentMode !== 'CREDIT' || !branchId || !creditQuery.trim()) {
+      setCreditResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetch(`/api/v1/customers/${branchId}?search=${encodeURIComponent(creditQuery.trim())}&limit=8`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      })
+        .then((r) => (r.ok ? r.json() : { customers: [] }))
+        .then((d) => setCreditResults(d.customers || []))
+        .catch(() => setCreditResults([]));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [paymentMode, branchId, creditQuery]);
+
+  const cartSubtotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.qty, 0);
+  const discountVal = Math.max(0, parseFloat(discount) || 0);
+  const cartTotal = Math.max(0, cartSubtotal - discountVal);
 
   const checkout = async () => {
+    if (paymentMode === 'CREDIT') {
+      if (!creditCustomer) {
+        showToast('Pick a khata customer for a credit sale.', 'error');
+        return;
+      }
+      if (!creditCustomer.creditAllowed || !creditCustomer.isActive) {
+        showToast('Credit is not allowed for this customer.', 'error');
+        return;
+      }
+    }
     const clientRef = genUUID();
     const body: QueuedBill['body'] = {
       branchId,
       items: cart.map((c) => ({ productId: c.id, ...(c.servingId ? { servingId: c.servingId } : {}), quantity: c.qty })),
-      paymentMode: 'CASH',
-      discount: '0.00',
+      paymentMode,
+      discount: discountVal.toFixed(2),
       clientRef,
+      ...(paymentMode === 'CREDIT' && creditCustomer ? { customerId: creditCustomer.id } : {}),
       ...(buyerGstin.trim() ? { customerGstin: buyerGstin.trim().toUpperCase() } : {}),
     };
 
@@ -207,9 +262,21 @@ export function POS() {
       });
       if (!res.ok && res.status !== 200) throw new Error('checkout failed');
       const data = await res.json();
+      const custName = creditCustomer?.name;
       setCart([]);
       setBuyerGstin('');
-      setCheckoutModal({ title: 'Bill Generated', billId: data.id, billNumber: data.billNumber, total: data.total, offline: false });
+      setDiscount('');
+      setCreditCustomer(null);
+      setCreditQuery('');
+      setCheckoutModal({
+        title: 'Bill Generated',
+        billId: data.id,
+        billNumber: data.billNumber,
+        total: data.total,
+        paymentMode,
+        customerName: custName,
+        offline: false,
+      });
       // Best effort: kick the receipt out to the branch's network printer if one is set up
       fetch('/api/v1/print/bills/' + data.id + '/send?queue=true', {
         method: 'POST',
@@ -221,7 +288,13 @@ export function POS() {
       saveQueue(sub, [...getQueue(sub), queued]);
       refreshQueueCount();
       setCart([]);
-      setCheckoutModal({ title: 'Saved offline', billNumber: clientRef.slice(0, 8), total: cartTotal.toFixed(2), offline: true });
+      setCheckoutModal({
+        title: 'Saved offline',
+        billNumber: clientRef.slice(0, 8),
+        total: cartTotal.toFixed(2),
+        paymentMode,
+        offline: true,
+      });
     }
   };
 
@@ -261,7 +334,9 @@ export function POS() {
               onClick={() => pickProduct(p)}
               disabled={p.isAvailable === false}
             >
-              <div className="text-2xl mb-2">🥃</div>
+              <div className="mb-2 flex justify-center">
+                <Wine size={22} className="text-purple-600 dark:text-purple-400" />
+              </div>
               <div className="font-semibold truncate">{p.name}</div>
               <div className="text-sm text-gray-500">
                 {p.isAvailable === false
@@ -277,41 +352,149 @@ export function POS() {
 
       {/* Cart + checkout */}
       <div className="w-80 bg-white dark:bg-gray-800 rounded shadow flex flex-col">
-        <div className="p-4 font-bold border-b dark:border-gray-700">Current Order</div>
+        <div className="p-4 font-bold border-b dark:border-gray-700 flex items-center justify-between">
+          <span>Current Order</span>
+          {cart.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCart([])}
+              className="text-xs font-medium text-gray-500 hover:text-red-600 cursor-pointer"
+            >
+              Clear
+            </button>
+          )}
+        </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2" id="cartItems">
           {cart.map((item) => (
-            <div key={cartKey(item)} className="flex justify-between items-center text-sm border-b pb-2 dark:border-gray-700 cart-line">
-              <span className="truncate flex-1">
+            <div key={cartKey(item)} className="flex justify-between items-center gap-1.5 text-sm border-b pb-2 dark:border-gray-700 cart-line">
+              <span className="truncate flex-1" title={item.name}>
                 {item.name}
                 {item.servingLabel && <span className="text-xs text-gray-500"> · {item.servingLabel}</span>}
               </span>
-              <span className="w-12 text-right">x{item.qty}</span>
-              <span className="w-20 text-right">
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  aria-label="Decrease quantity"
+                  onClick={() => updateCartQty(cartKey(item), -1)}
+                  className="p-0.5 rounded border hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                >
+                  {item.qty === 1 ? <Trash2 size={12} /> : <Minus size={12} />}
+                </button>
+                <span className="w-7 text-center font-mono text-xs">x{item.qty}</span>
+                <button
+                  type="button"
+                  aria-label="Increase quantity"
+                  onClick={() => updateCartQty(cartKey(item), 1)}
+                  className="p-0.5 rounded border hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+              <span className="w-16 text-right font-mono text-xs shrink-0">
                 ₹{(parseFloat(item.price) * item.qty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </span>
             </div>
           ))}
         </div>
-        <div className="p-4 border-t dark:border-gray-700">
-          <div className="flex justify-between font-bold mb-2">
+        <div className="p-4 border-t dark:border-gray-700 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <label htmlFor="discountInput" className="text-gray-500">Discount (₹)</label>
+            <input
+              id="discountInput"
+              className="w-24 p-1 border rounded text-right font-mono text-xs dark:bg-gray-700 dark:border-gray-600"
+              placeholder="0.00"
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+            />
+          </div>
+          <div className="flex justify-between font-bold">
             <span>Total</span>
             <span>₹{cartTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </div>
+          <div className="grid grid-cols-4 gap-1" role="group" aria-label="Payment mode">
+            {(['CASH', 'CARD', 'UPI', 'CREDIT'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                id={`pay-${m}`}
+                aria-pressed={paymentMode === m}
+                onClick={() => setPaymentMode(m)}
+                className={`py-1.5 px-1 text-xs font-semibold rounded border cursor-pointer transition-colors ${
+                  paymentMode === m
+                    ? 'bg-purple-600 text-white border-purple-600'
+                    : 'bg-gray-50 dark:bg-gray-700/60 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+          {paymentMode === 'CREDIT' && (
+            <div id="creditBox" className="space-y-1.5 text-xs">
+              <input
+                id="creditSearch"
+                className="w-full p-1.5 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
+                placeholder="Search khata customer…"
+                value={creditQuery}
+                onChange={(e) => setCreditQuery(e.target.value)}
+              />
+              {creditResults.length > 0 && (
+                <div id="creditResults" className="max-h-28 overflow-y-auto border rounded divide-y dark:border-gray-700 dark:divide-gray-700">
+                  {creditResults.map((c) => {
+                    const rem = parseFloat(c.creditLimit) - parseFloat(c.currentCredit);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="list-btn w-full p-1.5 text-left flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                        onClick={() => {
+                          setCreditCustomer(c);
+                          setCreditResults([]);
+                          setCreditQuery('');
+                        }}
+                      >
+                        <span>
+                          <b>{c.name}</b> <span className="text-gray-500">({c.phone})</span>
+                        </span>
+                        <span className="font-mono">₹{rem.toFixed(2)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {creditCustomer && (
+                <div id="creditCustomerCard" className="p-2 border rounded bg-gray-50 dark:bg-gray-900/50 space-y-0.5">
+                  <div className="flex justify-between items-center">
+                    <b>{creditCustomer.name}</b>
+                    <button type="button" className="text-gray-500 hover:underline cursor-pointer" onClick={() => setCreditCustomer(null)}>
+                      Change
+                    </button>
+                  </div>
+                  <div className="text-gray-500">
+                    Limit ₹{parseFloat(creditCustomer.creditLimit).toLocaleString('en-IN', { minimumFractionDigits: 2 })} · Remaining{' '}
+                    <b id="creditRemaining">
+                      ₹{(parseFloat(creditCustomer.creditLimit) - parseFloat(creditCustomer.currentCredit)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </b>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {/* lastSync shown inline for E2E assertions */}
           <input
             id="posBuyerGstin"
-            className="w-full p-2 mb-2 border rounded text-xs font-mono dark:bg-gray-700 dark:border-gray-600"
+            className="w-full p-2 border rounded text-xs font-mono dark:bg-gray-700 dark:border-gray-600"
             placeholder="Buyer GSTIN (optional, B2B)"
             maxLength={15}
             value={buyerGstin}
             onChange={(e) => setBuyerGstin(e.target.value)}
           />
-          <div id="lastSync" className="text-xs text-gray-500 mb-2">{lastSync}</div>
+          {lastSync && <div id="lastSync" className="text-xs text-gray-500">{lastSync}</div>}
           <button
             id="checkoutBtn"
             onClick={checkout}
             disabled={cart.length === 0}
-            className="w-full bg-green-600 text-white p-3 rounded font-bold hover:bg-green-700 disabled:opacity-50"
+            className="w-full bg-green-600 text-white p-3 rounded font-bold hover:bg-green-700 disabled:opacity-50 cursor-pointer"
           >
             Checkout &amp; Print
           </button>
@@ -370,7 +553,7 @@ export function POS() {
             <div className="text-gray-500 mb-6" id="checkoutSummary">
               {checkoutModal.offline
                 ? 'Queued — will sync automatically when back online'
-                : `₹${parseFloat(checkoutModal.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })} collected via CASH`}
+                : `₹${parseFloat(checkoutModal.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })} collected via ${checkoutModal.paymentMode}${checkoutModal.customerName ? ` (${checkoutModal.customerName})` : ''}`}
             </div>
             {!checkoutModal.offline && checkoutModal.billId && (
               <div className="flex gap-2 mb-3">

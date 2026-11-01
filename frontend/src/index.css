@@ -160,3 +160,86 @@
   background-color: #334155;
   color: #cbd5e1;
 }
+
+/* Readable accent text and chips in dark mode */
+.dark .text-purple-600,
+.dark .text-purple-700,
+.dark .text-purple-800,
+.dark .text-purple-900 { color: #c4b5fd; }
+.dark .text-blue-600,
+.dark .text-blue-700,
+.dark .text-blue-800,
+.dark .text-blue-900 { color: #93c5fd; }
+.dark .text-amber-600,
+.dark .text-amber-700,
+.dark .text-amber-800,
+.dark .text-amber-900 { color: #fcd34d; }
+.dark .text-green-600,
+.dark .text-green-700,
+.dark .text-green-800 { color: #86efac; }
+.dark .text-red-500,
+.dark .text-red-600,
+.dark .text-red-700,
+.dark .text-red-800 { color: #fca5a5; }
+.dark .bg-gray-200,
+.dark .bg-gray-300 { background-color: #475569; color: #f8fafc; }
+.dark .text-gray-400 { color: #94a3b8; }
+
+/* Muted labels and form control borders stay readable on white in light mode */
+html:not(.dark) .text-gray-400 { color: #6b7280; }
+html:not(.dark) input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="color"]):not([type="range"]),
+html:not(.dark) select,
+html:not(.dark) textarea,
+html:not(.dark) .input,
+html:not(.dark) .input-base {
+  border-color: #cbd5e1;
+}
+html:not(.dark) input:focus,
+html:not(.dark) select:focus,
+html:not(.dark) textarea:focus,
+html:not(.dark) .input:focus,
+html:not(.dark) .input-base:focus {
+  border-color: #7c3aed;
+  outline: none;
+}
+
+/* Pastel chip/alert backgrounds (including slash-opacity variants) become dark tints so light text stays readable */
+.dark .bg-blue-50, .dark .bg-blue-100, .dark .bg-blue-50\/70 { background-color: rgb(59 130 246 / 0.18); }
+.dark .bg-green-50, .dark .bg-green-100,
+.dark .bg-emerald-50, .dark .bg-emerald-100,
+.dark .bg-emerald-50\/40, .dark .bg-emerald-50\/70 { background-color: rgb(34 197 94 / 0.18); }
+.dark .bg-red-50, .dark .bg-red-100, .dark .bg-red-200 { background-color: rgb(239 68 68 / 0.2); }
+.dark .bg-amber-50, .dark .bg-amber-100,
+.dark .bg-amber-50\/40, .dark .bg-amber-50\/70,
+.dark .bg-yellow-100 { background-color: rgb(245 158 11 / 0.2); }
+.dark .bg-purple-50, .dark .bg-purple-100,
+.dark .bg-purple-50\/40, .dark .bg-purple-50\/70 { background-color: rgb(168 85 247 / 0.2); }
+.dark .bg-gray-50\/50, .dark .bg-gray-50\/60, .dark .bg-gray-50\/70 {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+.dark .text-emerald-600, .dark .text-emerald-700, .dark .text-emerald-800, .dark .text-emerald-900 { color: #6ee7b7; }
+.dark .text-yellow-600, .dark .text-yellow-700, .dark .text-yellow-800 { color: #fde047; }
+
+/* Dark mode border & divider overrides for pastel/light border utilities */
+.dark .border-blue-100, .dark .border-blue-200 { border-color: rgb(59 130 246 / 0.35); }
+.dark .border-emerald-100, .dark .border-emerald-200, .dark .border-emerald-300,
+.dark .border-green-300 { border-color: rgb(34 197 94 / 0.35); }
+.dark .border-purple-100, .dark .border-purple-200 { border-color: rgb(168 85 247 / 0.35); }
+.dark .border-amber-100, .dark .border-amber-200, .dark .border-amber-300 { border-color: rgb(245 158 11 / 0.35); }
+.dark .border-red-200, .dark .border-red-300 { border-color: rgb(239 68 68 / 0.35); }
+.dark .border-gray-100, .dark .border-gray-200, .dark .border-gray-300 { border-color: #334155; }
+.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: #334155; }
+
+/* Prevent light-mode hover utilities from turning dark elements white on hover */
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-50\/60:hover,
+.dark .hover\:bg-gray-50\/70:hover,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-gray-200:hover {
+  background-color: #334155;
+}
+.dark .hover\:bg-blue-100:hover { background-color: rgb(59 130 246 / 0.28); }
+.dark .hover\:bg-purple-50:hover, .dark .hover\:bg-purple-100:hover { background-color: rgb(168 85 247 / 0.28); }
+.dark .hover\:bg-red-50:hover, .dark .hover\:bg-red-100:hover, .dark .hover\:bg-red-200:hover { background-color: rgb(239 68 68 / 0.28); }

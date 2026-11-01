@@ -42,7 +42,7 @@ export function Login() {
   };
 
   return (
-    <div className="relative flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 transition-colors" id="loginPage">
+    <div className="relative flex min-h-dvh p-4 items-center justify-center bg-gray-50 dark:bg-gray-900 transition-colors" id="loginPage">
       {/* Theme toggle in top right */}
       <button
         id="loginThemeBtn"

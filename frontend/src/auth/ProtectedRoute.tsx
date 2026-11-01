@@ -60,7 +60,7 @@ export function ProtectedRoute() {
       const toastHost = document.getElementById('toastHost');
       if (toastHost) {
         const el = document.createElement('div');
-        el.className = 'toast error';
+        el.className = 'toast error bg-red-600 text-white p-3 rounded-lg shadow-lg font-medium text-sm mb-2';
         el.textContent = `Your role (${user.role}) cannot open ${routeLabel}.`;
         toastHost.appendChild(el);
         setTimeout(() => el.remove(), 3000);

@@ -254,10 +254,10 @@ export function Customers() {
                   <table className="table table-compact w-full text-left">
                     <thead>
                       <tr className="border-b">
-                        <th className="py-2">Customer</th>
-                        <th className="py-2">Credit</th>
-                        <th className="py-2 text-right">Outstanding</th>
-                        <th className="py-2"></th>
+                        <th className="py-2 px-2.5">Customer</th>
+                        <th className="py-2 px-2.5">Credit</th>
+                        <th className="py-2 px-2.5 text-right">Outstanding</th>
+                        <th className="py-2 px-2.5"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -267,11 +267,11 @@ export function Customers() {
                           className={`cust-row border-b hover:bg-gray-50 ${selectedCustomer?.id === c.id ? 'row-active bg-blue-50' : ''}`}
                           data-name={c.name}
                         >
-                          <td className="py-2">
+                          <td className="py-2 px-2.5">
                             <b>{c.name}</b>
                             <div className="muted small text-xs text-gray-500">{c.phone}</div>
                           </td>
-                          <td className="py-2">
+                          <td className="py-2 px-2.5">
                             {c.creditAllowed ? (
                               <span className="badge blue bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">
                                 Limit ₹{parseFloat(c.creditLimit).toFixed(2)}
@@ -287,10 +287,10 @@ export function Customers() {
                               </span>
                             )}
                           </td>
-                          <td className="py-2 text-right font-mono">
+                          <td className="py-2 px-2.5 text-right font-mono">
                             ₹{parseFloat(c.currentCredit).toFixed(2)}
                           </td>
-                          <td className="py-2 text-right" style={{ width: '1%', whiteSpace: 'nowrap' }}>
+                          <td className="py-2 px-2.5 text-right" style={{ width: '1%', whiteSpace: 'nowrap' }}>
                             <button
                               type="button"
                               className="btn-sec btn-sm px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs rounded border"

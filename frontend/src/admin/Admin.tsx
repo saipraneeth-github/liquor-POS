@@ -20,20 +20,46 @@ interface TerminalItem {
 }
 
 const PAGE_KEYS = [
+  'dashboard',
   'pos',
   'shift',
   'bills',
   'customers',
   'tables',
+  'menu/kitchen',
+  'menu/bar',
   'products',
-  'stock',
+  'inventory',
   'counter',
+  'pour',
   'schemes',
   'compliance',
   'accounting',
   'closing',
   'admin',
 ];
+
+const PAGE_MIN_ROLE: Record<string, string> = {
+  dashboard: 'steward',
+  pos: 'cashier',
+  shift: 'cashier',
+  bills: 'cashier',
+  customers: 'cashier',
+  tables: 'steward',
+  'menu/kitchen': 'steward',
+  'menu/bar': 'steward',
+  products: 'cashier',
+  inventory: 'cashier',
+  counter: 'cashier',
+  pour: 'manager',
+  schemes: 'manager',
+  compliance: 'manager',
+  accounting: 'manager',
+  closing: 'manager',
+  admin: 'manager',
+};
+
+const ROLE_RANK: Record<string, number> = { steward: 1, cashier: 2, manager: 3, owner: 4 };
 
 export function Admin() {
   const { user } = useAuth();
@@ -148,12 +174,23 @@ export function Admin() {
   const openPagesModal = async (id: string) => {
     setEditingUserId(id);
     setLoadingPages(true);
+    const targetUser = users.find((u) => u.id === id);
+    const rank = ROLE_RANK[targetUser?.role || 'cashier'] || 2;
+    const defaults = PAGE_KEYS.filter((k) => rank >= (ROLE_RANK[PAGE_MIN_ROLE[k]] || 2));
     try {
       const res = await api.get<{ pages: { routePath: string; canAccess: boolean }[] }>(`/users/${id}/pages`);
-      const allowed = new Set(res.pages.filter((p) => p.canAccess).map((p) => p.routePath));
-      setUserPages(allowed);
+      if (res.pages.length === 0) {
+        setUserPages(new Set(defaults));
+      } else {
+        const allowed = new Set(
+          res.pages
+            .filter((p) => p.canAccess)
+            .map((p) => (p.routePath === 'stock' ? 'inventory' : p.routePath))
+        );
+        setUserPages(allowed);
+      }
     } catch {
-      setUserPages(new Set());
+      setUserPages(new Set(defaults));
     } finally {
       setLoadingPages(false);
     }
@@ -163,12 +200,12 @@ export function Admin() {
     if (!editingUserId) return;
     try {
       await api.put(`/users/${editingUserId}/pages`, {
-        pages: Array.from(userPages).map((p) => ({ routePath: p, canAccess: true })),
+        pages: PAGE_KEYS.map((p) => ({ routePath: p, canAccess: userPages.has(p) })),
       });
       showToast('Page permissions saved', 'success');
       setEditingUserId(null);
     } catch (err: any) {
-      showToast('Failed to save pages: ' + err.message, 'error');
+      showToast('Failed to save pages: ' + errorMessage(err), 'error');
     }
   };
 

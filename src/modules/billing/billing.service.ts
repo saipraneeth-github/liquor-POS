@@ -14,7 +14,7 @@ import {
   creditTransactions,
   shiftSessions,
 } from '../../db/schema.js';
-import { eq, inArray, and, gte, lt, ne, desc, sql } from 'drizzle-orm';
+import { eq, inArray, and, gte, lt, ne, desc, sql, getTableColumns } from 'drizzle-orm';
 import { calculateBill, mergeBillItems, resolveTaxRate, formatBillNumber } from './billing.engine.js';
 import { checkStockAvailability, computeStockDeltas, computeVoidStockDeltas } from '../stock/stock.engine.js';
 import { deductMl, restoreMl, splitUnitsAndMl } from '../menu/serving.engine.js';
@@ -507,8 +507,12 @@ export async function getBillById(billId: string) {
   if (!bill) return null;
 
   const items = await db
-    .select()
+    .select({
+      ...getTableColumns(billItems),
+      productName: products.name,
+    })
     .from(billItems)
+    .leftJoin(products, eq(billItems.productId, products.id))
     .where(eq(billItems.billId, billId));
 
   return { ...bill, items };

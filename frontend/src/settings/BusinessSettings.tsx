@@ -52,7 +52,8 @@ const blank: FormState = { name: '', code: '', address: '', gstin: '', printerHo
 
 /** Admin (business owner) console: plan usage, branches, GST details and the receipt printer of each branch. */
 export function BusinessSettings() {
-  const { user } = useAuth();
+  const { user, saasRole } = useAuth();
+  const hasTenant = saasRole !== 'super_admin';
   const activeBranch = user?.branchId;
   const [jobs, setJobs] = useState<PrintJob[]>([]);
 
@@ -110,7 +111,7 @@ export function BusinessSettings() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, b] = await Promise.all([api.get<TenantSummary>('/tenant/me'), api.get<Branch[]>('/branches')]);
+      const [t, b] = await Promise.all([hasTenant ? api.get<TenantSummary>('/tenant/me') : Promise.resolve(null), api.get<Branch[]>('/branches')]);
       setTenant(t);
       setBranches(b);
     } catch (err) {
@@ -118,7 +119,7 @@ export function BusinessSettings() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [hasTenant]);
 
   useEffect(() => {
     load();
@@ -222,7 +223,7 @@ export function BusinessSettings() {
         </div>
       )}
 
-      <SubscriptionPanel onChanged={load} />
+      {hasTenant && <SubscriptionPanel onChanged={load} />}
 
       {jobs.some((j) => j.status !== 'SENT') && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-amber-300 p-4" id="printQueueCard">

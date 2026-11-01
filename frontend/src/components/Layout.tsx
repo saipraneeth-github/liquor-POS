@@ -29,6 +29,7 @@ import {
   LogOut,
   Sun,
   Moon,
+  Menu,
   X,
 } from 'lucide-react';
 
@@ -88,6 +89,7 @@ export function Layout() {
   const location = useLocation();
   const [showSignoutWarning, setShowSignoutWarning] = useState(false);
   const [dueAmount, setDueAmount] = useState<string | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [pw, setPw] = useState({ current: '', next: '' });
   const [pwError, setPwError] = useState<string | null>(null);
@@ -114,6 +116,13 @@ export function Layout() {
       setPwError(errorMessage(err));
     }
   };
+
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNavOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navOpen]);
 
   useEffect(() => {
     if (saasRole !== 'admin') return;
@@ -169,7 +178,10 @@ export function Layout() {
     // Check custom menu permissions configured by Super Admin / Admin
     if (user.pages && user.pages.length > 0) {
       const key = item.pageKey || item.path.replace(/^\//, '');
-      const perm = user.pages.find((p) => p.routePath === key || p.routePath === item.path.replace(/^\//, ''));
+      const alias = key === 'inventory' ? 'stock' : key === 'compliance' ? 'reports' : '';
+      const perm = user.pages.find(
+        (p) => p.routePath === key || p.routePath === item.path.replace(/^\//, '') || (alias && p.routePath === alias)
+      );
       if (perm !== undefined) {
         return perm.canAccess;
       }
@@ -184,8 +196,9 @@ export function Layout() {
   const pageTitle = navItems.find((i) => i.path === location.pathname)?.label || '';
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" id="mainApp">
-      <aside className="w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col transition-colors">
+    <div className="flex h-dvh bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" id="mainApp">
+      {navOpen && <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setNavOpen(false)} />}
+      <aside onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setNavOpen(false); }} className={`fixed inset-y-0 left-0 z-40 md:static md:translate-x-0 transition-transform w-64 shrink-0 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-4 font-bold text-xl border-b dark:border-gray-700 flex items-center gap-2">
           <Wine className="text-purple-600" />
           <div>
@@ -259,15 +272,20 @@ export function Layout() {
             <button type="button" id="supportExit" onClick={exitSupport} className="font-semibold underline cursor-pointer">Exit support session</button>
           </div>
         )}
-        <header className="h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 transition-colors">
-          <div className="font-semibold text-lg" id="pageTitle">{pageTitle}</div>
-          <div className="flex items-center gap-3 text-sm">
+        <header className="h-14 shrink-0 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between gap-2 px-4 transition-colors">
+          <div className="flex items-center gap-2 min-w-0">
+            <button type="button" id="navToggle" aria-label="Open menu" className="md:hidden p-2 -ml-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => setNavOpen(true)}>
+              <Menu size={20} />
+            </button>
+            <div className="font-semibold text-lg truncate" id="pageTitle">{pageTitle}</div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 text-sm min-w-0 shrink">
             {user.role === 'owner' && branches.length > 0 && (
-              <label className="flex items-center gap-2">
+              <label className="flex items-center gap-2 min-w-0">
                 <span className="text-gray-500 dark:text-gray-400 text-xs">Branch</span>
                 <select
                   id="branchSelect"
-                  className="p-1.5 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-xs"
+                  className="p-1.5 min-w-0 max-w-[6rem] sm:max-w-none border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-xs"
                   value={activeBranchId ?? ''}
                   onChange={(e) => setActiveBranch(e.target.value)}
                 >
@@ -283,7 +301,7 @@ export function Layout() {
               id="themeToggle"
               type="button"
               onClick={toggleTheme}
-              className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/60 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium"
+              className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/60 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium shrink-0"
               aria-label="Toggle dark/light theme"
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
             >

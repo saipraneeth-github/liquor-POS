@@ -7,7 +7,8 @@ import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
 type BillItem = {
   id: string;
   productId: string;
-  productName?: string;
+  productName?: string | null;
+  servingLabel?: string | null;
   quantity: number;
   unitPrice: string;
   taxAmount: string;
@@ -378,7 +379,10 @@ export function Bills() {
                       <tbody className="divide-y dark:divide-gray-700">
                         {(selectedBill.items || []).map((item, idx) => (
                           <tr key={idx}>
-                            <td className="p-2">{item.productName || item.productId}</td>
+                            <td className="p-2">
+                              {item.productName || item.productId}
+                              {item.servingLabel ? ` (${item.servingLabel})` : ''}
+                            </td>
                             <td className="p-2 text-right">{item.quantity}</td>
                             <td className="p-2 text-right font-mono">₹{parseFloat(item.unitPrice).toFixed(2)}</td>
                             <td className="p-2 text-right font-mono">₹{parseFloat(item.lineTotal).toFixed(2)}</td>

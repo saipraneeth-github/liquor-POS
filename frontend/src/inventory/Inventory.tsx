@@ -950,8 +950,8 @@ export function Inventory() {
                       isDragActive
                         ? 'border-blue-500 bg-blue-50'
                         : uploadFile
-                        ? 'border-emerald-400 bg-emerald-50/40'
-                        : 'border-gray-300 hover:border-gray-400 bg-gray-50/50'
+                        ? 'border-emerald-400 bg-emerald-50/40 dark:bg-emerald-900/20'
+                        : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 bg-gray-50/50 dark:bg-gray-800/40'
                     }`}
                     onDragOver={(e) => {
                       e.preventDefault();
@@ -1304,7 +1304,7 @@ export function Inventory() {
                             <td className="py-3 px-3 text-xs text-gray-400 font-mono">{idx + 1}</td>
                             <td className="py-3 px-3 space-y-1.5">
                               <input
-                                className="ie-desc w-full px-1 py-0.5 -mx-1 rounded text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-400 focus:bg-white outline-none"
+                                className="ie-desc w-full px-1 py-0.5 rounded text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-400 focus:bg-white outline-none"
                                 value={it.rawDescription}
                                 onChange={(e) => handleLineDescChange(idx, e.target.value)}
                                 title="Description as printed on the bill"
@@ -1317,7 +1317,7 @@ export function Inventory() {
                                   title={matched ? 'Matched' : it.matchStatus === 'SUGGESTED' ? 'Suggested' : 'Needs selection'}
                                 />
                                 <select
-                                  className="ie-prod flex-1 min-w-0 p-1.5 border rounded-md text-xs bg-white text-gray-700"
+                                  className="ie-prod flex-1 min-w-0 max-w-md w-full p-1.5 border rounded-md text-xs bg-white text-gray-700"
                                   value={it.productId || ''}
                                   onChange={(e) => {
                                     if (e.target.value === '__NEW__') {

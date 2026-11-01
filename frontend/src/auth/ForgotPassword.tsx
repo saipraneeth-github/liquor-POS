@@ -1,9 +1,12 @@
 ﻿import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Sun, Moon } from 'lucide-react';
 import { api } from '../api/client';
 import { errorMessage } from '../lib/print';
+import { useTheme } from '../context/ThemeContext';
 
 export function ForgotPassword() {
+  const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
@@ -24,7 +27,15 @@ export function ForgotPassword() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4" id="forgotPage">
+    <div className="relative flex min-h-dvh items-center justify-center bg-gray-50 dark:bg-gray-900 p-4" id="forgotPage">
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className="absolute top-4 right-4 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 shadow-sm transition-colors cursor-pointer flex items-center gap-2 text-xs font-medium"
+        aria-label="Toggle dark/light theme"
+      >
+        {theme === 'dark' ? <><Sun size={18} className="text-amber-400" /><span className="hidden sm:inline">Light</span></> : <><Moon size={18} className="text-purple-600" /><span className="hidden sm:inline">Dark</span></>}
+      </button>
       <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-6 space-y-4">
         <h1 className="text-xl font-bold">Forgot your password?</h1>
         {sent ? (
