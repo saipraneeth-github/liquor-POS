@@ -143,6 +143,80 @@ export async function updateKotItemStatus(
   });
 }
 
+// ─── SERVE ALL KOT ITEMS (BATCH) ─────────────────────────────────────────────
+
+export async function serveAllKotOrderItems(kotOrderId: string, branchId: string) {
+  return db.transaction(async (tx) => {
+    const [order] = await tx
+      .select({ id: kotOrders.id })
+      .from(kotOrders)
+      .where(and(eq(kotOrders.id, kotOrderId), eq(kotOrders.branchId, branchId)));
+    if (!order) throw new NotFoundError(`KOT order not found.`);
+
+    const updated = await tx
+      .update(kotItems)
+      .set({ status: 'SERVED' })
+      .where(and(
+        eq(kotItems.kotOrderId, kotOrderId),
+        inArray(kotItems.status, ['PENDING', 'PREPARING'])
+      ))
+      .returning();
+
+    const allItems = await tx
+      .select({ status: kotItems.status })
+      .from(kotItems)
+      .where(eq(kotItems.kotOrderId, kotOrderId));
+
+    let orderStatus: 'PENDING' | 'PREPARING' | 'SERVED' | 'CANCELLED' = 'PENDING';
+    if (allItems.every((i) => i.status === 'SERVED' || i.status === 'CANCELLED')) {
+      orderStatus = allItems.every((i) => i.status === 'CANCELLED') ? 'CANCELLED' : 'SERVED';
+    } else if (allItems.some((i) => i.status === 'PREPARING' || i.status === 'SERVED')) {
+      orderStatus = 'PREPARING';
+    }
+
+    await tx.update(kotOrders).set({ updatedAt: new Date(), status: orderStatus }).where(eq(kotOrders.id, kotOrderId));
+    return updated;
+  });
+}
+
+export async function serveAllSessionKotItems(tableSessionId: string, branchId: string) {
+  return db.transaction(async (tx) => {
+    const orders = await tx
+      .select({ id: kotOrders.id })
+      .from(kotOrders)
+      .where(and(eq(kotOrders.tableSessionId, tableSessionId), eq(kotOrders.branchId, branchId)));
+
+    if (!orders.length) return [];
+    const orderIds = orders.map((o) => o.id);
+
+    const updated = await tx
+      .update(kotItems)
+      .set({ status: 'SERVED' })
+      .where(and(
+        inArray(kotItems.kotOrderId, orderIds),
+        inArray(kotItems.status, ['PENDING', 'PREPARING'])
+      ))
+      .returning();
+
+    for (const orderId of orderIds) {
+      const allItems = await tx
+        .select({ status: kotItems.status })
+        .from(kotItems)
+        .where(eq(kotItems.kotOrderId, orderId));
+
+      let orderStatus: 'PENDING' | 'PREPARING' | 'SERVED' | 'CANCELLED' = 'PENDING';
+      if (allItems.every((i) => i.status === 'SERVED' || i.status === 'CANCELLED')) {
+        orderStatus = allItems.every((i) => i.status === 'CANCELLED') ? 'CANCELLED' : 'SERVED';
+      } else if (allItems.some((i) => i.status === 'PREPARING' || i.status === 'SERVED')) {
+        orderStatus = 'PREPARING';
+      }
+      await tx.update(kotOrders).set({ updatedAt: new Date(), status: orderStatus }).where(eq(kotOrders.id, orderId));
+    }
+
+    return updated;
+  });
+}
+
 // ─── GET KOT ORDERS FOR SESSION ───────────────────────────────────────────────
 
 export async function getKotOrdersForSession(tableSessionId: string, branchId: string) {

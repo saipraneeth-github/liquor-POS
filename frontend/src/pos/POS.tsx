@@ -89,7 +89,7 @@ export function POS() {
   const [servingPicker, setServingPicker] = useState<Product | null>(null);
   const [buyerGstin, setBuyerGstin] = useState('');
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'CARD' | 'UPI' | 'CREDIT'>('CASH');
-  const [discount, setDiscount] = useState('');
+  const [discountPercent, setDiscountPercent] = useState('');
   const [creditQuery, setCreditQuery] = useState('');
   const [creditResults, setCreditResults] = useState<KhataCustomer[]>([]);
   const [creditCustomer, setCreditCustomer] = useState<KhataCustomer | null>(null);
@@ -303,7 +303,8 @@ export function POS() {
   }, [paymentMode, branchId, creditQuery]);
 
   const cartSubtotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.qty, 0);
-  const discountVal = Math.max(0, parseFloat(discount) || 0);
+  const discountPctNum = Math.max(0, Math.min(100, parseFloat(discountPercent) || 0));
+  const discountVal = (cartSubtotal * discountPctNum) / 100;
   const cartTotal = Math.max(0, cartSubtotal - discountVal);
 
   const checkout = async () => {
@@ -342,7 +343,7 @@ export function POS() {
       const custName = creditCustomer?.name;
       setCart([]);
       setBuyerGstin('');
-      setDiscount('');
+      setDiscountPercent('');
       setCreditCustomer(null);
       setCreditQuery('');
       setCheckoutModal({
@@ -598,20 +599,77 @@ export function POS() {
             </div>
           ))}
         </div>
-        <div className="p-4 border-t dark:border-gray-700 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <label htmlFor="discountInput" className="text-gray-500">Discount (₹)</label>
-            <input
-              id="discountInput"
-              className="w-24 p-1 border rounded text-right font-mono text-xs dark:bg-gray-700 dark:border-gray-600"
-              placeholder="0.00"
-              value={discount}
-              onChange={(e) => setDiscount(e.target.value)}
-            />
+        <div className="p-4 border-t dark:border-gray-700 space-y-2.5">
+          {/* Subtotal row */}
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>Subtotal</span>
+            <span className="font-mono">₹{cartSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
-          <div className="flex justify-between font-bold">
+
+          {/* Discount Percentage Input & Live Value */}
+          <div className="space-y-1.5 bg-gray-50 dark:bg-gray-750 p-2 rounded-lg border dark:border-gray-700">
+            <div className="flex items-center justify-between text-xs">
+              <label htmlFor="discountInput" className="font-semibold text-gray-600 dark:text-gray-300">
+                Discount (%)
+              </label>
+              <div className="relative w-24">
+                <input
+                  id="discountInput"
+                  type="number"
+                  step="any"
+                  min="0"
+                  max="100"
+                  className="w-full p-1 pr-6 border rounded text-right font-mono text-xs dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  placeholder="0"
+                  value={discountPercent}
+                  onChange={(e) => setDiscountPercent(e.target.value)}
+                />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs pointer-events-none">%</span>
+              </div>
+            </div>
+
+            {/* Quick percentage chips */}
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[10px] text-gray-400 font-medium">Quick %:</span>
+              {[5, 10, 15, 20].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => setDiscountPercent(String(pct))}
+                  className={`px-1.5 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer border ${
+                    discountPercent === String(pct)
+                      ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                      : 'bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600'
+                  }`}
+                >
+                  {pct}%
+                </button>
+              ))}
+              {discountPercent && (
+                <button
+                  type="button"
+                  onClick={() => setDiscountPercent('')}
+                  className="px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-red-500 hover:underline cursor-pointer ml-auto"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Live Discount Rupee Value */}
+            <div className="flex justify-between items-center text-xs pt-1 border-t dark:border-gray-700/60">
+              <span className="text-gray-500">Discount Amount:</span>
+              <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                -₹{discountVal.toFixed(2)} {discountPctNum > 0 ? `(${discountPctNum}%)` : ''}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex justify-between font-bold text-base">
             <span>Total</span>
-            <span>₹{cartTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+            <span className="font-mono text-purple-700 dark:text-purple-300">
+              ₹{cartTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </div>
           <div className="grid grid-cols-4 gap-1" role="group" aria-label="Payment mode">
             {(['CASH', 'CARD', 'UPI', 'CREDIT'] as const).map((m) => (

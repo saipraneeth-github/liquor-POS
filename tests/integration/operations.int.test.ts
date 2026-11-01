@@ -147,6 +147,36 @@ describe('tables and KOT', () => {
     expect((await inject('PATCH', url, otherManager(), { status: 'SERVED', branchId: ctx.otherBranchId })).statusCode).toBe(404);
   });
 
+  it('serve-all endpoints: marks all items in a single KOT or entire session as SERVED', async () => {
+    const k1 = (await inject('POST', '/kot', ctx.auth('steward'), {
+      tableSessionId: sessionId, branchId: ctx.branchId, items: [{ productId: ctx.products[0].id, quantity: 1 }],
+    })).json().kotOrder;
+
+    // Serve all for order k1
+    const s1 = await inject('POST', `/kot/${k1.id}/serve-all`, ctx.auth('steward'), { branchId: ctx.branchId });
+    expect(s1.statusCode).toBe(200);
+    expect(s1.json().count).toBe(1);
+    expect(s1.json().items[0].status).toBe('SERVED');
+
+    // Create another KOT k2 with multiple items
+    await inject('POST', '/kot', ctx.auth('steward'), {
+      tableSessionId: sessionId, branchId: ctx.branchId, items: [
+        { productId: ctx.products[0].id, quantity: 1 },
+        { productId: ctx.products[1].id, quantity: 2 },
+      ],
+    });
+
+    // Serve all for the entire session
+    const sSession = await inject('POST', `/kot/session/${sessionId}/serve-all`, ctx.auth('steward'), { branchId: ctx.branchId });
+    expect(sSession.statusCode).toBe(200);
+    expect(sSession.json().count).toBeGreaterThanOrEqual(2);
+
+    // Calling serve-all again when all are served returns count 0
+    const sAgain = await inject('POST', `/kot/session/${sessionId}/serve-all`, ctx.auth('steward'), { branchId: ctx.branchId });
+    expect(sAgain.statusCode).toBe(200);
+    expect(sAgain.json().count).toBe(0);
+  });
+
   it('closes the table; KOT on a closed session → 404; closing again → 409', async () => {
     const closed = await inject('POST', `/tables/${tableId}/close`, ctx.auth('cashier'), { branchId: ctx.branchId });
     expect(closed.statusCode).toBe(200);

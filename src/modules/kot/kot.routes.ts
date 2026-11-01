@@ -14,6 +14,8 @@ import { sendError } from '../../lib/errors.js';
 import {
   createKotOrder,
   updateKotItemStatus,
+  serveAllKotOrderItems,
+  serveAllSessionKotItems,
   getKotOrdersForSession,
   getConsolidatedBill,
 } from './kot.service.js';
@@ -70,6 +72,38 @@ export async function kotRoutes(app: FastifyInstance) {
       return reply.send({ kotItem: item });
     } catch (err) {
       return sendError(reply, err, 'KOT update failed');
+    }
+  });
+
+  // Serve all items in a single KOT order
+  app.post('/kot/:kotOrderId/serve-all', { preHandler: [requireRole('steward')] }, async (req, reply) => {
+    const params = z.object({ kotOrderId: z.string().uuid() }).safeParse(req.params);
+    if (!params.success) return reply.status(404).send({ error: 'KOT order not found' });
+    const body = z.object({ branchId: z.string().uuid() }).safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: 'branchId is required' });
+    const user = getUser(req);
+    if (!(await assertBranchAccess(user, body.data.branchId, reply))) return;
+    try {
+      const updated = await serveAllKotOrderItems(params.data.kotOrderId, body.data.branchId);
+      return reply.send({ count: updated.length, items: updated });
+    } catch (err) {
+      return sendError(reply, err, 'Serve all failed');
+    }
+  });
+
+  // Serve all items across all KOT orders for a table session
+  app.post('/kot/session/:sessionId/serve-all', { preHandler: [requireRole('steward')] }, async (req, reply) => {
+    const params = SessionParams.safeParse(req.params);
+    if (!params.success) return reply.status(404).send({ error: 'Session not found' });
+    const body = z.object({ branchId: z.string().uuid() }).safeParse(req.body);
+    if (!body.success) return reply.status(400).send({ error: 'branchId is required' });
+    const user = getUser(req);
+    if (!(await assertBranchAccess(user, body.data.branchId, reply))) return;
+    try {
+      const updated = await serveAllSessionKotItems(params.data.sessionId, body.data.branchId);
+      return reply.send({ count: updated.length, items: updated });
+    } catch (err) {
+      return sendError(reply, err, 'Serve all failed');
     }
   });
 

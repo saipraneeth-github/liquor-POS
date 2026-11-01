@@ -97,6 +97,21 @@ export function Tables() {
   // Modals
   const [activeModal, setActiveModal] = useState<'actions' | 'newKot' | 'viewKots' | 'closeConfirm' | 'checkout' | null>(null);
   const [checkout, setCheckout] = useState({ paymentMode: 'CASH', discount: '', gstin: '', roundOff: 'default' });
+  const [discountPercent, setDiscountPercent] = useState('');
+  const [billSummary, setBillSummary] = useState<{
+    grandTotal: string;
+    totalTaxable: string;
+    totalTax: string;
+    lineItems: Array<{
+      productId: string;
+      servingLabel?: string | null;
+      quantity: number;
+      unitPrice: string;
+      lineTotal: string;
+    }>;
+  } | null>(null);
+  const [loadingBill, setLoadingBill] = useState(false);
+  const [serveAllBusy, setServeAllBusy] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutDone, setCheckoutDone] = useState<{ billId: string; billNumber: string; total: string } | null>(null);
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
@@ -349,10 +364,82 @@ export function Tables() {
     }
   };
 
-  const openCheckout = () => {
+  const handleServeAllSession = async (sessionId: string) => {
+    setServeAllBusy(true);
+    try {
+      const res = await api.post<{ count: number }>(`/kot/session/${sessionId}/serve-all`, { branchId });
+      showToast(
+        res.count > 0
+          ? `All active items marked as SERVED (${res.count} items)`
+          : 'All items are already served or cancelled.',
+        'success'
+      );
+      // Refresh KOTs
+      const kotRes = await api.get<{ kotOrders: KotOrder[] }>(
+        `/kot/session/${sessionId}?branchId=${branchId}`
+      );
+      setTableKots(kotRes.kotOrders || []);
+      await loadTables();
+      loadProducts();
+      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Serve all failed';
+      showToast('Failed to mark all served: ' + msg, 'error');
+    } finally {
+      setServeAllBusy(false);
+    }
+  };
+
+  const handleServeAllKot = async (orderId: string) => {
+    if (!selectedTable?.currentSessionId) return;
+    setServeAllBusy(true);
+    try {
+      const res = await api.post<{ count: number }>(`/kot/${orderId}/serve-all`, { branchId });
+      showToast(
+        res.count > 0
+          ? `KOT items marked as SERVED (${res.count} items)`
+          : 'All items in this KOT are already served or cancelled.',
+        'success'
+      );
+      // Refresh KOTs
+      const kotRes = await api.get<{ kotOrders: KotOrder[] }>(
+        `/kot/session/${selectedTable.currentSessionId}?branchId=${branchId}`
+      );
+      setTableKots(kotRes.kotOrders || []);
+      await loadTables();
+      loadProducts();
+      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Serve KOT failed';
+      showToast('Failed to serve KOT: ' + msg, 'error');
+    } finally {
+      setServeAllBusy(false);
+    }
+  };
+
+  const openCheckout = async () => {
     setCheckout({ paymentMode: 'CASH', discount: '', gstin: '', roundOff: 'default' });
+    setDiscountPercent('');
     setCheckoutDone(null);
+    setBillSummary(null);
     setActiveModal('checkout');
+
+    if (selectedTable?.currentSessionId) {
+      setLoadingBill(true);
+      try {
+        const res = await api.get<{
+          grandTotal: string;
+          totalTaxable: string;
+          totalTax: string;
+          lineItems: any[];
+        }>(`/kot/session/${selectedTable.currentSessionId}/bill?branchId=${branchId}`);
+        setBillSummary(res);
+      } catch (err: unknown) {
+        console.error('Failed to load table bill summary:', err);
+      } finally {
+        setLoadingBill(false);
+      }
+    }
   };
 
   /** Bills every non-cancelled KOT item of the session (servings, GST, stock), then frees the table. */
@@ -361,10 +448,15 @@ export function Tables() {
     if (!selectedTable) return;
     setCheckoutBusy(true);
     try {
+      const tableSubtotal = billSummary ? parseFloat(billSummary.grandTotal || '0') : 0;
+      const pctNum = Math.max(0, Math.min(100, parseFloat(discountPercent) || 0));
+      const discountRupees = (tableSubtotal * pctNum) / 100;
+      const discountToSend = discountRupees > 0 ? discountRupees.toFixed(2) : undefined;
+
       const res = await api.post<{ bill: { id: string; billNumber: string; total: string } }>(`/tables/${selectedTable.id}/checkout`, {
         branchId,
         paymentMode: checkout.paymentMode,
-        ...(checkout.discount ? { discount: checkout.discount } : {}),
+        ...(discountToSend ? { discount: discountToSend } : {}),
         ...(checkout.gstin.trim() ? { customerGstin: checkout.gstin.trim().toUpperCase() } : {}),
         ...(checkout.roundOff === 'default' ? {} : { roundOff: checkout.roundOff === 'round' }),
       });
@@ -606,6 +698,16 @@ export function Tables() {
                     >
                       <span>📋</span> KOTs
                     </button>
+                    <button
+                      type="button"
+                      id="tblActServeAll"
+                      disabled={serveAllBusy}
+                      onClick={() => handleServeAllSession(selectedTable!.currentSessionId!)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 text-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-sm"
+                      title="Mark all pending and preparing items as SERVED with one click"
+                    >
+                      <span>✅</span> Serve All Items
+                    </button>
                     {canCashier && (
                       <>
                         <button
@@ -631,45 +733,141 @@ export function Tables() {
               )}
 
               {/* Checkout: KOT items -> bill */}
-              {activeModal === 'checkout' && !checkoutDone && (
-                <form onSubmit={handleCheckout} className="space-y-4" id="checkoutForm">
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    Every KOT item on this table (except cancelled ones) goes on one GST bill at the menu rates. The table is freed afterwards.
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
+              {activeModal === 'checkout' && !checkoutDone && (() => {
+                const tableSubtotal = billSummary ? parseFloat(billSummary.grandTotal || '0') : 0;
+                const pctNum = Math.max(0, Math.min(100, parseFloat(discountPercent) || 0));
+                const discountRupees = (tableSubtotal * pctNum) / 100;
+                const netPayable = Math.max(0, tableSubtotal - discountRupees);
+                return (
+                  <form onSubmit={handleCheckout} className="space-y-4" id="checkoutForm">
+                    <p className="text-sm text-gray-600 dark:text-gray-300">
+                      Every KOT item on this table (except cancelled ones) goes on one GST bill at the menu rates. The table is freed afterwards.
+                    </p>
+
+                    {/* Bill summary preview */}
+                    {loadingBill ? (
+                      <div className="p-3 text-center text-xs text-gray-500 bg-gray-50 dark:bg-gray-750 rounded border dark:border-gray-700 animate-pulse">
+                        Calculating table total...
+                      </div>
+                    ) : billSummary && (
+                      <div className="p-3 bg-gray-50 dark:bg-gray-750 rounded-lg border dark:border-gray-700 text-xs space-y-1.5">
+                        <div className="flex justify-between font-semibold text-gray-700 dark:text-gray-200">
+                          <span>Items ({billSummary.lineItems.length})</span>
+                          <span className="font-mono">Subtotal: ₹{tableSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="max-h-24 overflow-y-auto divide-y dark:divide-gray-700 text-gray-500 dark:text-gray-400 pr-1">
+                          {billSummary.lineItems.map((li, idx) => (
+                            <div key={idx} className="py-1 flex justify-between items-center text-[11px]">
+                              <span className="truncate pr-2">{productName(li.productId)}{li.servingLabel ? ` (${li.servingLabel})` : ''} × {li.quantity}</span>
+                              <span className="font-mono shrink-0">₹{parseFloat(li.lineTotal).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="block text-xs font-semibold text-gray-500">
+                        Payment
+                        <select id="coPayment" className="mt-1 w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={checkout.paymentMode} onChange={(e) => setCheckout({ ...checkout, paymentMode: e.target.value })}>
+                          <option value="CASH">Cash</option>
+                          <option value="CARD">Card</option>
+                          <option value="UPI">UPI</option>
+                        </select>
+                      </label>
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <label htmlFor="coDiscountPct" className="text-xs font-semibold text-gray-500">
+                            Discount (%)
+                          </label>
+                          {pctNum > 0 && (
+                            <span className="text-[11px] font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                              -₹{discountRupees.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <input
+                            id="coDiscountPct"
+                            type="number"
+                            step="any"
+                            min="0"
+                            max="100"
+                            placeholder="0"
+                            value={discountPercent}
+                            onChange={(e) => setDiscountPercent(e.target.value)}
+                            className="w-full p-2 pr-7 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs pointer-events-none">%</span>
+                        </div>
+                        <input id="coDiscount" type="hidden" value={discountRupees > 0 ? discountRupees.toFixed(2) : ''} readOnly />
+                      </div>
+                    </div>
+
+                    {/* Quick percentage chips */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] text-gray-500 font-medium">Quick %:</span>
+                      {[5, 10, 15, 20].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setDiscountPercent(String(pct))}
+                          className={`px-2 py-0.5 rounded text-xs font-semibold transition-colors cursor-pointer border ${
+                            discountPercent === String(pct)
+                              ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                              : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600'
+                          }`}
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                      {discountPercent && (
+                        <button
+                          type="button"
+                          onClick={() => setDiscountPercent('')}
+                          className="px-2 py-0.5 rounded text-xs text-gray-500 hover:text-red-500 hover:underline cursor-pointer ml-auto"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Net Payable total */}
+                    <div className="p-2.5 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200 dark:border-purple-800 flex justify-between items-center text-sm">
+                      <div>
+                        <span className="font-semibold text-purple-900 dark:text-purple-200">Total Payable:</span>
+                        {pctNum > 0 && (
+                          <div className="text-[11px] text-purple-600 dark:text-purple-400">
+                            Includes {pctNum}% discount (-₹{discountRupees.toFixed(2)})
+                          </div>
+                        )}
+                      </div>
+                      <span className="font-mono font-bold text-base text-purple-700 dark:text-purple-300">
+                        ₹{netPayable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+
                     <label className="block text-xs font-semibold text-gray-500">
-                      Payment
-                      <select id="coPayment" className="mt-1 w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={checkout.paymentMode} onChange={(e) => setCheckout({ ...checkout, paymentMode: e.target.value })}>
-                        <option value="CASH">Cash</option>
-                        <option value="CARD">Card</option>
-                        <option value="UPI">UPI</option>
+                      Round-off
+                      <select id="coRound" className="mt-1 w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={checkout.roundOff} onChange={(e) => setCheckout({ ...checkout, roundOff: e.target.value })}>
+                        <option value="default">Branch default</option>
+                        <option value="round">Round to the nearest rupee</option>
+                        <option value="exact">Exact amount</option>
                       </select>
                     </label>
                     <label className="block text-xs font-semibold text-gray-500">
-                      Discount (₹)
-                      <input id="coDiscount" className="mt-1 w-full p-2 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600 dark:text-white" inputMode="decimal" placeholder="0" value={checkout.discount} onChange={(e) => setCheckout({ ...checkout, discount: e.target.value })} />
+                      Buyer GSTIN (optional, for a B2B invoice)
+                      <input id="coGstin" className="mt-1 w-full p-2 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600 dark:text-white" maxLength={15} value={checkout.gstin} onChange={(e) => setCheckout({ ...checkout, gstin: e.target.value })} />
                     </label>
-                  </div>
-                  <label className="block text-xs font-semibold text-gray-500">
-                    Round-off
-                    <select id="coRound" className="mt-1 w-full p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" value={checkout.roundOff} onChange={(e) => setCheckout({ ...checkout, roundOff: e.target.value })}>
-                      <option value="default">Branch default</option>
-                      <option value="round">Round to the nearest rupee</option>
-                      <option value="exact">Exact amount</option>
-                    </select>
-                  </label>
-                  <label className="block text-xs font-semibold text-gray-500">
-                    Buyer GSTIN (optional, for a B2B invoice)
-                    <input id="coGstin" className="mt-1 w-full p-2 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600 dark:text-white" maxLength={15} value={checkout.gstin} onChange={(e) => setCheckout({ ...checkout, gstin: e.target.value })} />
-                  </label>
-                  <div className="flex justify-end gap-2">
-                    <button type="button" onClick={() => setActiveModal('actions')} className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Back</button>
-                    <button type="submit" id="coConfirm" disabled={checkoutBusy} className="px-4 py-2 bg-emerald-600 text-white rounded text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
-                      {checkoutBusy ? 'Billing…' : 'Confirm & bill'}
-                    </button>
-                  </div>
-                </form>
-              )}
+                    <div className="flex justify-end gap-2">
+                      <button type="button" onClick={() => setActiveModal('actions')} className="px-4 py-2 border rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Back</button>
+                      <button type="submit" id="coConfirm" disabled={checkoutBusy} className="px-4 py-2 bg-emerald-600 text-white rounded text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50">
+                        {checkoutBusy ? 'Billing…' : 'Confirm & bill'}
+                      </button>
+                    </div>
+                  </form>
+                );
+              })()}
               {activeModal === 'checkout' && checkoutDone && (
                 <div className="space-y-4 text-center" id="checkoutDone">
                   <div className="text-xs text-gray-500">Bill</div>
@@ -1094,41 +1292,55 @@ export function Tables() {
                 const barCount = tableKots.filter((o) => o.destination === 'BAR').length;
                 return (
                   <div className="space-y-4">
-                    {/* Destination filter tabs */}
-                    <div className="flex gap-2 border-b dark:border-gray-700 pb-2">
-                      <button
-                        type="button"
-                        onClick={() => setKotFilter('ALL')}
-                        className={`px-3 py-1 text-xs rounded-full font-medium transition ${
-                          kotFilter === 'ALL'
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        All ({tableKots.length})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setKotFilter('KITCHEN')}
-                        className={`px-3 py-1 text-xs rounded-full font-medium transition ${
-                          kotFilter === 'KITCHEN'
-                            ? 'bg-amber-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        🍳 Kitchen ({kitchenCount})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setKotFilter('BAR')}
-                        className={`px-3 py-1 text-xs rounded-full font-medium transition ${
-                          kotFilter === 'BAR'
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        🍸 Bar ({barCount})
-                      </button>
+                    {/* Destination filter tabs & Serve All button */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b dark:border-gray-700 pb-2">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setKotFilter('ALL')}
+                          className={`px-3 py-1 text-xs rounded-full font-medium transition cursor-pointer ${
+                            kotFilter === 'ALL'
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          All ({tableKots.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKotFilter('KITCHEN')}
+                          className={`px-3 py-1 text-xs rounded-full font-medium transition cursor-pointer ${
+                            kotFilter === 'KITCHEN'
+                              ? 'bg-amber-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          🍳 Kitchen ({kitchenCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setKotFilter('BAR')}
+                          className={`px-3 py-1 text-xs rounded-full font-medium transition cursor-pointer ${
+                            kotFilter === 'BAR'
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                          }`}
+                        >
+                          🍸 Bar ({barCount})
+                        </button>
+                      </div>
+                      {tableKots.some((o) => o.items.some((i) => i.status === 'PENDING' || i.status === 'PREPARING')) && (
+                        <button
+                          type="button"
+                          id="tblServeAllModalBtn"
+                          disabled={serveAllBusy}
+                          onClick={() => handleServeAllSession(selectedTable!.currentSessionId!)}
+                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-semibold disabled:opacity-50 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                          title="Mark all pending and preparing items across all KOTs as SERVED"
+                        >
+                          <span>✅</span> Serve All Items
+                        </button>
+                      )}
                     </div>
 
                     {filteredKots.length === 0 ? (
@@ -1156,6 +1368,17 @@ export function Tables() {
                                 <span>KOT #{idx + 1}</span>
                               </span>
                               <span className="flex items-center gap-2">
+                                {o.items.some((i) => i.status === 'PENDING' || i.status === 'PREPARING') && (
+                                  <button
+                                    type="button"
+                                    disabled={serveAllBusy}
+                                    className="text-xs px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold cursor-pointer transition-colors flex items-center gap-1 shadow-xs"
+                                    onClick={() => handleServeAllKot(o.id)}
+                                    title="Mark all items in this KOT as SERVED"
+                                  >
+                                    <span>✓</span> Serve KOT
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   className="text-xs text-purple-600 hover:underline cursor-pointer"
