@@ -19,6 +19,7 @@ import {
   getSheetRow,
   updateSheetLines,
   postSheet,
+  syncSheetWithSales,
   CreateSheetSchema,
   ListSheetsQuerySchema,
   UpdateLinesSchema,
@@ -97,4 +98,14 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
       return sendError(reply, err, 'Counter sheet posting failed');
     }
   });
+  fastify.post('/counter-sheets/sheet/:id/sync', { preHandler: requireRole('cashier') }, async (request, reply) => {
+    try {
+      const sheet = await loadAccessibleSheet(request, reply);
+      if (!sheet) return;
+      return await syncSheetWithSales(sheet.id);
+    } catch (err) {
+      return sendError(reply, err, 'Counter sheet sync failed');
+    }
+  });
+
 }

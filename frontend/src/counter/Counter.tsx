@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -12,6 +12,7 @@ interface CounterLine {
   inwardBottles: number;
   closingBottles: number;
   soldBottles: number;
+  posSoldBottles?: number;
   sellingRate: string;
   lineRevenue: string;
 }
@@ -80,7 +81,19 @@ export function Counter() {
 
   useEffect(() => {
     loadRecent();
-  }, [branchId]);
+
+    const onStockUpdated = () => {
+      // If a draft sheet is open and user isn't currently typing unsaved edits, auto-refresh it
+      if (sheet?.id && !dirty) {
+        openSheetById(sheet.id, true);
+      } else {
+        loadRecent();
+      }
+    };
+
+    window.addEventListener('app:stock_updated', onStockUpdated);
+    return () => window.removeEventListener('app:stock_updated', onStockUpdated);
+  }, [branchId, sheet?.id, dirty]);
 
   const loadSheet = (sh: CounterSheet) => {
     setSheet(sh);
@@ -98,15 +111,15 @@ export function Counter() {
     setApprovals({});
   };
 
-  const openSheetById = async (id: string) => {
-    setLoading(true);
+  const openSheetById = async (id: string, quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
       const sh = await api.get<CounterSheet>('/counter-sheets/sheet/' + id);
       loadSheet(sh);
     } catch (e: any) {
-      showToast('Could not open sheet: ' + e.message, 'error');
+      if (!quiet) showToast('Could not open sheet: ' + e.message, 'error');
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   };
 
@@ -141,7 +154,7 @@ export function Counter() {
     try {
       const sh = await api.post<CounterSheet>('/counter-sheets/' + branchId, { sheetDate });
       loadSheet(sh);
-      showToast('Counter sheet created for ' + sheetDate, 'success');
+      showToast('Counter sheet created for ' + sheetDate + ' — auto-updated with sales', 'success');
       loadRecent();
     } catch (e: any) {
       if (e.status === 409) {
@@ -150,6 +163,20 @@ export function Counter() {
       } else {
         showToast('Could not create sheet: ' + e.message, 'error');
       }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSyncSales = async () => {
+    if (!sheet) return;
+    setLoading(true);
+    try {
+      const synced = await api.post<CounterSheet>(`/counter-sheets/sheet/${sheet.id}/sync`, {});
+      loadSheet(synced);
+      showToast('Counter sheet synchronized with live POS sales', 'success');
+    } catch (e: any) {
+      showToast('Sync failed: ' + e.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -237,6 +264,9 @@ export function Counter() {
 
   // Live calculation of lines
   let liveTotalRevenue = 0;
+  let liveTotalSoldBottles = 0;
+  let totalPosSoldBottles = 0;
+
   const computedLines = (sheet?.lines || []).map((l) => {
     const rawClosing = closingCounts[l.productId] ?? String(l.closingBottles);
     const rawInward = inwardCounts[l.productId] ?? String(l.inwardBottles);
@@ -249,26 +279,35 @@ export function Counter() {
     const revenue = sold > 0 ? sold * rate : 0;
     if (!isInvalid && sold > 0) {
       liveTotalRevenue += revenue;
+      liveTotalSoldBottles += sold;
     }
+
+    const posSold = l.posSoldBottles ?? 0;
+    totalPosSoldBottles += posSold;
+    const diffWithPos = sold - posSold;
 
     return {
       ...l,
       liveClosing: rawClosing,
       liveInward: rawInward,
       liveSold: isInvalid ? '?' : sold >= 0 ? String(sold) : `surplus ${-sold}`,
+      numericSold: sold,
+      posSold,
+      diffWithPos,
       isSurplus: sold < 0,
       liveRevenue: isInvalid ? '—' : '₹' + revenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     };
   });
 
   const isDraft = sheet?.status === 'DRAFT';
+  const totalVariance = liveTotalSoldBottles - totalPosSoldBottles;
 
   return (
     <section className="page active" id="page-counter" aria-labelledby="counterTitle">
       <div className="mb-4">
         <h2 className="h1 text-xl font-bold" id="counterTitle">📋 Daily Counter Sheet</h2>
         <div className="muted small text-xs text-gray-500">
-          Count closing bottles; sold = opening + inward − closing. A manager posts the sheet to correct stock.
+          Auto-updates with POS sales: sold = opening + inward − closing. Physical bottle counts can be adjusted and posted to reconcile stock.
         </div>
       </div>
 
@@ -338,15 +377,81 @@ export function Counter() {
                   {sheet.postedAt ? ` · posted ${new Date(sheet.postedAt).toLocaleString('en-IN')}` : ''}
                 </div>
               </div>
-              <span id="counterStatus">
-                <span
-                  className={`badge px-2 py-1 text-xs rounded font-medium ${
-                    sheet.status === 'POSTED' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
-                  }`}
-                >
-                  {sheet.status}
+              <div className="flex items-center gap-3">
+                {isDraft && (
+                  <button
+                    type="button"
+                    id="counterSyncBtn"
+                    className="btn-sec px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded border border-blue-200 text-xs font-semibold flex items-center gap-1.5"
+                    onClick={handleSyncSales}
+                    title="Recalculate expected closing counts and sold bottles from today's POS sales bills"
+                  >
+                    <RefreshCw size={13} />
+                    Sync with POS Sales
+                  </button>
+                )}
+                <span id="counterStatus">
+                  <span
+                    className={`badge px-2 py-1 text-xs rounded font-medium ${
+                      sheet.status === 'POSTED' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
+                    }`}
+                  >
+                    {sheet.status}
+                  </span>
                 </span>
-              </span>
+              </div>
+            </div>
+
+            {/* KPI Summary Banner */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-gray-50 border-b text-sm">
+              <div className="p-3 bg-white rounded border flex flex-col">
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  <TrendingUp size={13} className="text-blue-600" />
+                  Total Sheet Revenue
+                </span>
+                <span className="text-lg font-bold text-gray-900 mt-1">
+                  ₹{dirty
+                    ? liveTotalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    : parseFloat(sheet.totalRevenue).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="p-3 bg-white rounded border flex flex-col">
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  <Package size={13} className="text-emerald-600" />
+                  Total Bottles Sold
+                </span>
+                <span className="text-lg font-bold text-gray-900 mt-1">
+                  {liveTotalSoldBottles} bottles
+                </span>
+              </div>
+              <div className="p-3 bg-white rounded border flex flex-col">
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  <RefreshCw size={13} className="text-indigo-600" />
+                  POS Billed Sales
+                </span>
+                <span className="text-lg font-bold text-indigo-700 mt-1">
+                  {totalPosSoldBottles} bottles
+                </span>
+              </div>
+              <div className="p-3 bg-white rounded border flex flex-col">
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  {totalVariance === 0 ? (
+                    <CheckCircle2 size={13} className="text-emerald-600" />
+                  ) : (
+                    <AlertCircle size={13} className="text-amber-600" />
+                  )}
+                  Stock Reconciliation
+                </span>
+                <span className={`text-xs font-semibold mt-1 px-2 py-0.5 rounded w-fit ${
+                  totalVariance === 0
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : totalVariance > 0
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {totalVariance === 0 ? '✓ Matches POS Sales' : `Diff: ${totalVariance > 0 ? '+' : ''}${totalVariance} bottles`}
+                </span>
+              </div>
             </div>
 
             <div className="table-wrap overflow-x-auto">
@@ -356,6 +461,7 @@ export function Counter() {
                     <th className="py-2 px-3">Product</th>
                     <th className="py-2 px-3 text-right">Opening</th>
                     <th className="py-2 px-3 text-right">Inward</th>
+                    <th className="py-2 px-3 text-right text-indigo-700">POS Sold</th>
                     <th className="py-2 px-3 text-right">Closing</th>
                     <th className="py-2 px-3 text-right">Sold</th>
                     <th className="py-2 px-3 text-right">Rate</th>
@@ -389,6 +495,9 @@ export function Counter() {
                         ) : (
                           l.liveInward
                         )}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono text-indigo-700 font-semibold">
+                        {l.posSold}
                       </td>
                       <td className="py-2 px-3 text-right font-mono">
                         {isDraft ? (
@@ -435,7 +544,7 @@ export function Counter() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t font-bold bg-gray-50">
-                    <td colSpan={6} className="py-3 px-3">Total revenue</td>
+                    <td colSpan={7} className="py-3 px-3">Total revenue</td>
                     <td className="py-3 px-3 text-right font-mono" id="counterTotal">
                       ₹{dirty
                         ? liveTotalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -447,27 +556,37 @@ export function Counter() {
             </div>
 
             {isDraft ? (
-              <div className="pad row p-4 flex items-center gap-3 border-t">
-                <button
-                  type="button"
-                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium"
-                  id="counterSaveBtn"
-                  onClick={() => handleSaveSheet()}
-                >
-                  Save counts
-                </button>
-                {isManager ? (
+              <div className="pad row p-4 flex items-center justify-between gap-3 border-t">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    className="btn-sec px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border font-medium"
-                    id="counterPostBtn"
-                    onClick={handlePostSheet}
+                    className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium"
+                    id="counterSaveBtn"
+                    onClick={() => handleSaveSheet()}
                   >
-                    Post sheet
+                    Save counts
                   </button>
-                ) : (
-                  <span className="muted small text-xs text-gray-500">A manager posts the sheet.</span>
-                )}
+                  <button
+                    type="button"
+                    className="btn-sec px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded border border-blue-200 font-medium flex items-center gap-1.5"
+                    onClick={handleSyncSales}
+                  >
+                    <RefreshCw size={14} />
+                    Sync from POS Sales
+                  </button>
+                  {isManager ? (
+                    <button
+                      type="button"
+                      className="btn-sec px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border font-medium"
+                      id="counterPostBtn"
+                      onClick={handlePostSheet}
+                    >
+                      Post sheet
+                    </button>
+                  ) : (
+                    <span className="muted small text-xs text-gray-500">A manager posts the sheet.</span>
+                  )}
+                </div>
                 <span id="counterDirty" className="muted small text-xs text-yellow-600 font-medium" aria-live="polite">
                   {dirty ? 'Unsaved changes — preview only until saved.' : ''}
                 </span>
@@ -518,4 +637,3 @@ export function Counter() {
     </section>
   );
 }
-

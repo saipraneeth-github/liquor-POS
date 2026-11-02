@@ -15,6 +15,8 @@ const yesterday = businessDateOf(new Date(Date.now() - 86_400_000));
 const tomorrow = businessDateOf(new Date(Date.now() + 86_400_000));
 
 beforeAll(async () => {
+
+
   ctx = await setupIntegration();
   whiskyId = ctx.products[0].id;
   beerId = ctx.products[1].id;
@@ -297,5 +299,63 @@ describe('stock movements recorded outside the sheet day', () => {
     expect(lineOf(t.json(), beerId)).toMatchObject({ openingBottles: 48 });
     const put2 = await putLines(t.json().id, [{ productId: beerId, closingBottles: 43 }], h);
     expect(lineOf(put2.json(), beerId)).toMatchObject({ soldBottles: 5 });
+  });
+
+  it('automatically updates draft counter sheet lines according to sales and supports sync endpoint', async () => {
+    // 1. Create a bill selling 4 beers today
+    const [bill] = await ctx.db.insert(ctx.schema.bills).values({
+      branchId: ctx.branchId,
+      cashierId: ctx.users.cashier.id,
+      billNumber: 'BILL-CS-TEST-1',
+      status: 'PAID',
+      subtotal: '800.00',
+      taxAmount: '144.00',
+      discount: '0.00',
+      roundOff: '0.00',
+      total: '800.00',
+      paymentMode: 'CASH',
+      paidAt: new Date(),
+    }).returning();
+    await ctx.db.insert(ctx.schema.billItems).values({
+      billId: bill.id,
+      productId: beerId,
+      quantity: 4,
+      unitPrice: '200.00',
+      taxRate: '18.00',
+      taxAmount: '36.00',
+      lineTotal: '800.00',
+    });
+
+    // 2. Fetch or create sheet for today
+    let todaySheetId: string;
+    const tRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/${ctx.branchId}`,
+      headers: ctx.auth('cashier'),
+      payload: { sheetDate: today },
+    });
+    if (tRes.statusCode === 201) {
+      todaySheetId = tRes.json().id;
+    } else {
+      const list = await app.inject({
+        method: 'GET',
+        url: `/api/v1/counter-sheets/${ctx.branchId}?date=${today}`,
+        headers: ctx.auth('cashier'),
+      });
+      todaySheetId = list.json()[0].id;
+    }
+
+    const syncRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${todaySheetId}/sync`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(syncRes.statusCode).toBe(200);
+    const synced = syncRes.json();
+    const beerLine = lineOf(synced, beerId);
+    expect(beerLine.posSoldBottles).toBe(4);
+    expect(beerLine.soldBottles).toBe(4);
+    expect(beerLine.closingBottles).toBe(beerLine.openingBottles + beerLine.inwardBottles - 4);
+    expect(beerLine.lineRevenue).toBe('800.00');
   });
 });

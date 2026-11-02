@@ -33,6 +33,7 @@ import { complianceRoutes } from './modules/compliance/compliance.routes.js';
 import { accountingRoutes } from './modules/accounting/accounting.routes.js';
 import { expenseRoutes } from './modules/expenses/expense.routes.js';
 import { registerAccountingHandlers } from './modules/accounting/posting.service.js';
+import { registerCounterSheetHandlers } from './modules/counters/counter.service.js';
 
 export function buildApp() {
   if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
@@ -144,6 +145,7 @@ export function buildApp() {
 
   // Accounting listens to domain events (bill.paid, bill.voided, …) and posts vouchers in the same transaction.
   registerAccountingHandlers();
+  registerCounterSheetHandlers();
 
   // ─── HEALTH ───────────────────────────────────────────────────────────────
 

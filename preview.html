@@ -3585,6 +3585,8 @@ function renderCounterSheet() {
     </tbody><tfoot><tr><td colspan="6">Total revenue</td><td class="right mono" id="counterTotal">${money(sh.totalRevenue)}</td></tr></tfoot></table></div>
     ${draft ? `<div class="pad row">
       <button type="button" class="btn-primary" id="counterSaveBtn" onclick="saveCounterSheet()">Save counts</button>
+      <button type="button" class="btn-sec" id="counterSyncBtn" onclick="syncCounterSheet()">🔄 Sync from Sales</button>
+      <button type="button" class="btn-sec" id="counterSyncBtn" onclick="syncCounterSheet()">🔄 Sync from Sales</button>
       ${mgr ? '<button type="button" class="btn-sec" id="counterPostBtn" onclick="postCounterSheet()">Post sheet</button>' : '<span class="muted small">A manager posts the sheet.</span>'}
       <span id="counterDirty" class="muted small" aria-live="polite"></span></div>` : '<div class="pad muted small">Posted sheets are read-only.</div>'}`;
 }
@@ -3636,6 +3638,16 @@ async function saveCounterSheet(silent) {
     if (!silent) toast('Counts saved — revenue ' + money(S.sheet.totalRevenue), 'success');
     return true;
   } catch (e) { toast('Save failed: ' + e.message, 'error'); return false; }
+}
+async function syncCounterSheet() {
+  const sh = S.sheet;
+  if (!sh) return;
+  try {
+    S.sheet = await api(`/counter-sheets/sheet/${sh.id}/sync`, { method: 'POST' });
+    S.sheetDirty = false;
+    renderCounterSheet();
+    toast('Sheet synced with live sales — revenue ' + money(S.sheet.totalRevenue), 'success');
+  } catch (e) { toast('Sync failed: ' + e.message, 'error'); }
 }
 async function postCounterSheet() {
   if (!(await confirmModal('Post counter sheet?', 'Stock will be corrected to the closing counts as of the sheet day. Posted sheets cannot be edited.', 'Post sheet'))) return;

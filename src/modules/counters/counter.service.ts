@@ -9,8 +9,10 @@ import {
   stockAudit,
   supplierInvoices,
   supplierInvoiceItems,
+  bills,
+  billItems,
 } from '../../db/schema.js';
-import type { Tx } from '../../lib/domain-events.js';
+import { onDomainEvent, type Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import { businessDateOf, businessDayBounds, isIsoDate } from '../../lib/business-day.js';
 import { roleRank, ROLE_RANK } from '../../middleware/auth.guard.js';
@@ -66,25 +68,108 @@ export async function listSheets(branchId: string, date?: string): Promise<Sheet
 export async function getSheet(id: string, tx: Tx | typeof db = db) {
   const [sheet] = await tx.select().from(dailyCounterSheets).where(eq(dailyCounterSheets.id, id)).limit(1);
   if (!sheet) throw new NotFoundError('Counter sheet not found');
+  const { start, end } = businessDayBounds(sheet.sheetDate);
+  const salesMap = await salesByProduct(tx, sheet.branchId, start, end);
+
+  // If this is a DRAFT sheet and some products have sales that haven't been reflected yet
+  // (e.g. line.soldBottles === 0, line.closingBottles === line.openingBottles + line.inwardBottles, but posSold > 0),
+  // auto-sync those lines so the counter sheet immediately displays live sales.
+  if (sheet.status === 'DRAFT') {
+    const lines = await tx
+      .select()
+      .from(dailyCounterSheetLines)
+      .where(eq(dailyCounterSheetLines.sheetId, id));
+
+    let needsSheetTotalUpdate = false;
+    for (const l of lines) {
+      const posSold = salesMap.get(l.productId)?.bottles ?? 0;
+      const available = l.openingBottles + l.inwardBottles;
+      if (posSold > 0 && l.soldBottles === 0 && l.closingBottles === available) {
+        const expectedClosing = Math.max(0, available - posSold);
+        const res = computeLine(
+          { opening: l.openingBottles, inward: l.inwardBottles, closing: expectedClosing, rate: l.sellingRate },
+          { allowAdjustment: true },
+        );
+        await tx
+          .update(dailyCounterSheetLines)
+          .set({
+            closingBottles: expectedClosing,
+            soldBottles:    res.sold,
+            lineRevenue:    res.revenue,
+          })
+          .where(eq(dailyCounterSheetLines.id, l.id));
+        needsSheetTotalUpdate = true;
+      }
+    }
+
+    if (needsSheetTotalUpdate) {
+      const updatedLines = await tx
+        .select({ revenue: dailyCounterSheetLines.lineRevenue })
+        .from(dailyCounterSheetLines)
+        .where(eq(dailyCounterSheetLines.sheetId, id));
+      const totalRevenue = computeSheetTotal(updatedLines);
+      await tx
+        .update(dailyCounterSheets)
+        .set({ totalRevenue })
+        .where(eq(dailyCounterSheets.id, id));
+      sheet.totalRevenue = totalRevenue;
+    }
+  }
+
   const rows = await tx
     .select({ line: dailyCounterSheetLines, productName: products.name, packQuantity: products.packQuantity })
     .from(dailyCounterSheetLines)
     .innerJoin(products, eq(products.id, dailyCounterSheetLines.productId))
     .where(eq(dailyCounterSheetLines.sheetId, id))
     .orderBy(asc(products.name));
+
   return {
     ...sheet,
     lines: rows.map((r) => ({
       ...r.line,
-      productName:  r.productName,
-      packQuantity: r.packQuantity,
-      closingSplit: bottlesToCasesAndLoose(r.line.closingBottles, r.packQuantity),
+      productName:    r.productName,
+      packQuantity:   r.packQuantity,
+      posSoldBottles: salesMap.get(r.line.productId)?.bottles ?? 0,
+      closingSplit:   bottlesToCasesAndLoose(r.line.closingBottles, r.packQuantity),
     })),
   };
 }
 
+/** Σ bottles sold from paid bills per product for a branch, createdAt in [start, end). */
+export async function salesByProduct(
+  tx: Tx | typeof db,
+  branchId: string,
+  start: Date,
+  end?: Date,
+): Promise<Map<string, { bottles: number; revenue: string }>> {
+  const conditions = [
+    eq(bills.branchId, branchId),
+    eq(bills.status, 'PAID'),
+    gte(bills.createdAt, start),
+  ];
+  if (end) conditions.push(lt(bills.createdAt, end));
+
+  const rows = await tx
+    .select({
+      productId: billItems.productId,
+      qty:       sql<string>`coalesce(sum(${billItems.quantity}), 0)`,
+      revenue:   sql<string>`coalesce(sum(${billItems.lineTotal}), 0)`,
+    })
+    .from(billItems)
+    .innerJoin(bills, eq(bills.id, billItems.billId))
+    .where(and(...conditions))
+    .groupBy(billItems.productId);
+
+  return new Map(
+    rows.map((r) => [
+      r.productId,
+      { bottles: Math.max(0, Math.round(Number(r.qty))), revenue: r.revenue ?? '0.00' },
+    ]),
+  );
+}
+
 /** Σ approved supplier-invoice quantities per product for a branch, approvedAt in [start, end). */
-async function inwardByProduct(tx: Tx, branchId: string, start: Date, end?: Date): Promise<Map<string, number>> {
+async function inwardByProduct(tx: Tx | typeof db, branchId: string, start: Date, end?: Date): Promise<Map<string, number>> {
   const conditions = [
     eq(supplierInvoices.branchId, branchId),
     eq(supplierInvoices.status, 'APPROVED'),
@@ -110,7 +195,7 @@ async function inwardByProduct(tx: Tx, branchId: string, start: Date, end?: Date
  * day of the sheet that made them rather than to the moment it was posted.
  */
 async function movementByProduct(
-  tx: Tx, branchId: string, start: Date, end: Date | undefined, excludeCounterSheet: boolean,
+  tx: Tx | typeof db, branchId: string, start: Date, end: Date | undefined, excludeCounterSheet: boolean,
 ): Promise<Map<string, number>> {
   const conditions = [eq(stockAudit.branchId, branchId), gte(stockAudit.createdAt, start)];
   if (end) conditions.push(lt(stockAudit.createdAt, end));
@@ -180,6 +265,7 @@ export async function createSheet(user: JwtPayload, branchId: string, sheetDate:
       ]));
 
       const inwardToday = await inwardByProduct(tx, branchId, start, end);
+      const salesToday = await salesByProduct(tx, branchId, start, end);
       const movedSinceStart = await movementByProduct(tx, branchId, start, undefined, false);
 
       const [sheet] = await tx.insert(dailyCounterSheets).values({
@@ -190,21 +276,32 @@ export async function createSheet(user: JwtPayload, branchId: string, sheetDate:
       }).returning();
 
       if (stocked.length > 0) {
-        await tx.insert(dailyCounterSheetLines).values(stocked.map((p) => {
+        const lineValues = stocked.map((p) => {
           const inward = inwardToday.get(p.productId) ?? 0;
+          const posSold = salesToday.get(p.productId)?.bottles ?? 0;
           const opening = prevClosing.get(p.productId)
             ?? Math.max(0, p.quantity - (movedSinceStart.get(p.productId) ?? 0));
+          const closing = Math.max(0, opening + inward - posSold);
+          const lineRes = computeLine(
+            { opening, inward, closing, rate: p.mrp },
+            { allowAdjustment: true },
+          );
           return {
             sheetId:        sheet.id,
             productId:      p.productId,
             openingBottles: opening,
             inwardBottles:  inward,
-            closingBottles: opening + inward,
-            soldBottles:    0,
+            closingBottles: closing,
+            soldBottles:    lineRes.sold,
             sellingRate:    p.mrp,
-            lineRevenue:    '0.00',
+            lineRevenue:    lineRes.revenue,
           };
-        }));
+        });
+
+        await tx.insert(dailyCounterSheetLines).values(lineValues);
+
+        const totalRevenue = computeSheetTotal(lineValues.map((l) => ({ revenue: l.lineRevenue })));
+        await tx.update(dailyCounterSheets).set({ totalRevenue }).where(eq(dailyCounterSheets.id, sheet.id));
       }
       return sheet.id;
     });
@@ -357,4 +454,103 @@ export async function postSheet(user: JwtPayload, sheetId: string) {
     }
     return getSheet(sheetId, tx);
   });
+}
+
+/**
+ * Synchronizes all lines of a DRAFT counter sheet with approved supplier invoices (inward)
+ * and paid POS bills (sales) for that sheet date:
+ *   closing = Math.max(0, opening + inward - posSold)
+ *   sold    = opening + inward - closing (= posSold)
+ *   revenue = sold * rate
+ */
+export async function syncSheetWithSales(sheetId: string, txHandle?: Tx) {
+  const runner = async (tx: Tx) => {
+    const [sheet] = await tx.select().from(dailyCounterSheets).where(eq(dailyCounterSheets.id, sheetId)).limit(1);
+    if (!sheet) throw new NotFoundError('Counter sheet not found');
+    if (sheet.status !== 'DRAFT') throw new BusinessRuleError('Cannot sync a posted counter sheet');
+
+    const { start, end } = businessDayBounds(sheet.sheetDate);
+    const inwardMap = await inwardByProduct(tx, sheet.branchId, start, end);
+    const salesMap = await salesByProduct(tx, sheet.branchId, start, end);
+
+    const lines = await tx
+      .select()
+      .from(dailyCounterSheetLines)
+      .where(eq(dailyCounterSheetLines.sheetId, sheetId));
+
+    for (const l of lines) {
+      const inward = inwardMap.get(l.productId) ?? l.inwardBottles;
+      const posSold = salesMap.get(l.productId)?.bottles ?? 0;
+      const available = l.openingBottles + inward;
+      const closing = Math.max(0, available - posSold);
+      const res = computeLine(
+        { opening: l.openingBottles, inward, closing, rate: l.sellingRate },
+        { allowAdjustment: true },
+      );
+
+      await tx
+        .update(dailyCounterSheetLines)
+        .set({
+          inwardBottles:  inward,
+          closingBottles: closing,
+          soldBottles:    res.sold,
+          lineRevenue:    res.revenue,
+        })
+        .where(eq(dailyCounterSheetLines.id, l.id));
+    }
+
+    const updatedLines = await tx
+      .select({ revenue: dailyCounterSheetLines.lineRevenue })
+      .from(dailyCounterSheetLines)
+      .where(eq(dailyCounterSheetLines.sheetId, sheetId));
+
+    const totalRevenue = computeSheetTotal(updatedLines);
+    await tx.update(dailyCounterSheets).set({ totalRevenue }).where(eq(dailyCounterSheets.id, sheetId));
+
+    return getSheet(sheetId, tx);
+  };
+
+  return txHandle ? runner(txHandle) : db.transaction(runner);
+}
+
+/**
+ * Automatically updates any active DRAFT counter sheet for this branch & business date
+ * when a bill is paid or voided.
+ */
+export async function onBillPaidOrVoided(branchId: string, billCreatedAt: Date, tx: Tx) {
+  const sheetDate = businessDateOf(billCreatedAt);
+  const [draftSheet] = await tx
+    .select({ id: dailyCounterSheets.id })
+    .from(dailyCounterSheets)
+    .where(
+      and(
+        eq(dailyCounterSheets.branchId, branchId),
+        eq(dailyCounterSheets.sheetDate, sheetDate),
+        eq(dailyCounterSheets.status, 'DRAFT'),
+      ),
+    )
+    .limit(1);
+
+  if (draftSheet) {
+    await syncSheetWithSales(draftSheet.id, tx);
+  }
+}
+
+let counterUnsubscribers: (() => void)[] | null = null;
+
+export function registerCounterSheetHandlers(): void {
+  if (counterUnsubscribers) return;
+  counterUnsubscribers = [
+    onDomainEvent('bill.paid', async ({ bill }, tx) => {
+      await onBillPaidOrVoided(bill.branchId, bill.createdAt ?? new Date(), tx);
+    }),
+    onDomainEvent('bill.voided', async ({ bill }, tx) => {
+      await onBillPaidOrVoided(bill.branchId, bill.createdAt ?? new Date(), tx);
+    }),
+  ];
+}
+
+export function unregisterCounterSheetHandlers(): void {
+  for (const off of counterUnsubscribers ?? []) off();
+  counterUnsubscribers = null;
 }
