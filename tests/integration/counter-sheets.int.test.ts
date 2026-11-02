@@ -53,9 +53,9 @@ const otherManager = () => ctx.authFor({
   sub: ctx.otherBranchManager.id, email: ctx.otherBranchManager.email, role: 'manager', branchId: ctx.otherBranchId,
 });
 
-async function stockOf(productId: string): Promise<number> {
+async function stockOf(productId: string, branchId = ctx.branchId): Promise<number> {
   const [row] = await ctx.db.select().from(ctx.schema.stock)
-    .where(and(eq(ctx.schema.stock.branchId, ctx.branchId), eq(ctx.schema.stock.productId, productId)));
+    .where(and(eq(ctx.schema.stock.branchId, branchId), eq(ctx.schema.stock.productId, productId)));
   return row.quantity;
 }
 
@@ -395,5 +395,65 @@ describe('stock movements recorded outside the sheet day', () => {
     expect(branchExportRes.statusCode).toBe(200);
     expect(branchExportRes.headers['content-type']).toContain('text/csv');
     expect(branchExportRes.body).toContain('Daily Counter Sheet');
+  });
+
+  it('approves surplus counts (manager), preserves prior approval, and updates inventory on post', async () => {
+    // 1. Create a sheet on other branch for a past date
+    const dPast = businessDateOf(new Date(Date.now() - 3 * 86_400_000));
+    const h = otherManager();
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/${ctx.otherBranchId}`,
+      headers: h,
+      payload: { sheetDate: dPast },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const sheet = createRes.json();
+    const beer = lineOf(sheet, beerId);
+    const available = beer.openingBottles + beer.inwardBottles;
+    const surplusClosing = available + 5; // 5 extra bottles!
+
+    // 2. Manager approves surplus
+    const mgrOk = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/lines`,
+      headers: h,
+      payload: { lines: [{ productId: beerId, closingBottles: surplusClosing, approveAdjustment: true }] },
+    });
+    expect(mgrOk.statusCode).toBe(200);
+    const updatedBeer = lineOf(mgrOk.json(), beerId);
+    expect(updatedBeer.closingBottles).toBe(surplusClosing);
+    expect(updatedBeer.soldBottles).toBe(0);
+    expect(updatedBeer.lineRevenue).toBe('0.00');
+    expect(updatedBeer.adjustmentApprovedById).toBeTruthy();
+
+    // 4. Subsequent save without re-sending approveAdjustment does NOT fail
+    const saveAgain = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/lines`,
+      headers: h,
+      payload: { lines: [{ productId: beerId, closingBottles: surplusClosing }] },
+    });
+    expect(saveAgain.statusCode).toBe(200);
+
+    // 5. Post sheet and verify inventory (stock) is updated
+    const stockBefore = await stockOf(beerId, ctx.otherBranchId);
+    const postRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/post`,
+      headers: h,
+    });
+    expect(postRes.statusCode).toBe(200);
+
+    const stockAfter = await stockOf(beerId, ctx.otherBranchId);
+    expect(stockAfter).toBe(surplusClosing);
+
+    // Verify stock_audit was written
+    const audits = await ctx.db.select().from(ctx.schema.stockAudit)
+      .where(and(eq(ctx.schema.stockAudit.branchId, ctx.otherBranchId), eq(ctx.schema.stockAudit.productId, beerId), eq(ctx.schema.stockAudit.reason, 'COUNTER_SHEET')));
+    expect(audits.length).toBeGreaterThan(0);
+    const latest = audits[audits.length - 1];
+    expect(latest.changeQty).toBe(stockAfter - stockBefore);
   });
 });

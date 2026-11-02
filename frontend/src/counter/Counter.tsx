@@ -15,6 +15,7 @@ interface CounterLine {
   posSoldBottles?: number;
   sellingRate: string;
   lineRevenue: string;
+  adjustmentApprovedById?: string | null;
 }
 
 interface CounterSheet {
@@ -49,6 +50,8 @@ export function Counter() {
   const [closingCounts, setClosingCounts] = useState<Record<string, string>>({});
   const [inwardCounts, setInwardCounts] = useState<Record<string, string>>({});
   const [approvals, setApprovals] = useState<Record<string, boolean>>({});
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'SURPLUS' | 'SHORTAGE' | 'EXCESS' | 'MATCHED'>('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Confirmation modal
   const [confirmModal, setConfirmModal] = useState<{
@@ -123,7 +126,13 @@ export function Counter() {
     }
     setClosingCounts(initialClosing);
     setInwardCounts(initialInward);
-    setApprovals({});
+    const initialApprovals: Record<string, boolean> = {};
+    for (const l of sh.lines) {
+      if (l.adjustmentApprovedById || (isManager && l.closingBottles > l.openingBottles + l.inwardBottles)) {
+        initialApprovals[l.productId] = true;
+      }
+    }
+    setApprovals(initialApprovals);
   };
 
   const openSheetById = async (id: string, quiet = false) => {
@@ -253,7 +262,9 @@ export function Counter() {
         }
       }
 
-      if (approvals[l.productId]) {
+      const available = l.openingBottles + (linePayload.inwardBottles ?? l.inwardBottles);
+      const isSurplus = closing > available;
+      if (approvals[l.productId] || l.adjustmentApprovedById || (isManager && isSurplus)) {
         linePayload.approveAdjustment = true;
       }
       lines.push(linePayload);
@@ -294,6 +305,8 @@ export function Counter() {
         }
       },
     });
+
+
   };
 
   // Live calculation of lines
@@ -308,7 +321,8 @@ export function Counter() {
     const inward = parseInt(rawInward, 10);
 
     const isInvalid = isNaN(closing) || isNaN(inward);
-    const sold = isInvalid ? 0 : l.openingBottles + inward - closing;
+    const available = l.openingBottles + inward;
+    const sold = isInvalid ? 0 : available - closing;
     const rate = parseFloat(l.sellingRate);
     const revenue = sold > 0 ? sold * rate : 0;
     if (!isInvalid && sold > 0) {
@@ -318,7 +332,34 @@ export function Counter() {
 
     const posSold = l.posSoldBottles ?? 0;
     totalPosSoldBottles += posSold;
+    const expectedClosing = Math.max(0, available - posSold);
     const diffWithPos = sold - posSold;
+
+    let diffType: 'SURPLUS' | 'SHORTAGE' | 'EXCESS' | 'MATCHED' = 'MATCHED';
+    let diffAmount = 0;
+
+    if (!isInvalid) {
+      if (closing > available) {
+        diffType = 'SURPLUS';
+        diffAmount = closing - available;
+      } else if (closing < expectedClosing) {
+        diffType = 'SHORTAGE';
+        diffAmount = expectedClosing - closing;
+      } else if (closing > expectedClosing) {
+        diffType = 'EXCESS';
+        diffAmount = closing - expectedClosing;
+      } else {
+        diffType = 'MATCHED';
+        diffAmount = 0;
+      }
+    }
+
+    const rowClass = {
+      SURPLUS: 'bg-amber-50/70 hover:bg-amber-100/80 dark:bg-amber-950/30 dark:hover:bg-amber-900/40 border-l-4 border-l-amber-500',
+      SHORTAGE: 'bg-rose-50/70 hover:bg-rose-100/80 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 border-l-4 border-l-rose-500',
+      EXCESS: 'bg-sky-50/70 hover:bg-sky-100/80 dark:bg-sky-950/30 dark:hover:bg-sky-900/40 border-l-4 border-l-sky-500',
+      MATCHED: 'hover:bg-gray-50/60 dark:hover:bg-gray-800/60 border-l-4 border-l-transparent',
+    }[diffType];
 
     return {
       ...l,
@@ -328,9 +369,43 @@ export function Counter() {
       numericSold: sold,
       posSold,
       diffWithPos,
-      isSurplus: sold < 0,
+      expectedClosing,
+      diffType,
+      diffAmount,
+      rowClass,
+      isSurplus: diffType === 'SURPLUS',
+      isShortage: diffType === 'SHORTAGE',
+      isExcess: diffType === 'EXCESS',
+      isMatched: diffType === 'MATCHED',
       liveRevenue: isInvalid ? '—' : '₹' + revenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     };
+  });
+
+
+
+  const surplusCount = computedLines.filter((l) => l.diffType === 'SURPLUS').length;
+  const shortageCount = computedLines.filter((l) => l.diffType === 'SHORTAGE').length;
+  const excessCount = computedLines.filter((l) => l.diffType === 'EXCESS').length;
+  const matchedCount = computedLines.filter((l) => l.diffType === 'MATCHED').length;
+
+  const totalSurplusBottles = computedLines
+    .filter((l) => l.diffType === 'SURPLUS')
+    .reduce((sum, l) => sum + l.diffAmount, 0);
+  const totalShortageBottles = computedLines
+    .filter((l) => l.diffType === 'SHORTAGE')
+    .reduce((sum, l) => sum + l.diffAmount, 0);
+  const totalExcessBottles = computedLines
+    .filter((l) => l.diffType === 'EXCESS')
+    .reduce((sum, l) => sum + l.diffAmount, 0);
+  const totalDiscrepancyCount = surplusCount + shortageCount + excessCount;
+
+  const displayLines = computedLines.filter((l) => {
+    if (filterStatus !== 'ALL' && l.diffType !== filterStatus) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      return l.productName.toLowerCase().includes(q);
+    }
+    return true;
   });
 
   const isDraft = sheet?.status === 'DRAFT';
@@ -477,24 +552,135 @@ export function Counter() {
                   {totalPosSoldBottles} bottles
                 </span>
               </div>
-              <div className="p-3 bg-white rounded border flex flex-col">
-                <span className="text-xs text-gray-500 flex items-center gap-1">
-                  {totalVariance === 0 ? (
-                    <CheckCircle2 size={13} className="text-emerald-600" />
-                  ) : (
-                    <AlertCircle size={13} className="text-amber-600" />
+              <div className="p-3 bg-white dark:bg-gray-800 rounded border flex flex-col justify-between">
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <span className="flex items-center gap-1 font-medium">
+                    {totalDiscrepancyCount === 0 && totalVariance === 0 ? (
+                      <CheckCircle2 size={13} className="text-emerald-600" />
+                    ) : (
+                      <AlertCircle size={13} className="text-amber-600" />
+                    )}
+                    Stock Reconciliation
+                  </span>
+                  {totalVariance !== 0 && (
+                    <span
+                      className="text-[11px] font-medium text-gray-500 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded cursor-help"
+                      title={`Sales comparison: Sheet sold (${liveTotalSoldBottles}) minus POS billed (${totalPosSoldBottles}) = ${totalVariance > 0 ? '+' : ''}${totalVariance} btls`}
+                    >
+                      Sales diff: {totalVariance > 0 ? `+${totalVariance}` : totalVariance}
+                    </span>
                   )}
-                  Stock Reconciliation
-                </span>
-                <span className={`text-xs font-semibold mt-1 px-2 py-0.5 rounded w-fit ${
-                  totalVariance === 0
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : totalVariance > 0
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-yellow-100 text-yellow-800'
-                }`}>
-                  {totalVariance === 0 ? '✓ Matches POS Sales' : `Diff: ${totalVariance > 0 ? '+' : ''}${totalVariance} bottles`}
-                </span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                  {totalDiscrepancyCount === 0 && totalVariance === 0 ? (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                      ✓ Matches POS & Stock
+                    </span>
+                  ) : (
+                    <>
+                      {totalSurplusBottles > 0 && (
+                        <span
+                          className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
+                          title={`${totalSurplusBottles} surplus bottles counted above available stock across ${surplusCount} product(s)`}
+                        >
+                          ⚠️ +{totalSurplusBottles} Surplus
+                        </span>
+                      )}
+                      {totalShortageBottles > 0 && (
+                        <span
+                          className="text-xs font-semibold px-2 py-0.5 rounded bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-200"
+                          title={`${totalShortageBottles} unbilled bottles missing from shelf across ${shortageCount} product(s)`}
+                        >
+                          🔻 -{totalShortageBottles} Shortage
+                        </span>
+                      )}
+                      {totalExcessBottles > 0 && (
+                        <span
+                          className="text-xs font-semibold px-2 py-0.5 rounded bg-sky-100 text-sky-900 dark:bg-sky-950/60 dark:text-sky-200"
+                          title={`${totalExcessBottles} bottles found on shelf that POS billed across ${excessCount} product(s)`}
+                        >
+                          📦 +{totalExcessBottles} Shelf Excess
+                        </span>
+                      )}
+                      {totalDiscrepancyCount === 0 && totalVariance !== 0 && (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                          Diff: {totalVariance > 0 ? `+${totalVariance}` : totalVariance} btls
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Filter Chips & Discrepancy Legend */}
+            <div className="p-3 bg-gray-50 dark:bg-gray-800/40 border-b flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-semibold text-gray-500 mr-1">Filter:</span>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded-full font-medium transition cursor-pointer ${
+                    filterStatus === 'ALL'
+                      ? 'bg-gray-800 text-white dark:bg-gray-200 dark:text-gray-900'
+                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border hover:bg-gray-100'
+                  }`}
+                  onClick={() => setFilterStatus('ALL')}
+                >
+                  All ({computedLines.length})
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded-full font-semibold transition cursor-pointer flex items-center gap-1 ${
+                    filterStatus === 'SURPLUS'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 hover:bg-amber-100'
+                  }`}
+                  onClick={() => setFilterStatus('SURPLUS')}
+                >
+                  ⚠️ Surplus ({surplusCount})
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded-full font-semibold transition cursor-pointer flex items-center gap-1 ${
+                    filterStatus === 'SHORTAGE'
+                      ? 'bg-rose-600 text-white'
+                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-300 dark:border-rose-700 hover:bg-rose-100'
+                  }`}
+                  onClick={() => setFilterStatus('SHORTAGE')}
+                >
+                  🔻 Below Stock ({shortageCount})
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded-full font-semibold transition cursor-pointer flex items-center gap-1 ${
+                    filterStatus === 'EXCESS'
+                      ? 'bg-sky-600 text-white'
+                      : 'bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-200 border border-sky-300 dark:border-sky-700 hover:bg-sky-100'
+                  }`}
+                  onClick={() => setFilterStatus('EXCESS')}
+                >
+                  📦 Shelf Excess ({excessCount})
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded-full font-medium transition cursor-pointer flex items-center gap-1 ${
+                    filterStatus === 'MATCHED'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100'
+                  }`}
+                  onClick={() => setFilterStatus('MATCHED')}
+                >
+                  ✓ Matched ({matchedCount})
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Filter by product name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="p-1 px-3 text-xs border rounded w-48 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                />
               </div>
             </div>
 
@@ -513,10 +699,32 @@ export function Counter() {
                   </tr>
                 </thead>
                 <tbody>
-                  {computedLines.map((l) => (
-                    <tr key={l.productId} data-product={l.productId} className="border-b hover:bg-gray-50 text-sm">
+                  {displayLines.map((l) => (
+                    <tr key={l.productId} data-product={l.productId} className={`border-b text-sm transition-colors ${l.rowClass}`}>
                       <td className="py-2 px-3">
-                        <b>{l.productName}</b>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">{l.productName}</div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          {l.diffType === 'SURPLUS' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-900 bg-amber-100 dark:bg-amber-900/60 dark:text-amber-200 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700">
+                              ⚠️ Surplus (+{l.diffAmount} bottles)
+                            </span>
+                          )}
+                          {l.diffType === 'SHORTAGE' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-900 bg-rose-100 dark:bg-rose-900/60 dark:text-rose-200 px-2 py-0.5 rounded border border-rose-300 dark:border-rose-700">
+                              🔻 Below Stock (-{l.diffAmount} unbilled)
+                            </span>
+                          )}
+                          {l.diffType === 'EXCESS' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-900 bg-sky-100 dark:bg-sky-900/60 dark:text-sky-200 px-2 py-0.5 rounded border border-sky-300 dark:border-sky-700">
+                              📦 Shelf Excess (+{l.diffAmount} vs POS)
+                            </span>
+                          )}
+                          {l.diffType === 'MATCHED' && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 px-1.5 py-0.5 rounded">
+                              ✓ Matched POS
+                            </span>
+                          )}
+                        </div>
                         {l.closingSplit && l.packQuantity ? (
                           <div className="muted small text-xs text-gray-500">
                             {l.closingSplit.cases} cases + {l.closingSplit.loose} loose
@@ -557,16 +765,23 @@ export function Counter() {
                               onChange={(e) => handleClosingChange(l.productId, e.target.value)}
                             />
                             {isManager && l.isSurplus && (
-                              <label className="check small flex items-center gap-1 text-xs text-yellow-700" id={`ca-wrap-${l.productId}`}>
+                              <label
+                                className={`check small flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded border cursor-pointer mt-1 ${
+                                  approvals[l.productId] || l.adjustmentApprovedById
+                                    ? 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                                    : 'bg-amber-100 text-amber-900 border-amber-400 animate-pulse'
+                                }`}
+                                id={`ca-wrap-${l.productId}`}
+                              >
                                 <input
                                   type="checkbox"
                                   id={`ca-${l.productId}`}
-                                  checked={!!approvals[l.productId]}
+                                  checked={!!(approvals[l.productId] || l.adjustmentApprovedById)}
                                   onChange={(e) =>
                                     setApprovals((prev) => ({ ...prev, [l.productId]: e.target.checked }))
                                   }
                                 />
-                                approve surplus
+                                {approvals[l.productId] || l.adjustmentApprovedById ? '✓ Surplus approved' : 'Approve surplus'}
                               </label>
                             )}
                           </div>
@@ -574,8 +789,25 @@ export function Counter() {
                           l.liveClosing
                         )}
                       </td>
-                      <td className={`py-2 px-3 text-right font-mono ${l.isSurplus ? 'text-yellow-600 font-bold' : ''}`} id={`cs-${l.productId}`}>
+                      <td
+                        className={`py-2 px-3 text-right font-mono ${
+                          l.isSurplus
+                            ? 'text-amber-800 font-bold'
+                            : l.isShortage
+                            ? 'text-rose-800 font-bold'
+                            : l.isExcess
+                            ? 'text-sky-800 font-semibold'
+                            : ''
+                        }`}
+                        id={`cs-${l.productId}`}
+                      >
                         {l.liveSold}
+                        {l.isShortage && (
+                          <span className="text-[10px] text-rose-600 block font-normal">(-{l.diffAmount} missing)</span>
+                        )}
+                        {l.isExcess && (
+                          <span className="text-[10px] text-sky-600 block font-normal">(+{l.diffAmount} in shelf)</span>
+                        )}
                       </td>
                       <td className="py-2 px-3 text-right font-mono">₹{parseFloat(l.sellingRate).toFixed(2)}</td>
                       <td className="py-2 px-3 text-right font-mono" id={`cr-${l.productId}`}>

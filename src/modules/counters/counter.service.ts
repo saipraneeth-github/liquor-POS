@@ -350,7 +350,9 @@ export async function updateSheetLines(user: JwtPayload, sheetId: string, input:
       }
       let result;
       try {
-        result = computeLine(values, { allowAdjustment: isManager && input_.approveAdjustment === true });
+      const alreadyApproved = line.adjustmentApprovedById !== null && values.closing <= line.closingBottles && values.inward === line.inwardBottles;
+      const allowAdjustment = (isManager && input_.approveAdjustment === true) || alreadyApproved;
+      result = computeLine(values, { allowAdjustment });
       } catch (err) {
         if (err instanceof CounterInvariantError) {
           throw new BusinessRuleError(`Product ${input_.productId}: ${err.message}`);
@@ -363,7 +365,7 @@ export async function updateSheetLines(user: JwtPayload, sheetId: string, input:
         closingBottles:         values.closing,
         soldBottles:            result.sold,
         lineRevenue:            result.revenue,
-        adjustmentApprovedById: surplus ? user.sub : null,
+        adjustmentApprovedById: surplus ? (isManager && input_.approveAdjustment ? user.sub : (alreadyApproved ? line.adjustmentApprovedById : user.sub)) : null,
       }).where(eq(dailyCounterSheetLines.id, line.id));
       byProduct.set(line.productId, { ...line, lineRevenue: result.revenue });
     }

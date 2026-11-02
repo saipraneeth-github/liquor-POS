@@ -120,6 +120,12 @@
   .card.table-wrap > .table td:last-child { padding-right: 18px; }
   .card.pad .stat-card { background: var(--background); }
   .table tr.row-active td { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+  .table tr.row-surplus td { background: color-mix(in srgb, var(--warning) 14%, var(--card)); }
+  .table tr.row-shortage td { background: color-mix(in srgb, var(--danger) 14%, var(--card)); }
+  .table tr.row-excess td { background: color-mix(in srgb, var(--info) 14%, var(--card)); }
+  .table tr.row-surplus td:first-child { border-left: 4px solid var(--warning); }
+  .table tr.row-shortage td:first-child { border-left: 4px solid var(--danger); }
+  .table tr.row-excess td:first-child { border-left: 4px solid var(--info); }
   .table tr.row-click { cursor: pointer; }
   .table tr.row-click:hover td { background: color-mix(in srgb, var(--foreground) 4%, transparent); }
   .table tr:last-child td { border-bottom: none; }
@@ -3582,15 +3588,35 @@ function renderCounterSheet() {
       <div><div class="h2">Sheet for ${esc(sh.sheetDate)}</div><div class="muted small">${plural(sh.lines.length, 'product')}${sh.postedAt ? ' · posted ' + fmtDateTime(sh.postedAt) : ''}</div></div>
       <span id="counterStatus">${statusBadge(sh.status)}</span></div>
     <div class="table-wrap"><table class="table"><thead><tr><th>Product</th><th class="right">Opening</th><th class="right">Inward</th><th class="right">Closing</th><th class="right">Sold</th><th class="right">Rate</th><th class="right">Revenue</th></tr></thead><tbody>
-      ${sh.lines.map((l) => `<tr data-product="${l.productId}">
-        <td><b>${esc(l.productName)}</b>${l.closingSplit && l.packQuantity ? `<div class="muted small">${l.closingSplit.cases} cases + ${l.closingSplit.loose} loose</div>` : ''}</td>
+      ${sh.lines.map((l) => {
+        const available = l.openingBottles + l.inwardBottles;
+        const posSold = l.posSoldBottles || 0;
+        const expectedClosing = Math.max(0, available - posSold);
+        let rowClass = '';
+        let statusBadge = '';
+        const isSurplus = l.closingBottles > available;
+        const isApproved = !!l.adjustmentApprovedById;
+
+        if (isSurplus) {
+          rowClass = 'row-surplus';
+          statusBadge = `<span class="tag warn small" style="margin-left:6px;">⚠️ Surplus +${l.closingBottles - available}</span>`;
+        } else if (posSold > 0 && l.closingBottles < expectedClosing) {
+          rowClass = 'row-shortage';
+          statusBadge = `<span class="tag neg small" style="margin-left:6px;">🔻 Below Stock -${expectedClosing - l.closingBottles}</span>`;
+        } else if (posSold > 0 && l.closingBottles > expectedClosing) {
+          rowClass = 'row-excess';
+          statusBadge = `<span class="tag small" style="margin-left:6px; color:var(--info); border-color:var(--info);">📦 Shelf Excess +${l.closingBottles - expectedClosing}</span>`;
+        }
+        return `<tr data-product="${l.productId}" class="${rowClass}">
+        <td><b>${esc(l.productName)}</b>${statusBadge}${l.closingSplit && l.packQuantity ? `<div class="muted small">${l.closingSplit.cases} cases + ${l.closingSplit.loose} loose</div>` : ''}</td>
         <td class="right">${l.openingBottles}</td>
         <td class="right">${draft && mgr ? `<input id="ci-${l.productId}" class="input input-sm counter-inward" type="number" min="0" value="${l.inwardBottles}" style="width:80px;" aria-label="Inward bottles for ${esc(l.productName)}" oninput="updateCounterLive()" />` : l.inwardBottles}</td>
         <td class="right">${draft ? `<input id="cc-${l.productId}" class="input input-sm counter-closing" type="number" min="0" value="${l.closingBottles}" style="width:80px;" aria-label="Closing bottles for ${esc(l.productName)}" oninput="updateCounterLive()" />
-            ${mgr ? `<label class="check small" id="ca-wrap-${l.productId}" hidden><input type="checkbox" id="ca-${l.productId}" /> approve surplus</label>` : ''}` : l.closingBottles}</td>
+            ${mgr ? `<label class="check small" id="ca-wrap-${l.productId}" ${isSurplus ? '' : 'hidden'}><input type="checkbox" id="ca-${l.productId}" ${isApproved ? 'checked' : ''} onchange="S.sheetDirty = true;" /> <span class="${isApproved ? 'pos' : 'warn'}">approve surplus</span></label>` : ''}` : l.closingBottles}</td>
         <td class="right" id="cs-${l.productId}">${l.soldBottles}</td>
         <td class="right mono">${money(l.sellingRate)}</td>
-        <td class="right mono" id="cr-${l.productId}">${money(l.lineRevenue)}</td></tr>`).join('')}
+        <td class="right mono" id="cr-${l.productId}">${money(l.lineRevenue)}</td></tr>`;
+      }).join('')}
     </tbody><tfoot><tr><td colspan="6">Total revenue</td><td class="right mono" id="counterTotal">${money(sh.totalRevenue)}</td></tr></tfoot></table></div>
     ${draft ? `<div class="pad row">
       <button type="button" class="btn-primary" id="counterSaveBtn" onclick="saveCounterSheet()">Save counts</button>
@@ -3609,8 +3635,12 @@ function updateCounterLive() {
     const inward = inwardEl ? intOrNull(inwardEl.value) : l.inwardBottles;
     const soldEl = $('cs-' + l.productId);
     const revEl = $('cr-' + l.productId);
+    const rowEl = document.querySelector(`tr[data-product="${l.productId}"]`);
     if (closing === null || Number.isNaN(closing) || inward === null || Number.isNaN(inward)) { soldEl.textContent = '?'; revEl.textContent = '—'; continue; }
-    const sold = l.openingBottles + inward - closing;
+    const available = l.openingBottles + inward;
+    const posSold = l.posSoldBottles || 0;
+    const expectedClosing = Math.max(0, available - posSold);
+    const sold = available - closing;
     const wrap = $('ca-wrap-' + l.productId);
     if (wrap) wrap.hidden = sold >= 0;
     soldEl.textContent = sold >= 0 ? String(sold) : `surplus ${-sold}`;
@@ -3618,6 +3648,17 @@ function updateCounterLive() {
     const rev = sold > 0 ? toPaise(l.sellingRate) * sold : 0;
     revEl.textContent = fmtPaise(rev);
     total += rev;
+
+    if (rowEl) {
+      rowEl.classList.remove('row-surplus', 'row-shortage', 'row-excess');
+      if (closing > available) {
+        rowEl.classList.add('row-surplus');
+      } else if (posSold > 0 && closing < expectedClosing) {
+        rowEl.classList.add('row-shortage');
+      } else if (posSold > 0 && closing > expectedClosing) {
+        rowEl.classList.add('row-excess');
+      }
+    }
   }
   $('counterTotal').textContent = fmtPaise(total);
   S.sheetDirty = true;
