@@ -423,25 +423,30 @@ export async function postSheet(user: JwtPayload, sheetId: string) {
       const current = new Map(stockRows.map((s) => [s.productId, s.quantity]));
       const movedAfter = await movementByProduct(tx, sheet.branchId, businessDayBounds(sheet.sheetDate).end, undefined, true);
 
+      const stockUpsertsMap = new Map<string, { branchId: string; productId: string; quantity: number }>();
+      const stockAuditInserts: { branchId: string; productId: string; userId: string; changeQty: number; reason: 'COUNTER_SHEET'; referenceId: string }[] = [];
+
       for (const line of lines) {
         const before = current.get(line.productId);
         const atDayEnd = (before ?? 0) - (movedAfter.get(line.productId) ?? 0);
         const change = line.closingBottles - atDayEnd;
         const after = (before ?? 0) + change;
+
         if (after < 0) {
           throw new BusinessRuleError(
             `Product ${line.productId}: closing count ${line.closingBottles} is below the stock moved out since the sheet day`,
           );
         }
-        if (before === undefined) {
-          await tx.insert(stock).values({ branchId: sheet.branchId, productId: line.productId, quantity: after })
-            .onConflictDoUpdate({ target: [stock.branchId, stock.productId], set: { quantity: sql`${stock.quantity} + ${change}` } });
-        } else if (change !== 0) {
-          await tx.update(stock).set({ quantity: sql`${stock.quantity} + ${change}` })
-            .where(and(eq(stock.branchId, sheet.branchId), eq(stock.productId, line.productId)));
-        }
+
         if (change !== 0) {
-          await tx.insert(stockAudit).values({
+          const existing = stockUpsertsMap.get(line.productId);
+          if (existing) {
+            existing.quantity += change;
+          } else {
+            stockUpsertsMap.set(line.productId, { branchId: sheet.branchId, productId: line.productId, quantity: change });
+          }
+
+          stockAuditInserts.push({
             branchId:    sheet.branchId,
             productId:   line.productId,
             userId:      user.sub,
@@ -450,6 +455,18 @@ export async function postSheet(user: JwtPayload, sheetId: string) {
             referenceId: sheet.id,
           });
         }
+      }
+
+      const stockUpserts = Array.from(stockUpsertsMap.values());
+      if (stockUpserts.length > 0) {
+        // ⚡ Bolt Optimization: Batch upsert stock records to prevent N+1 queries and DB lock contention
+        await tx.insert(stock).values(stockUpserts)
+          .onConflictDoUpdate({ target: [stock.branchId, stock.productId], set: { quantity: sql`${stock.quantity} + EXCLUDED.quantity` } });
+      }
+
+      if (stockAuditInserts.length > 0) {
+        // ⚡ Bolt Optimization: Batch insert stock audit records
+        await tx.insert(stockAudit).values(stockAuditInserts);
       }
     }
     return getSheet(sheetId, tx);
