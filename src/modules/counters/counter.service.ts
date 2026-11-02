@@ -231,7 +231,7 @@ export async function createSheet(user: JwtPayload, branchId: string, sheetDate:
     const id = await db.transaction(async (tx) => {
       const [dup] = await tx.select({ id: dailyCounterSheets.id }).from(dailyCounterSheets)
         .where(and(eq(dailyCounterSheets.branchId, branchId), eq(dailyCounterSheets.sheetDate, sheetDate))).limit(1);
-      if (dup) throw new ConflictError('A counter sheet already exists for this date');
+      if (dup) throw new ConflictError('A counter sheet already exists for this date', { sheetId: dup.id });
 
       const stocked = await tx
         .select({ productId: products.id, mrp: products.mrp, quantity: stock.quantity })
@@ -307,7 +307,11 @@ export async function createSheet(user: JwtPayload, branchId: string, sheetDate:
     });
     return getSheet(id);
   } catch (err) {
-    if (isUniqueViolation(err)) throw new ConflictError('A counter sheet already exists for this date');
+    if (isUniqueViolation(err)) {
+      const [existing] = await db.select({ id: dailyCounterSheets.id }).from(dailyCounterSheets)
+        .where(and(eq(dailyCounterSheets.branchId, branchId), eq(dailyCounterSheets.sheetDate, sheetDate))).limit(1);
+      throw new ConflictError('A counter sheet already exists for this date', { sheetId: existing?.id });
+    }
     throw err;
   }
 }
@@ -570,4 +574,93 @@ export function registerCounterSheetHandlers(): void {
 export function unregisterCounterSheetHandlers(): void {
   for (const off of counterUnsubscribers ?? []) off();
   counterUnsubscribers = null;
+}
+
+// ─── EXPORT / CSV ────────────────────────────────────────────────────────────
+
+export function sheetToCsv(sheet: {
+  sheetDate: string;
+  status: string;
+  totalRevenue: string;
+  lines: Array<{
+    productName: string;
+    packQuantity?: number | null;
+    openingBottles: number;
+    inwardBottles: number;
+    posSoldBottles?: number;
+    soldBottles: number;
+    closingBottles: number;
+    closingSplit?: { cases: number; loose: number } | null;
+    sellingRate: string;
+    lineRevenue: string;
+  }>;
+}, branchName?: string): string {
+  const sanitize = (val: string | number | undefined | null) => {
+    if (val === undefined || val === null) return '';
+    const s = String(val);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+
+  const headerLines = [
+    `Daily Counter Sheet${branchName ? ` - ${branchName}` : ''}`,
+    `Sheet Date: ${sheet.sheetDate}`,
+    `Status: ${sheet.status}`,
+    `Total Revenue: ₹${sheet.totalRevenue}`,
+    '',
+    [
+      'Product',
+      'Pack Qty',
+      'Opening (Bottles)',
+      'Inward (Bottles)',
+      'POS Sold (Bottles)',
+      'Counter Sold (Bottles)',
+      'Closing (Bottles)',
+      'Closing Cases',
+      'Closing Loose',
+      'Rate (MRP)',
+      'Line Revenue',
+    ].map(sanitize).join(','),
+  ];
+
+  const dataRows = sheet.lines.map((l) => [
+    sanitize(l.productName),
+    sanitize(l.packQuantity ?? 1),
+    l.openingBottles,
+    l.inwardBottles,
+    l.posSoldBottles ?? 0,
+    l.soldBottles,
+    l.closingBottles,
+    l.closingSplit?.cases ?? '',
+    l.closingSplit?.loose ?? '',
+    sanitize(l.sellingRate),
+    sanitize(l.lineRevenue),
+  ].join(','));
+
+  const footer = [
+    '',
+    ['Total', '', '', '', '', '', '', '', '', '', sanitize(sheet.totalRevenue)].join(','),
+  ];
+
+  return [...headerLines, ...dataRows, ...footer].join('\r\n');
+}
+
+export async function getSheetCsv(id: string): Promise<{ csv: string; filename: string }> {
+  const sheet = await getSheet(id);
+  const csv = sheetToCsv(sheet);
+  const filename = `counter-sheet-${sheet.sheetDate}.csv`;
+  return { csv, filename };
+}
+
+export async function getBranchSheetCsv(branchId: string, date?: string): Promise<{ csv: string; filename: string }> {
+  const sheets = await listSheets(branchId, date);
+  if (sheets.length === 0) {
+    throw new NotFoundError(date ? `No counter sheet found for date ${date}` : 'No counter sheets found for this branch');
+  }
+  const sheet = await getSheet(sheets[0].id);
+  const csv = sheetToCsv(sheet);
+  const filename = `counter-sheet-${sheet.sheetDate}.csv`;
+  return { csv, filename };
 }

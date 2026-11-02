@@ -3543,7 +3543,14 @@ async function createCounterSheet() {
       toast('Counter sheet created for ' + sheetDate, 'success');
       loadCounterRecent();
     } catch (e) {
-      if (e.status === 409) { toast('A sheet already exists for this date — opening it.', 'info'); await loadCounterForDate(); }
+      if (e.status === 409 || (e.message && e.message.toLowerCase().includes('already exists'))) {
+        toast('A sheet already exists for this date — opening it.', 'info');
+        if (e.data && e.data.details && e.data.details.sheetId) {
+          await openCounterSheet(e.data.details.sheetId);
+        } else {
+          await loadCounterForDate();
+        }
+      }
       else toast('Could not create sheet: ' + e.message, 'error');
     }
   });
@@ -3588,9 +3595,9 @@ function renderCounterSheet() {
     ${draft ? `<div class="pad row">
       <button type="button" class="btn-primary" id="counterSaveBtn" onclick="saveCounterSheet()">Save counts</button>
       <button type="button" class="btn-sec" id="counterSyncBtn" onclick="syncCounterSheet()">🔄 Sync from Sales</button>
-      <button type="button" class="btn-sec" id="counterSyncBtn" onclick="syncCounterSheet()">🔄 Sync from Sales</button>
+      <button type="button" class="btn-sec" id="counterDownloadBtn" onclick="downloadCounterSheet()">⬇ Download CSV</button>
       ${mgr ? '<button type="button" class="btn-sec" id="counterPostBtn" onclick="postCounterSheet()">Post sheet</button>' : '<span class="muted small">A manager posts the sheet.</span>'}
-      <span id="counterDirty" class="muted small" aria-live="polite"></span></div>` : '<div class="pad muted small">Posted sheets are read-only.</div>'}`;
+      <span id="counterDirty" class="muted small" aria-live="polite"></span></div>` : '<div class="pad row between muted small"><span>Posted sheets are read-only.</span><button type="button" class="btn-sec btn-sm" id="counterDownloadBtn" onclick="downloadCounterSheet()">⬇ Download CSV</button></div>'}`;
 }
 function updateCounterLive() {
   const sh = S.sheet;
@@ -3641,6 +3648,45 @@ async function saveCounterSheet(silent) {
     return true;
   } catch (e) { toast('Save failed: ' + e.message, 'error'); return false; }
 }
+async function downloadCounterSheet() {
+  const sh = S.sheet;
+  if (!sh) { toast('No counter sheet loaded to download.', 'error'); return; }
+  try {
+    const res = await apiFull('/counter-sheets/sheet/' + sh.id + '/export', { raw: true });
+    if (res.res && res.res.ok) {
+      const blob = await res.res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'counter-sheet-' + sh.sheetDate + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast('Counter sheet downloaded', 'success');
+      return;
+    }
+  } catch {}
+  const lines = [
+    'Daily Counter Sheet',
+    'Sheet Date: ' + sh.sheetDate,
+    'Status: ' + sh.status,
+    'Total Revenue: ' + sh.totalRevenue,
+    '',
+    'Product,Pack Qty,Opening,Inward,Closing,Sold,Rate,Revenue'
+  ];
+  for (const l of sh.lines) {
+    lines.push(`"${(l.productName || '').replace(/"/g, '""')}",${l.packQuantity || 1},${l.openingBottles},${l.inwardBottles},${l.closingBottles},${l.soldBottles},${l.sellingRate},${l.lineRevenue}`);
+  }
+  lines.push(`,,,,,,Total,${sh.totalRevenue}`);
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'counter-sheet-' + sh.sheetDate + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('Counter sheet downloaded', 'success');
+}
+
 async function syncCounterSheet() {
   const sh = S.sheet;
   if (!sh) return;

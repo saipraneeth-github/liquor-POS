@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package } from 'lucide-react';
+import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package, Download } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -95,6 +95,21 @@ export function Counter() {
     return () => window.removeEventListener('app:stock_updated', onStockUpdated);
   }, [branchId, sheet?.id, dirty]);
 
+
+  useEffect(() => {
+    if (!branchId || !sheetDate) return;
+    let active = true;
+    api.get<RecentSheet[]>(`/counter-sheets/${branchId}?date=${sheetDate}`)
+      .then((rows) => {
+        if (active && rows.length > 0 && (!sheet || sheet.sheetDate !== sheetDate)) {
+          openSheetById(rows[0].id, true);
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [branchId, sheetDate]);
+
+
   const loadSheet = (sh: CounterSheet) => {
     setSheet(sh);
     setDirty(false);
@@ -157,7 +172,13 @@ export function Counter() {
       showToast('Counter sheet created for ' + sheetDate + ' — auto-updated with sales', 'success');
       loadRecent();
     } catch (e: any) {
-      if (e.status === 409) {
+      if (e.status === 409 || e.message?.toLowerCase().includes('already exists')) {
+        showToast('A sheet already exists for ' + sheetDate + ' — opening existing sheet.', 'info');
+        const existingId = e.data?.details?.sheetId;
+        if (existingId) {
+          await openSheetById(existingId);
+          return;
+        }
         showToast('A sheet already exists for this date — opening it.', 'info');
         await handleOpenForDate();
       } else {
@@ -165,6 +186,19 @@ export function Counter() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadSheet = async () => {
+    if (!sheet) return;
+    try {
+      await api.download(
+        `/counter-sheets/sheet/${sheet.id}/export`,
+        `counter-sheet-${sheet.sheetDate}.csv`
+      );
+      showToast('Counter sheet downloaded as CSV', 'success');
+    } catch (e: any) {
+      showToast('Download failed: ' + e.message, 'error');
     }
   };
 
@@ -390,6 +424,16 @@ export function Counter() {
                     Sync with POS Sales
                   </button>
                 )}
+                <button
+                  type="button"
+                  id="counterDownloadBtn"
+                  className="btn-sec px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 text-xs font-semibold flex items-center gap-1.5"
+                  onClick={handleDownloadSheet}
+                  title="Download counter sheet as CSV"
+                >
+                  <Download size={13} />
+                  Download CSV
+                </button>
                 <span id="counterStatus">
                   <span
                     className={`badge px-2 py-1 text-xs rounded font-medium ${
@@ -574,6 +618,14 @@ export function Counter() {
                     <RefreshCw size={14} />
                     Sync from POS Sales
                   </button>
+                  <button
+                    type="button"
+                    className="btn-sec px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 font-medium flex items-center gap-1.5"
+                    onClick={handleDownloadSheet}
+                  >
+                    <Download size={14} />
+                    Download CSV
+                  </button>
                   {isManager ? (
                     <button
                       type="button"
@@ -592,7 +644,17 @@ export function Counter() {
                 </span>
               </div>
             ) : (
-              <div className="pad muted small p-4 text-xs text-gray-500 border-t">Posted sheets are read-only.</div>
+              <div className="pad muted small p-4 text-xs text-gray-500 border-t flex justify-between items-center">
+                <span>Posted sheets are read-only.</span>
+                <button
+                  type="button"
+                  className="btn-sec px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 font-medium flex items-center gap-1.5"
+                  onClick={handleDownloadSheet}
+                >
+                  <Download size={14} />
+                  Download CSV
+                </button>
+              </div>
             )}
           </div>
         )}

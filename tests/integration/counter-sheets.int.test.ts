@@ -358,4 +358,42 @@ describe('stock movements recorded outside the sheet day', () => {
     expect(beerLine.closingBottles).toBe(beerLine.openingBottles + beerLine.inwardBottles - 4);
     expect(beerLine.lineRevenue).toBe('800.00');
   });
+
+  it('exports counter sheet as CSV with correct headers and download details, and provides sheetId on duplicate 409', async () => {
+    // 1. Attempt duplicate creation for today
+    const dupRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/${ctx.branchId}`,
+      headers: ctx.auth('cashier'),
+      payload: { sheetDate: today },
+    });
+    expect(dupRes.statusCode).toBe(409);
+    const dupBody = dupRes.json();
+    expect(dupBody.error).toBe('A counter sheet already exists for this date');
+    expect(dupBody.details?.sheetId).toBeDefined();
+
+    const sheetId = dupBody.details.sheetId;
+
+    // 2. Export via sheet/:id/export
+    const exportRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/counter-sheets/sheet/${sheetId}/export`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(exportRes.statusCode).toBe(200);
+    expect(exportRes.headers['content-type']).toContain('text/csv');
+    expect(exportRes.headers['content-disposition']).toContain(`attachment; filename="counter-sheet-${today}.csv"`);
+    expect(exportRes.body).toContain('Daily Counter Sheet');
+    expect(exportRes.body).toContain('Product,Pack Qty,Opening (Bottles),Inward (Bottles)');
+
+    // 3. Export via :branchId/export?date=
+    const branchExportRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/counter-sheets/${ctx.branchId}/export?date=${today}`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(branchExportRes.statusCode).toBe(200);
+    expect(branchExportRes.headers['content-type']).toContain('text/csv');
+    expect(branchExportRes.body).toContain('Daily Counter Sheet');
+  });
 });

@@ -20,6 +20,8 @@ import {
   updateSheetLines,
   postSheet,
   syncSheetWithSales,
+  getSheetCsv,
+  getBranchSheetCsv,
   CreateSheetSchema,
   ListSheetsQuerySchema,
   UpdateLinesSchema,
@@ -98,6 +100,51 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
       return sendError(reply, err, 'Counter sheet posting failed');
     }
   });
+  fastify.get('/counter-sheets/sheet/:id/export', { preHandler: requireRole('cashier') }, async (request, reply) => {
+    try {
+      const sheet = await loadAccessibleSheet(request, reply);
+      if (!sheet) return;
+      const { csv, filename } = await getSheetCsv(sheet.id);
+      return reply
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(csv);
+    } catch (err) {
+      return sendError(reply, err, 'Counter sheet export failed');
+    }
+  });
+
+  fastify.get('/counter-sheets/sheet/:id/csv', { preHandler: requireRole('cashier') }, async (request, reply) => {
+    try {
+      const sheet = await loadAccessibleSheet(request, reply);
+      if (!sheet) return;
+      const { csv, filename } = await getSheetCsv(sheet.id);
+      return reply
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(csv);
+    } catch (err) {
+      return sendError(reply, err, 'Counter sheet export failed');
+    }
+  });
+
+  fastify.get('/counter-sheets/:branchId/export', { preHandler: requireRole('cashier') }, async (request, reply) => {
+    const params = BranchParams.safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
+    const query = ListSheetsQuerySchema.safeParse(request.query);
+    if (!query.success) return reply.code(400).send({ error: 'Validation failed', details: query.error.flatten() });
+    if (!(await assertBranchAccess(getUser(request), params.data.branchId, reply))) return;
+    try {
+      const { csv, filename } = await getBranchSheetCsv(params.data.branchId, query.data.date);
+      return reply
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${filename}"`)
+        .send(csv);
+    } catch (err) {
+      return sendError(reply, err, 'Counter sheet export failed');
+    }
+  });
+
   fastify.post('/counter-sheets/sheet/:id/sync', { preHandler: requireRole('cashier') }, async (request, reply) => {
     try {
       const sheet = await loadAccessibleSheet(request, reply);
