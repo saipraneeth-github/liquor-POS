@@ -395,6 +395,27 @@ describe('stock movements recorded outside the sheet day', () => {
     expect(branchExportRes.statusCode).toBe(200);
     expect(branchExportRes.headers['content-type']).toContain('text/csv');
     expect(branchExportRes.body).toContain('Daily Counter Sheet');
+
+    // 4. Export as Excel (.xlsx) via sheet/:id/excel
+    const excelRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/counter-sheets/sheet/${sheetId}/excel`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(excelRes.statusCode).toBe(200);
+    expect(excelRes.headers['content-type']).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(excelRes.headers['content-disposition']).toContain(`attachment; filename="counter-sheet-${today}.xlsx"`);
+    expect(excelRes.rawPayload.length).toBeGreaterThan(1000);
+
+    // 5. Export as Excel (.xlsx) via :branchId/excel?date=
+    const branchExcelRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/counter-sheets/${ctx.branchId}/excel?date=${today}`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(branchExcelRes.statusCode).toBe(200);
+    expect(branchExcelRes.headers['content-type']).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(branchExcelRes.headers['content-disposition']).toContain(`attachment; filename="counter-sheet-${today}.xlsx"`);
   });
 
   it('approves surplus counts (manager), preserves prior approval, and updates inventory on post', async () => {
