@@ -483,6 +483,91 @@ export async function postSheet(user: JwtPayload, sheetId: string) {
 }
 
 /**
+ * POSTED → DRAFT. Allowed ONLY if the sheet was posted on the current business day (same day).
+ * Reverses the stock adjustments made by postSheet and removes the associated COUNTER_SHEET audit rows,
+ * returning the sheet to DRAFT so counts can be corrected and reposted.
+ */
+export async function unpostSheet(user: JwtPayload, sheetId: string) {
+  const isManager = roleRank(user.role) >= ROLE_RANK.manager;
+  if (!isManager) {
+    throw new BusinessRuleError('Only a manager can revert a posted counter sheet to draft');
+  }
+
+  return db.transaction(async (tx) => {
+    const [sheet] = await tx.select().from(dailyCounterSheets).where(eq(dailyCounterSheets.id, sheetId)).for('update');
+    if (!sheet) throw new NotFoundError('Counter sheet not found');
+    if (sheet.status !== 'POSTED') throw new ConflictError('Counter sheet is not in POSTED status');
+
+    const today = businessDateOf();
+    const postedDate = sheet.postedAt ? businessDateOf(sheet.postedAt) : null;
+    const isSameDay = postedDate === today || sheet.sheetDate === today;
+
+    if (!isSameDay) {
+      throw new BusinessRuleError(
+        `Counter sheet can only be reverted to draft on the day it was posted (posted: ${postedDate ?? sheet.sheetDate}, today: ${today})`,
+      );
+    }
+
+    const [later] = await tx.select({ id: dailyCounterSheets.id }).from(dailyCounterSheets)
+      .where(and(
+        eq(dailyCounterSheets.branchId, sheet.branchId),
+        eq(dailyCounterSheets.status, 'POSTED'),
+        gt(dailyCounterSheets.sheetDate, sheet.sheetDate),
+      )).limit(1);
+    if (later) throw new BusinessRuleError('A later counter sheet is already posted; cannot revert this sheet');
+
+    // 1. Find all stock_audit rows written by this sheet post
+    const audits = await tx.select().from(stockAudit)
+      .where(and(
+        eq(stockAudit.branchId, sheet.branchId),
+        eq(stockAudit.reason, 'COUNTER_SHEET'),
+        eq(stockAudit.referenceId, sheet.id),
+      ));
+
+    // 2. Reverse stock changes
+    for (const a of audits) {
+      if (a.changeQty !== 0) {
+        await tx.update(stock)
+          .set({ quantity: sql`${stock.quantity} - ${a.changeQty}` })
+          .where(and(eq(stock.branchId, sheet.branchId), eq(stock.productId, a.productId)));
+      }
+    }
+
+    // Check if any stock became negative
+    if (audits.length > 0) {
+      const [neg] = await tx.select({ productId: stock.productId, quantity: stock.quantity })
+        .from(stock)
+        .where(and(
+          eq(stock.branchId, sheet.branchId),
+          inArray(stock.productId, audits.map((a) => a.productId)),
+          lt(stock.quantity, 0),
+        ))
+        .limit(1);
+      if (neg) {
+        throw new BusinessRuleError(`Cannot revert sheet: product ${neg.productId} stock would become negative (${neg.quantity})`);
+      }
+
+      // 3. Remove the COUNTER_SHEET audit rows
+      await tx.delete(stockAudit)
+        .where(and(
+          eq(stockAudit.branchId, sheet.branchId),
+          eq(stockAudit.reason, 'COUNTER_SHEET'),
+          eq(stockAudit.referenceId, sheet.id),
+        ));
+    }
+
+    // 4. Update sheet status back to DRAFT
+    await tx.update(dailyCounterSheets).set({
+      status:     'DRAFT',
+      postedById: null,
+      postedAt:   null,
+    }).where(eq(dailyCounterSheets.id, sheet.id));
+
+    return getSheet(sheetId, tx);
+  });
+}
+
+/**
  * Synchronizes all lines of a DRAFT counter sheet with approved supplier invoices (inward)
  * and paid POS bills (sales) for that sheet date:
  *   closing = Math.max(0, opening + inward - posSold)

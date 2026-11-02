@@ -3586,7 +3586,7 @@ function renderCounterSheet() {
   const mgr = can('manager');
   el.innerHTML = `<div class="pad row between">
       <div><div class="h2">Sheet for ${esc(sh.sheetDate)}</div><div class="muted small">${plural(sh.lines.length, 'product')}${sh.postedAt ? ' · posted ' + fmtDateTime(sh.postedAt) : ''}</div></div>
-      <span id="counterStatus">${statusBadge(sh.status)}</span></div>
+      <div class="row gap-2 items-center"><span id="counterStatus">${statusBadge(sh.status)}</span>${!draft && mgr && (sh.postedAt && sh.postedAt.slice(0, 10) === businessDateOf() || sh.sheetDate === businessDateOf()) ? '<button type="button" class="btn-sec btn-sm" id="counterRevertBtn" onclick="revertCounterSheet()" style="color:var(--warn); border-color:var(--warn);">🔄 Revert to Draft</button>' : ''}</div></div>
     <div class="table-wrap"><table class="table"><thead><tr><th>Product</th><th class="right">Opening</th><th class="right">Inward</th><th class="right">Closing</th><th class="right">Sold</th><th class="right">Rate</th><th class="right">Revenue</th></tr></thead><tbody>
       ${sh.lines.map((l) => {
         const available = l.openingBottles + l.inwardBottles;
@@ -3623,7 +3623,7 @@ function renderCounterSheet() {
       <button type="button" class="btn-sec" id="counterSyncBtn" onclick="syncCounterSheet()">🔄 Sync from Sales</button>
       <button type="button" class="btn-sec" id="counterDownloadBtn" onclick="downloadCounterSheet('xlsx')">⬇ Download Excel</button>
       ${mgr ? '<button type="button" class="btn-sec" id="counterPostBtn" onclick="postCounterSheet()">Post sheet</button>' : '<span class="muted small">A manager posts the sheet.</span>'}
-      <span id="counterDirty" class="muted small" aria-live="polite"></span></div>` : '<div class="pad row between muted small"><span>Posted sheets are read-only.</span><button type="button" class="btn-sec btn-sm" id="counterDownloadBtn" onclick="downloadCounterSheet('xlsx')">⬇ Download Excel</button></div>'}`;
+      <span id="counterDirty" class="muted small" aria-live="polite"></span></div>` : '<div class="pad row between muted small"><span>Posted sheets are read-only.${!draft && mgr && (sh.postedAt && sh.postedAt.slice(0, 10) === businessDateOf() || sh.sheetDate === businessDateOf()) ? ' <b style="color:var(--warn);">(Posted today — you can revert to draft)</b>' : ''}</span><button type="button" class="btn-sec btn-sm" id="counterDownloadBtn" onclick="downloadCounterSheet('xlsx')">⬇ Download Excel</button></div>'}`;
 }
 function updateCounterLive() {
   const sh = S.sheet;
@@ -3664,6 +3664,21 @@ function updateCounterLive() {
   S.sheetDirty = true;
   if ($('counterDirty')) $('counterDirty').textContent = 'Unsaved changes — preview only until saved.';
 }
+async function revertCounterSheet() {
+  const sh = S.sheet;
+  if (!sh) return;
+  if (!confirm('Revert this counter sheet to Draft?\nStock corrections applied when posting will be reversed back to their pre-post quantities.')) return;
+  try {
+    S.sheet = await api('/counter-sheets/sheet/' + sh.id + '/unpost', { method: 'POST', body: {} });
+    S.sheetDirty = false;
+    toast('Counter sheet reverted to Draft — stock corrections reversed', 'success');
+    renderCounterSheet();
+    loadCounterSheets();
+  } catch (e) {
+    toast('Revert failed: ' + e.message, 'error');
+  }
+}
+
 async function saveCounterSheet(silent) {
   const sh = S.sheet;
   const lines = [];

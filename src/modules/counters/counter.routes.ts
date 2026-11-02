@@ -19,6 +19,7 @@ import {
   getSheetRow,
   updateSheetLines,
   postSheet,
+  unpostSheet,
   syncSheetWithSales,
   getSheetCsv,
   getBranchSheetCsv,
@@ -100,6 +101,26 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
       return await postSheet(getUser(request), sheet.id);
     } catch (err) {
       return sendError(reply, err, 'Counter sheet posting failed');
+    }
+  });
+
+  fastify.post('/counter-sheets/sheet/:id/unpost', { preHandler: requireRole('manager') }, async (request, reply) => {
+    try {
+      const sheet = await loadAccessibleSheet(request, reply);
+      if (!sheet) return;
+      return await unpostSheet(getUser(request), sheet.id);
+    } catch (err) {
+      return sendError(reply, err, 'Reverting counter sheet to draft failed');
+    }
+  });
+
+  fastify.post('/counter-sheets/sheet/:id/revert-draft', { preHandler: requireRole('manager') }, async (request, reply) => {
+    try {
+      const sheet = await loadAccessibleSheet(request, reply);
+      if (!sheet) return;
+      return await unpostSheet(getUser(request), sheet.id);
+    } catch (err) {
+      return sendError(reply, err, 'Reverting counter sheet to draft failed');
     }
   });
   fastify.get('/counter-sheets/sheet/:id/export', { preHandler: requireRole('cashier') }, async (request, reply) => {

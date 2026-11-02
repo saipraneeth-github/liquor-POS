@@ -476,5 +476,47 @@ describe('stock movements recorded outside the sheet day', () => {
     expect(audits.length).toBeGreaterThan(0);
     const latest = audits[audits.length - 1];
     expect(latest.changeQty).toBe(stockAfter - stockBefore);
+
+    // 6. Cashier cannot revert to draft (403)
+    const cashierUnpost = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/unpost`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(cashierUnpost.statusCode).toBe(403);
+
+    // 7. Manager reverts sheet to draft (allowed because posted today)
+    const unpostRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/unpost`,
+      headers: h,
+    });
+    expect(unpostRes.statusCode).toBe(200);
+    const reverted = unpostRes.json();
+    expect(reverted.status).toBe('DRAFT');
+    expect(reverted.postedAt).toBeNull();
+    expect(reverted.postedById).toBeNull();
+
+    // Verify stock is restored to pre-post value
+    const stockReverted = await stockOf(beerId, ctx.otherBranchId);
+    expect(stockReverted).toBe(stockBefore);
+
+    // Verify COUNTER_SHEET audits for this sheet were removed
+    const auditsAfter = await ctx.db.select().from(ctx.schema.stockAudit)
+      .where(and(eq(ctx.schema.stockAudit.branchId, ctx.otherBranchId), eq(ctx.schema.stockAudit.reason, 'COUNTER_SHEET'), eq(ctx.schema.stockAudit.referenceId, sheet.id)));
+    expect(auditsAfter).toHaveLength(0);
+
+    // 8. Reverting is rejected (422) if the sheet was posted on an earlier date
+    await ctx.db.update(ctx.schema.dailyCounterSheets)
+      .set({ status: 'POSTED', postedAt: new Date(Date.now() - 2 * 86_400_000) })
+      .where(eq(ctx.schema.dailyCounterSheets.id, sheet.id));
+
+    const pastRevertFail = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/unpost`,
+      headers: h,
+    });
+    expect(pastRevertFail.statusCode).toBe(422);
+    expect(pastRevertFail.json().error).toContain('Counter sheet can only be reverted to draft on the day it was posted');
   });
 });

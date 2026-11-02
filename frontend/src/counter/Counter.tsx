@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package, Download } from 'lucide-react';
+import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package, Download, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -57,6 +57,7 @@ export function Counter() {
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
     message: string;
+    confirmButtonText?: string;
     onOk: () => void;
   } | null>(null);
 
@@ -313,8 +314,30 @@ export function Counter() {
         }
       },
     });
+  };
 
-
+  const handleRevertToDraft = () => {
+    if (!sheet) return;
+    setConfirmModal({
+      title: 'Revert counter sheet to Draft?',
+      message: 'Stock adjustments applied when posting will be reversed back to their pre-post quantities. You will be able to edit closing counts and post again.',
+      confirmButtonText: 'Revert to Draft',
+      onOk: async () => {
+        setConfirmModal(null);
+        setLoading(true);
+        try {
+          const reverted = await api.post<CounterSheet>(`/counter-sheets/sheet/${sheet.id}/unpost`, {});
+          loadSheet(reverted);
+          showToast('Counter sheet reverted to Draft — stock corrections reversed', 'success');
+          loadRecent();
+          window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
+        } catch (e: any) {
+          showToast('Revert failed: ' + e.message, 'error');
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   // Live calculation of lines
@@ -417,6 +440,9 @@ export function Counter() {
   });
 
   const isDraft = sheet?.status === 'DRAFT';
+  const postedDate = sheet?.postedAt ? sheet.postedAt.slice(0, 10) : null;
+  const isPostedToday = postedDate === todayStr || sheet?.sheetDate === todayStr;
+  const canRevertToDraft = !isDraft && isManager && isPostedToday;
   const totalVariance = liveTotalSoldBottles - totalPosSoldBottles;
 
   return (
@@ -536,6 +562,18 @@ export function Counter() {
                     {sheet.status}
                   </span>
                 </span>
+                {canRevertToDraft && (
+                  <button
+                    type="button"
+                    id="counterRevertBtn"
+                    className="btn-sec px-3 py-1.5 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 rounded border border-amber-300 dark:border-amber-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm transition"
+                    onClick={handleRevertToDraft}
+                    title="Revert this sheet to DRAFT so closing counts can be corrected (allowed because it was posted today)"
+                  >
+                    <RotateCcw size={13} />
+                    Revert to Draft
+                  </button>
+                )}
               </div>
             </div>
 
@@ -906,25 +944,44 @@ export function Counter() {
               </div>
             ) : (
               <div className="pad muted small p-4 text-xs text-gray-500 border-t flex justify-between items-center">
-                <span>Posted sheets are read-only.</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    className="btn-sec px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800 font-medium text-xs flex items-center gap-1.5"
-                    onClick={() => handleDownloadSheet('xlsx')}
-                    title="Download formatted Excel (.xlsx)"
-                  >
-                    <Download size={14} />
-                    Download Excel
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-sec px-2 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 rounded border text-xs font-medium"
-                    onClick={() => handleDownloadSheet('csv')}
-                    title="Download raw CSV"
-                  >
-                    CSV
-                  </button>
+                <span>
+                  Posted sheets are read-only.
+                  {canRevertToDraft && (
+                    <span className="ml-2 text-amber-600 dark:text-amber-400 font-medium">
+                      (Posted today — you can revert to draft to make corrections)
+                    </span>
+                  )}
+                </span>
+                <div className="flex items-center gap-2">
+                  {canRevertToDraft && (
+                    <button
+                      type="button"
+                      className="btn-sec px-3 py-2 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 rounded border border-amber-300 dark:border-amber-700 font-medium text-xs flex items-center gap-1.5 cursor-pointer"
+                      onClick={handleRevertToDraft}
+                    >
+                      <RotateCcw size={14} />
+                      Revert to Draft
+                    </button>
+                  )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="btn-sec px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800 font-medium text-xs flex items-center gap-1.5"
+                      onClick={() => handleDownloadSheet('xlsx')}
+                      title="Download formatted Excel (.xlsx)"
+                    >
+                      <Download size={14} />
+                      Download Excel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-sec px-2 py-2 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 rounded border text-xs font-medium"
+                      onClick={() => handleDownloadSheet('csv')}
+                      title="Download raw CSV"
+                    >
+                      CSV
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -962,7 +1019,7 @@ export function Counter() {
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
                 onClick={confirmModal.onOk}
               >
-                Post sheet
+                {confirmModal.confirmButtonText || 'Post sheet'}
               </button>
             </div>
           </div>
