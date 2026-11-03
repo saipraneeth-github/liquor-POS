@@ -83,7 +83,7 @@ export async function findLiveDuplicate(
   if (!trimmed || isPlaceholderNumber(trimmed)) return null;
   const conds: SQL[] = [
     eq(supplierInvoices.branchId, branchId),
-    sql`lower(trim(${supplierInvoices.invoiceNumber})) = lower(trim(${trimmed}))`,
+    eq(sql`lower(trim(${supplierInvoices.invoiceNumber}))`, trimmed.toLowerCase()),
     ne(supplierInvoices.status, 'REJECTED'),
   ];
   if (excludeId) conds.push(ne(supplierInvoices.id, excludeId));

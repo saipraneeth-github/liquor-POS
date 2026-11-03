@@ -843,7 +843,7 @@ export async function sheetToExcel(
     return s + (exp - l.closingBottles);
   }, 0);
 
-  const kpiBorder = {
+  const kpiBorder: Partial<ExcelJS.Borders> = {
     top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
     bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
     left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
@@ -939,7 +939,7 @@ export async function sheetToExcel(
     };
   });
 
-  const thinBorder = {
+  const thinBorder: Partial<ExcelJS.Borders> = {
     top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
     bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
     left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
@@ -1043,7 +1043,7 @@ export async function sheetToExcel(
   ];
   totalRow.height = 24;
 
-  const totalBorder = {
+  const totalBorder: Partial<ExcelJS.Borders> = {
     top: { style: 'thin', color: { argb: 'FF1E293B' } },
     bottom: { style: 'double', color: { argb: 'FF1E293B' } },
     left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
