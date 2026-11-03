@@ -1391,7 +1391,8 @@ function queueBill(body) {
   $('checkoutSummary').innerHTML = `Queued for sync — <b>${plural(S.cart.reduce((s, i) => s + i.qty, 0), 'item')}</b>, est. <b>${fmtPaise(est)}</b> via <b>${esc(body.paymentMode)}</b><br>
     Ref <code>${esc(body.clientRef.slice(0, 8))}</code> · it will be sent automatically when the connection returns.`;
   $('checkoutHistoryBtn').textContent = 'View pending';
-  openCheckoutModal();
+  openCheckoutModal();
+
 }
 
 function removeFromQueue(ref, sub) { saveQueue(getQueue(sub).filter((i) => i.clientRef !== ref), sub); }
@@ -2031,7 +2032,8 @@ async function afterBillSaved(bill, replay) {
   $('totalLabel').textContent = 'Total (server)';
   $('totalAmount').textContent = money(bill.total);
   $('checkoutHistoryBtn').textContent = 'Bill history';
-  openCheckoutModal();
+  openCheckoutModal();
+
 
   if (S.tableBill) {
     const tb = S.tableBill;

@@ -6,26 +6,26 @@ import type { FastifyReply } from 'fastify';
 // Plain `Error`s thrown by engines are treated as business-rule violations (422).
 
 export class AppError extends Error {
-  constructor(public readonly statusCode: number, message: string) {
+  constructor(public readonly statusCode: number, message: string, public readonly details?: unknown) {
     super(message);
     this.name = 'AppError';
   }
 }
 
 export class NotFoundError extends AppError {
-  constructor(message = 'Not found') { super(404, message); }
+  constructor(message = 'Not found', details?: unknown) { super(404, message, details); }
 }
 
 export class ForbiddenError extends AppError {
-  constructor(message = 'Forbidden') { super(403, message); }
+  constructor(message = 'Forbidden', details?: unknown) { super(403, message, details); }
 }
 
 export class ConflictError extends AppError {
-  constructor(message = 'Conflict') { super(409, message); }
+  constructor(message = 'Conflict', details?: unknown) { super(409, message, details); }
 }
 
 export class BusinessRuleError extends AppError {
-  constructor(message: string) { super(422, message); }
+  constructor(message: string, details?: unknown) { super(422, message, details); }
 }
 
 /** True when `err` is a Postgres unique-violation (SQLSTATE 23505) from either driver. */
@@ -57,7 +57,7 @@ function isDatabaseError(err: unknown): boolean {
  */
 export function sendError(reply: FastifyReply, err: unknown, fallback = 'Request failed') {
   if (err instanceof AppError) {
-    return reply.code(err.statusCode).send({ error: err.message });
+    return reply.code(err.statusCode).send({ error: err.message, ...(err.details !== undefined ? { details: err.details } : {}) });
   }
   if (isUniqueViolation(err)) {
     return reply.code(409).send({ error: 'Duplicate record' });

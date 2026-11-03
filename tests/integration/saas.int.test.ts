@@ -175,7 +175,8 @@ describe('open-bottle ml and pour variance', () => {
     expect(res.json()).toMatchObject({ expectedMl: before, countedMl: before - 90, varianceMl: -90 });
     expect((await stockRow(barId)).openMl).toBe(before - 90);
 
-    const today = new Date().toISOString().slice(0, 10);
+    const { businessDateOf } = await import('../../src/lib/business-day.js');
+    const today = businessDateOf();
     const report = (await inject('GET', `/api/v1/compliance/pour-report/${ctx.branchId}?from=${today}&to=${today}`, ctx.auth('manager'))).json();
     const row = report.rows.find((r: { productId: string }) => r.productId === barId);
     expect(row.varianceMl).toBe(-90);
