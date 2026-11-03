@@ -525,12 +525,18 @@ export async function unpostSheet(user: JwtPayload, sheetId: string) {
       ));
 
     // 2. Reverse stock changes
-    for (const a of audits) {
-      if (a.changeQty !== 0) {
-        await tx.update(stock)
-          .set({ quantity: sql`${stock.quantity} - ${a.changeQty}` })
-          .where(and(eq(stock.branchId, sheet.branchId), eq(stock.productId, a.productId)));
-      }
+    const validAudits = audits.filter(a => a.changeQty !== 0);
+    if (validAudits.length > 0) {
+      // ⚡ Bolt Optimization: Batch update stock with CASE WHEN
+      // Replaces O(N) sequential database updates with a single query.
+      // Impact: Eliminates N+1 queries when reverting counter sheets, massively reducing DB lock contention and transaction duration.
+      const caseSql = sql`CAST(CASE ${sql.join(
+        validAudits.map((a) => sql`WHEN ${stock.productId} = ${a.productId} THEN ${a.changeQty}`),
+        sql` `
+      )} END AS integer)`;
+      await tx.update(stock)
+        .set({ quantity: sql`${stock.quantity} - ${caseSql}` })
+        .where(and(eq(stock.branchId, sheet.branchId), inArray(stock.productId, validAudits.map(a => a.productId))));
     }
 
     // Check if any stock became negative
