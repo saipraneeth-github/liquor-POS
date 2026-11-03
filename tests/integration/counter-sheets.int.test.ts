@@ -15,6 +15,8 @@ const yesterday = businessDateOf(new Date(Date.now() - 86_400_000));
 const tomorrow = businessDateOf(new Date(Date.now() + 86_400_000));
 
 beforeAll(async () => {
+
+
   ctx = await setupIntegration();
   whiskyId = ctx.products[0].id;
   beerId = ctx.products[1].id;
@@ -51,9 +53,9 @@ const otherManager = () => ctx.authFor({
   sub: ctx.otherBranchManager.id, email: ctx.otherBranchManager.email, role: 'manager', branchId: ctx.otherBranchId,
 });
 
-async function stockOf(productId: string): Promise<number> {
+async function stockOf(productId: string, branchId = ctx.branchId): Promise<number> {
   const [row] = await ctx.db.select().from(ctx.schema.stock)
-    .where(and(eq(ctx.schema.stock.branchId, ctx.branchId), eq(ctx.schema.stock.productId, productId)));
+    .where(and(eq(ctx.schema.stock.branchId, branchId), eq(ctx.schema.stock.productId, productId)));
   return row.quantity;
 }
 
@@ -297,5 +299,224 @@ describe('stock movements recorded outside the sheet day', () => {
     expect(lineOf(t.json(), beerId)).toMatchObject({ openingBottles: 48 });
     const put2 = await putLines(t.json().id, [{ productId: beerId, closingBottles: 43 }], h);
     expect(lineOf(put2.json(), beerId)).toMatchObject({ soldBottles: 5 });
+  });
+
+  it('automatically updates draft counter sheet lines according to sales and supports sync endpoint', async () => {
+    // 1. Create a bill selling 4 beers today
+    const [bill] = await ctx.db.insert(ctx.schema.bills).values({
+      branchId: ctx.branchId,
+      cashierId: ctx.users.cashier.id,
+      billNumber: 'BILL-CS-TEST-1',
+      status: 'PAID',
+      subtotal: '800.00',
+      taxAmount: '144.00',
+      discount: '0.00',
+      roundOff: '0.00',
+      total: '800.00',
+      paymentMode: 'CASH',
+      paidAt: new Date(),
+    }).returning();
+    await ctx.db.insert(ctx.schema.billItems).values({
+      billId: bill.id,
+      productId: beerId,
+      quantity: 4,
+      unitPrice: '200.00',
+      taxRate: '18.00',
+      taxAmount: '36.00',
+      lineTotal: '800.00',
+    });
+
+    // 2. Fetch or create sheet for today
+    let todaySheetId: string;
+    const tRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/${ctx.branchId}`,
+      headers: ctx.auth('cashier'),
+      payload: { sheetDate: today },
+    });
+    if (tRes.statusCode === 201) {
+      todaySheetId = tRes.json().id;
+    } else {
+      const list = await app.inject({
+        method: 'GET',
+        url: `/api/v1/counter-sheets/${ctx.branchId}?date=${today}`,
+        headers: ctx.auth('cashier'),
+      });
+      todaySheetId = list.json()[0].id;
+    }
+
+    const syncRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${todaySheetId}/sync`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(syncRes.statusCode).toBe(200);
+    const synced = syncRes.json();
+    const beerLine = lineOf(synced, beerId);
+    expect(beerLine.posSoldBottles).toBe(4);
+    expect(beerLine.soldBottles).toBe(4);
+    expect(beerLine.closingBottles).toBe(beerLine.openingBottles + beerLine.inwardBottles - 4);
+    expect(beerLine.lineRevenue).toBe('800.00');
+  });
+
+  it('exports counter sheet as CSV with correct headers and download details, and provides sheetId on duplicate 409', async () => {
+    // 1. Attempt duplicate creation for today
+    const dupRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/${ctx.branchId}`,
+      headers: ctx.auth('cashier'),
+      payload: { sheetDate: today },
+    });
+    expect(dupRes.statusCode).toBe(409);
+    const dupBody = dupRes.json();
+    expect(dupBody.error).toBe('A counter sheet already exists for this date');
+    expect(dupBody.details?.sheetId).toBeDefined();
+
+    const sheetId = dupBody.details.sheetId;
+
+    // 2. Export via sheet/:id/export
+    const exportRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/counter-sheets/sheet/${sheetId}/export`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(exportRes.statusCode).toBe(200);
+    expect(exportRes.headers['content-type']).toContain('text/csv');
+    expect(exportRes.headers['content-disposition']).toContain(`attachment; filename="counter-sheet-${today}.csv"`);
+    expect(exportRes.body).toContain('Daily Counter Sheet');
+    expect(exportRes.body).toContain('Product,Pack Qty,Opening (Bottles),Inward (Bottles)');
+
+    // 3. Export via :branchId/export?date=
+    const branchExportRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/counter-sheets/${ctx.branchId}/export?date=${today}`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(branchExportRes.statusCode).toBe(200);
+    expect(branchExportRes.headers['content-type']).toContain('text/csv');
+    expect(branchExportRes.body).toContain('Daily Counter Sheet');
+
+    // 4. Export as Excel (.xlsx) via sheet/:id/excel
+    const excelRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/counter-sheets/sheet/${sheetId}/excel`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(excelRes.statusCode).toBe(200);
+    expect(excelRes.headers['content-type']).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(excelRes.headers['content-disposition']).toContain(`attachment; filename="counter-sheet-${today}.xlsx"`);
+    expect(excelRes.rawPayload.length).toBeGreaterThan(1000);
+
+    // 5. Export as Excel (.xlsx) via :branchId/excel?date=
+    const branchExcelRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/counter-sheets/${ctx.branchId}/excel?date=${today}`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(branchExcelRes.statusCode).toBe(200);
+    expect(branchExcelRes.headers['content-type']).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(branchExcelRes.headers['content-disposition']).toContain(`attachment; filename="counter-sheet-${today}.xlsx"`);
+  });
+
+  it('approves surplus counts (manager), preserves prior approval, and updates inventory on post', async () => {
+    // 1. Create a sheet on other branch for a past date
+    const dPast = businessDateOf(new Date(Date.now() - 3 * 86_400_000));
+    const h = otherManager();
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/${ctx.otherBranchId}`,
+      headers: h,
+      payload: { sheetDate: dPast },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const sheet = createRes.json();
+    const beer = lineOf(sheet, beerId);
+    const available = beer.openingBottles + beer.inwardBottles;
+    const surplusClosing = available + 5; // 5 extra bottles!
+
+    // 2. Manager approves surplus
+    const mgrOk = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/lines`,
+      headers: h,
+      payload: { lines: [{ productId: beerId, closingBottles: surplusClosing, approveAdjustment: true }] },
+    });
+    expect(mgrOk.statusCode).toBe(200);
+    const updatedBeer = lineOf(mgrOk.json(), beerId);
+    expect(updatedBeer.closingBottles).toBe(surplusClosing);
+    expect(updatedBeer.soldBottles).toBe(0);
+    expect(updatedBeer.lineRevenue).toBe('0.00');
+    expect(updatedBeer.adjustmentApprovedById).toBeTruthy();
+
+    // 4. Subsequent save without re-sending approveAdjustment does NOT fail
+    const saveAgain = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/lines`,
+      headers: h,
+      payload: { lines: [{ productId: beerId, closingBottles: surplusClosing }] },
+    });
+    expect(saveAgain.statusCode).toBe(200);
+
+    // 5. Post sheet and verify inventory (stock) is updated
+    const stockBefore = await stockOf(beerId, ctx.otherBranchId);
+    const postRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/post`,
+      headers: h,
+    });
+    expect(postRes.statusCode).toBe(200);
+
+    const stockAfter = await stockOf(beerId, ctx.otherBranchId);
+    expect(stockAfter).toBe(surplusClosing);
+
+    // Verify stock_audit was written
+    const audits = await ctx.db.select().from(ctx.schema.stockAudit)
+      .where(and(eq(ctx.schema.stockAudit.branchId, ctx.otherBranchId), eq(ctx.schema.stockAudit.productId, beerId), eq(ctx.schema.stockAudit.reason, 'COUNTER_SHEET')));
+    expect(audits.length).toBeGreaterThan(0);
+    const latest = audits[audits.length - 1];
+    expect(latest.changeQty).toBe(stockAfter - stockBefore);
+
+    // 6. Cashier cannot revert to draft (403)
+    const cashierUnpost = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/unpost`,
+      headers: ctx.auth('cashier'),
+    });
+    expect(cashierUnpost.statusCode).toBe(403);
+
+    // 7. Manager reverts sheet to draft (allowed because posted today)
+    const unpostRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/unpost`,
+      headers: h,
+    });
+    expect(unpostRes.statusCode).toBe(200);
+    const reverted = unpostRes.json();
+    expect(reverted.status).toBe('DRAFT');
+    expect(reverted.postedAt).toBeNull();
+    expect(reverted.postedById).toBeNull();
+
+    // Verify stock is restored to pre-post value
+    const stockReverted = await stockOf(beerId, ctx.otherBranchId);
+    expect(stockReverted).toBe(stockBefore);
+
+    // Verify COUNTER_SHEET audits for this sheet were removed
+    const auditsAfter = await ctx.db.select().from(ctx.schema.stockAudit)
+      .where(and(eq(ctx.schema.stockAudit.branchId, ctx.otherBranchId), eq(ctx.schema.stockAudit.reason, 'COUNTER_SHEET'), eq(ctx.schema.stockAudit.referenceId, sheet.id)));
+    expect(auditsAfter).toHaveLength(0);
+
+    // 8. Reverting is rejected (422) if the sheet was posted on an earlier date
+    await ctx.db.update(ctx.schema.dailyCounterSheets)
+      .set({ status: 'POSTED', postedAt: new Date(Date.now() - 2 * 86_400_000) })
+      .where(eq(ctx.schema.dailyCounterSheets.id, sheet.id));
+
+    const pastRevertFail = await app.inject({
+      method: 'POST',
+      url: `/api/v1/counter-sheets/sheet/${sheet.id}/unpost`,
+      headers: h,
+    });
+    expect(pastRevertFail.statusCode).toBe(422);
+    expect(pastRevertFail.json().error).toContain('Counter sheet can only be reverted to draft on the day it was posted');
   });
 });
