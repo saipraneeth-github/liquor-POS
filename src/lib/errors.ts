@@ -69,6 +69,13 @@ export function sendError(reply: FastifyReply, err: unknown, fallback = 'Request
     reply.log.error({ err }, 'Unhandled database error');
     return reply.code(500).send({ error: 'Internal server error' });
   }
+
+  // Guard against leaking internal Node system errors (e.g. ENOENT with paths) or runtime errors (e.g. TypeError)
+  if (err instanceof TypeError || err instanceof ReferenceError || err instanceof SyntaxError || (err && typeof err === 'object' && 'code' in err)) {
+    reply.log.error({ err }, 'Unhandled system or runtime error');
+    return reply.code(500).send({ error: 'Internal server error' });
+  }
+
   const msg = err instanceof Error ? err.message : fallback;
   return reply.code(422).send({ error: msg || fallback });
 }
