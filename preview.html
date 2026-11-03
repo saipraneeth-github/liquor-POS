@@ -866,7 +866,7 @@ function lsJson(k, fallback) { try { const v = JSON.parse(lsGet(k) || 'null'); r
 function esc(v) {
   return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-const MONEY_RE = /^\d+(\.\d{1,2})?$/;
+const MONEY_RE = /^\d+(\.\d{1,6})?$/;
 function isMoney(v) { return MONEY_RE.test(String(v ?? '').trim()); }
 /** Decimal string → integer paise (exact, no floats). */
 function toPaise(v) {
