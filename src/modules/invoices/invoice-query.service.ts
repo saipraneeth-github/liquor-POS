@@ -1,6 +1,6 @@
 /** Read side of supplier invoices: history list, detail, original file. */
 import { Decimal } from 'decimal.js';
-import { and, asc, desc, eq, gte, lt, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, sql, or, ilike, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../db/client.js';
 import { invoiceAttachments, products, supplierInvoiceItems, supplierInvoices, users } from '../../db/schema.js';
@@ -140,7 +140,13 @@ export async function listInvoices(branchId: string, q: ListQuery) {
   if (q.to) conds.push(lt(effectiveDate, new Date(new Date(q.to).getTime() + 86_400_000)));
   if (q.q) {
     const like = `%${q.q.replace(/[\\%_]/g, (c) => '\\' + c)}%`;
-    conds.push(sql`(${supplierInvoices.supplierName} ilike ${like} or ${supplierInvoices.invoiceNumber} ilike ${like} or coalesce(${supplierInvoices.originalFilename}, '') ilike ${like})`);
+    conds.push(
+      or(
+        ilike(supplierInvoices.supplierName, like),
+        ilike(supplierInvoices.invoiceNumber, like),
+        ilike(sql`coalesce(${supplierInvoices.originalFilename}, '')`, like)
+      )!
+    );
   }
 
   const lineStats = db

@@ -146,7 +146,7 @@ export async function createUser(actor: JwtPayload, input: CreateUserInput) {
   const [existing] = await db
     .select({ id: users.id })
     .from(users)
-    .where(sql`lower(${users.email}) = ${input.email}`)
+    .where(eq(sql`lower(${users.email})`, input.email.toLowerCase()))
     .limit(1);
   if (existing) throw new ConflictError('A user with this email already exists');
 

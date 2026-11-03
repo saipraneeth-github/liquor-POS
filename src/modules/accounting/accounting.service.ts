@@ -164,7 +164,7 @@ export async function createLedger(branchId: string, input: CreateLedgerInput) {
   const [sameName] = await db
     .select({ code: accountLedgers.code })
     .from(accountLedgers)
-    .where(and(eq(accountLedgers.branchId, branchId), sql`lower(${accountLedgers.name}) = lower(${input.name})`))
+    .where(and(eq(accountLedgers.branchId, branchId), eq(sql`lower(${accountLedgers.name})`, input.name.toLowerCase())))
     .limit(1);
   if (sameName) throw new ConflictError(`A ledger named "${input.name}" already exists in this branch (${sameName.code})`);
 
