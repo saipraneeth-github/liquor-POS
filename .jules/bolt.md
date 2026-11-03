@@ -5,3 +5,7 @@
 ## 2024-11-02 - Bulk CASE WHEN Updates for Stock Reversions
 **Learning:** Reverting stock changes sequentially (e.g., inside a `for` loop executing `await tx.update(stock)`) can cause an N+1 query issue during transaction operations, which increases DB lock contention and transaction duration.
 **Action:** Replace sequential `stock` updates with a bulk `CASE WHEN` query by utilizing `drizzle-orm`'s `sql` utility (e.g., `sql\`CAST(CASE ... END AS integer)\``) targeting the aggregated rows through an `inArray` filter constraint.
+
+## 2025-02-23 - Batch Product Updates During Invoice Approval
+**Learning:** Sequential updates using loops (`for...await tx.update`) for updating products during supplier invoice approval cause N+1 query problems and significantly increase database lock contention and transaction duration.
+**Action:** Replace `for...await` loops with Drizzle ORM's bulk update capabilities using SQL `CASE WHEN` to aggregate multiple dynamic update operations into a single query.
