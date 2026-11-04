@@ -276,7 +276,10 @@ export function BusinessSettings() {
       <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-x-auto">
         {loading ? (
           <div className="p-8 text-center text-sm text-gray-500">Loading branches…</div>
+        ) : branches.length === 0 ? (
+          <div className="p-8 text-center text-sm text-gray-500">No branches found. Create one above!</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-sm" id="branchTable">
             <thead>
               <tr className="border-b dark:border-gray-700 text-xs text-gray-500 uppercase tracking-wider">
@@ -289,7 +292,7 @@ export function BusinessSettings() {
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {branches.map((b) => (
-                <tr key={b.id} className="hover:bg-gray-50 dark:hover:bg-gray-900/40">
+                <tr key={b.id} className="branch-row hover:bg-gray-50 dark:hover:bg-gray-900/40">
                   <td className="py-3 px-4 font-mono font-bold">{b.code}</td>
                   <td className="py-3 px-4">
                     <div className="font-semibold">{b.name}</div>
@@ -315,8 +318,9 @@ export function BusinessSettings() {
                   </td>
                 </tr>
               ))}
-            </tbody>
+                        </tbody>
           </table>
+          </div>
         )}
       </div>
 
