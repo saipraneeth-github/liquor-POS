@@ -136,8 +136,8 @@ export async function getLiftingReport(branchId: string, from?: string, to?: str
     const conditions: SQL[] = [
       eq(supplierInvoices.branchId, branchId),
       eq(supplierInvoices.status, 'APPROVED'),
-      sql`${liftedAt} >= ${start.toISOString()}::timestamptz`,
-      sql`${liftedAt} < ${end.toISOString()}::timestamptz`,
+      gte(liftedAt, sql`${start.toISOString()}::timestamptz`),
+      lt(liftedAt, sql`${end.toISOString()}::timestamptz`),
     ];
     if (q.categoryId) conditions.push(eq(products.categoryId, q.categoryId));
 

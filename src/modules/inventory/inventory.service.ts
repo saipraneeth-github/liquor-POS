@@ -313,7 +313,7 @@ export async function applyApprovedInvoice(
       .where(and(
         eq(schemes.branchId, invoice.branchId),
         eq(schemes.status, 'ACTIVE'),
-        sql`lower(trim(${schemes.supplierName})) = lower(trim(${invoice.supplierName}))`,
+        eq(sql`lower(trim(${schemes.supplierName}))`, invoice.supplierName.trim().toLowerCase()),
       ));
     const casesStr = totalCases.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
     const valStr = totalValue.toFixed(2);
