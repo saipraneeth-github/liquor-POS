@@ -10,6 +10,7 @@ export function Login() {
   const [email, setEmail] = useState('cashier@liquor.com');
   const [password, setPassword] = useState('Password@123');
   const [loginError, setLoginError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { login, error: contextError } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
+    setIsSubmitting(true);
     try {
       // Step 1: exchange credentials for token
       const { token } = await api.post<{ token: string }>('/auth/login', { email, password });
@@ -33,6 +35,8 @@ export function Login() {
       setLoginError(errorMessage(err) || 'Login failed');
       // Clear the token if /me failed so we don't get stuck with a bad token
       localStorage.removeItem('token');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -80,6 +84,7 @@ export function Login() {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
               required
+              aria-required="true"
             />
           </div>
           <div>
@@ -91,14 +96,17 @@ export function Login() {
               onChange={(e) => setPassword(e.target.value)}
               className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
               required
+              aria-required="true"
             />
           </div>
           <button
             type="submit"
             id="loginBtn"
-            className="w-full bg-purple-600 text-white p-2.5 rounded-lg font-semibold hover:bg-purple-700 transition-colors cursor-pointer"
+            className="w-full bg-purple-600 text-white p-2.5 rounded-lg font-semibold hover:bg-purple-700 transition-colors cursor-pointer disabled:opacity-50"
+            disabled={isSubmitting}
+            aria-busy={isSubmitting}
           >
-            Sign In
+            {isSubmitting ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
         <div className="mt-3 text-center">
