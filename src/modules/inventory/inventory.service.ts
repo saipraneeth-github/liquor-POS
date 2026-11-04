@@ -255,21 +255,49 @@ export async function applyApprovedInvoice(
       sql` `
     )} ELSE ${products.mrp} END AS numeric)`;
 
+    const previousCostPriceCaseSql = sql`CAST(CASE ${sql.join(
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.previousCostPrice !== undefined ? data.previousCostPrice : products.previousCostPrice}`),
+      sql` `
+    )} ELSE ${products.previousCostPrice} END AS numeric)`;
+
+    const costPerCaseCaseSql = sql`CAST(CASE ${sql.join(
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costPerCase !== undefined ? data.costPerCase : products.costPerCase}`),
+      sql` `
+    )} ELSE ${products.costPerCase} END AS numeric)`;
+
+    const lastInvoiceIdCaseSql = sql`CAST(CASE ${sql.join(
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceId !== undefined ? data.lastInvoiceId : products.lastInvoiceId}`),
+      sql` `
+    )} ELSE ${products.lastInvoiceId} END AS uuid)`;
+
+    const lastInvoiceNumberCaseSql = sql`CAST(CASE ${sql.join(
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceNumber !== undefined ? data.lastInvoiceNumber : products.lastInvoiceNumber}`),
+      sql` `
+    )} ELSE ${products.lastInvoiceNumber} END AS text)`;
+
+    const lastInvoiceDateCaseSql = sql`CAST(CASE ${sql.join(
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceDate !== undefined ? data.lastInvoiceDate : products.lastInvoiceDate}`),
+      sql` `
+    )} ELSE ${products.lastInvoiceDate} END AS timestamp)`;
+
+    const costUpdatedAtCaseSql = sql`CAST(CASE ${sql.join(
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costUpdatedAt !== undefined ? data.costUpdatedAt : products.costUpdatedAt}`),
+      sql` `
+    )} ELSE ${products.costUpdatedAt} END AS timestamp)`;
+
     // Batch update products with costPrice, previousCostPrice, costPerCase, and invoice references
-    for (const [prodId, data] of updatesArr) {
-      await tx.update(products)
-        .set({
-          costPrice: data.costPrice,
-          ...(data.previousCostPrice !== undefined ? { previousCostPrice: data.previousCostPrice } : {}),
-          ...(data.costPerCase !== undefined ? { costPerCase: data.costPerCase } : {}),
-          lastInvoiceId: data.lastInvoiceId,
-          lastInvoiceNumber: data.lastInvoiceNumber,
-          lastInvoiceDate: data.lastInvoiceDate,
-          costUpdatedAt: data.costUpdatedAt,
-          ...(data.mrp ? { mrp: data.mrp } : {}),
-        })
-        .where(eq(products.id, prodId));
-    }
+    await tx.update(products)
+      .set({
+        costPrice: costPriceCaseSql,
+        mrp: mrpCaseSql,
+        previousCostPrice: previousCostPriceCaseSql,
+        costPerCase: costPerCaseCaseSql,
+        lastInvoiceId: lastInvoiceIdCaseSql,
+        lastInvoiceNumber: lastInvoiceNumberCaseSql,
+        lastInvoiceDate: lastInvoiceDateCaseSql,
+        costUpdatedAt: costUpdatedAtCaseSql,
+      })
+      .where(inArray(products.id, updatesArr.map(([id]) => id)));
   }
 
   // Batch insert price audits if any

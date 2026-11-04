@@ -43,3 +43,4 @@ test_lru.py
 # Embedded local database (npm run dev:local / e2e)
 .pglite/
 .pglite-e2e/
+scratch/

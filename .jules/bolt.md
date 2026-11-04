@@ -1,15 +1,11 @@
+## YYYY-MM-DD - Batch Upsert with Postgres EXCLUDED and Drizzle ORM
+**Learning:** In PostgreSQL (and Drizzle ORM), when performing batch upserts with `onConflictDoUpdate` over rows that may or may not exist, if the new total calculation resolves to `after = (before ?? 0) + change` where `before` defaults to 0, then for new rows `after === change`. This allows perfectly safe batch upsert logic by passing `change` as the insert `quantity`, and combining it with `set: { quantity: sql\`${stock.quantity} + EXCLUDED.quantity\` }` for the update case.
+**Action:** When refactoring sequential loops containing conditionals based on `before === undefined` or calculating an aggregate change, look for this specific equivalency (`after === change` for new rows). It unlocks single-query batch `upsert` (`onConflictDoUpdate`) functionality which massively reduces query counts and DB lock contention.
 
-## $(date +%Y-%m-%d) - Optimize applyApprovedInvoice N+1 queries
-**Learning:** In bulk operations with `applyApprovedInvoice`, performing single DB queries in a `for...of` loop can result in N+1 queries and block the thread unnecessarily, degrading backend performance significantly. Wait, also PostgreSQL throws `ON CONFLICT DO UPDATE command cannot affect row a second time` if you attempt to batch-update the same row multiple times in one statement (e.g. duplicate products in the same invoice).
-**Action:** Always batch `INSERT` with `onConflictDoUpdate` using `EXCLUDED` fields, and pre-aggregate duplicate constraints (like product quantities in an invoice) beforehand using a `Map` in JavaScript. Also, use `Promise.all` to batch updates that cannot be inserted/upserted.
-## 2026-10-29 - Prevent N+1 and Promise.all deadlocks on bulk database updates
-**Learning:** When performing updates on database rows sequentially, one might be tempted to use `Promise.all(updates)` to parallelize queries. However, in PostgreSQL, this disrupts deterministic lock ordering (even if inputs are pre-sorted) and severely risks deadlocks during concurrent transactions. Conversely, sequential `for` loops introduce N+1 query performance bottlenecks.
-**Action:** Always prefer a single batched upsert query (e.g., `insert().values(map).onConflictDoUpdate()` with `EXCLUDED.quantity`) over sequential updates or parallel `Promise.all` loops. This maintains lock safety while maximizing query performance.
+## 2024-11-02 - Bulk CASE WHEN Updates for Stock Reversions
+**Learning:** Reverting stock changes sequentially (e.g., inside a `for` loop executing `await tx.update(stock)`) can cause an N+1 query issue during transaction operations, which increases DB lock contention and transaction duration.
+**Action:** Replace sequential `stock` updates with a bulk `CASE WHEN` query by utilizing `drizzle-orm`'s `sql` utility (e.g., `sql\`CAST(CASE ... END AS integer)\``) targeting the aggregated rows through an `inArray` filter constraint.
 
-## $(date +%Y-%m-%d) - Optimize stock updates using bulk CASE WHEN
-**Learning:** Sequential updates for stock decrementing inside a `for (const delta of deltas)` loop for bill processing can cause severe performance issues (N+1 queries) and DB lock contention. Drizzle lacks native batch conditional updates.
-**Action:** Use a single bulk update with SQL `CASE WHEN` to aggregate multiple `update` operations into one statement. By mapping deltas to `sql\`WHEN \${stock.productId} = \${d.productId} THEN \${-d.delta}\`` and wrapping in `CAST(CASE ... END AS integer)`, Drizzle/Postgres can decrement all items in one query. Make sure to track returned `productId`s to enforce full-batch stock availability checks.
-
-## 2026-10-31 - Optimize product updates with bulk CASE WHEN to replace Promise.all
-**Learning:** Sequential `tx.update()` statements for updating multiple products (e.g. `costPrice` and `mrp` during invoice approval) run concurrently via `Promise.all` can still result in N+1 queries being sent to the database, causing DB lock contention and slowing down transaction duration, especially with large invoices.
-**Action:** Replace `Promise.all` with a single bulk update using SQL `CASE WHEN` to aggregate multiple `update` operations into one statement. Iterate over a map of updates to dynamically construct conditional logic like `sql\`WHEN ${products.id} = ${id} THEN ${data.costPrice}\`` and wrap it in `CAST(CASE ... END AS numeric)`. This significantly improves database efficiency.
+## 2025-02-23 - Batch Product Updates During Invoice Approval
+**Learning:** Sequential updates using loops (`for...await tx.update`) for updating products during supplier invoice approval cause N+1 query problems and significantly increase database lock contention and transaction duration.
+**Action:** Replace `for...await` loops with Drizzle ORM's bulk update capabilities using SQL `CASE WHEN` to aggregate multiple dynamic update operations into a single query.
