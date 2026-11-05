@@ -120,6 +120,12 @@
   .card.table-wrap > .table td:last-child { padding-right: 18px; }
   .card.pad .stat-card { background: var(--background); }
   .table tr.row-active td { background: color-mix(in srgb, var(--primary) 8%, transparent); }
+  .table tr.row-surplus td { background: color-mix(in srgb, var(--warning) 14%, var(--card)); }
+  .table tr.row-shortage td { background: color-mix(in srgb, var(--danger) 14%, var(--card)); }
+  .table tr.row-excess td { background: color-mix(in srgb, var(--info) 14%, var(--card)); }
+  .table tr.row-surplus td:first-child { border-left: 4px solid var(--warning); }
+  .table tr.row-shortage td:first-child { border-left: 4px solid var(--danger); }
+  .table tr.row-excess td:first-child { border-left: 4px solid var(--info); }
   .table tr.row-click { cursor: pointer; }
   .table tr.row-click:hover td { background: color-mix(in srgb, var(--foreground) 4%, transparent); }
   .table tr:last-child td { border-bottom: none; }
@@ -282,10 +288,10 @@
         <div class="muted small">POS &amp; Inventory Management</div>
       </div>
       <label class="field" for="loginEmail" style="margin-bottom:14px;">Email
-        <input id="loginEmail" class="input" type="email" autocomplete="username" placeholder="cashier@liquor.com" value="cashier@liquor.com" required />
+        <input id="loginEmail" class="input" type="email" autocomplete="username" placeholder="cashier@liquor.com" value="cashier@liquor.com" required aria-required="true" />
       </label>
       <label class="field" for="loginPass" style="margin-bottom:18px;">Password
-        <input id="loginPass" class="input" type="password" autocomplete="current-password" placeholder="••••••••" value="Password@123" required />
+        <input id="loginPass" class="input" type="password" autocomplete="current-password" placeholder="••••••••" value="Password@123" required aria-required="true" />
       </label>
       <button id="loginBtn" class="btn-primary" type="submit" style="width:100%; padding:12px;">Sign In</button>
       <div id="loginError" role="alert"></div>
@@ -452,8 +458,8 @@
               <summary>+ New customer</summary>
               <div class="pad">
                 <form class="form-grid" id="custCreateForm" onsubmit="createCustomer(event)">
-                  <label class="field" for="custName">Name <input id="custName" class="input" required maxlength="200" /></label>
-                  <label class="field" for="custPhone">Mobile <input id="custPhone" class="input" required inputmode="numeric" pattern="[6-9][0-9]{9}" maxlength="10" title="10-digit Indian mobile number starting with 6-9" placeholder="10-digit mobile" /></label>
+                  <label class="field" for="custName">Name <input id="custName" class="input" required aria-required="true" maxlength="200" /></label>
+                  <label class="field" for="custPhone">Mobile <input id="custPhone" class="input" required aria-required="true" inputmode="numeric" pattern="[6-9][0-9]{9}" maxlength="10" title="10-digit Indian mobile number starting with 6-9" placeholder="10-digit mobile" /></label>
                   <label class="field mgr-only" for="custLimit">Credit limit (₹) <input id="custLimit" class="input" inputmode="decimal" placeholder="0.00" /></label>
                   <label class="check mgr-only" for="custAllow"><input id="custAllow" type="checkbox" /> Allow credit</label>
                   <button class="btn-primary" type="submit" id="custCreateBtn">Create</button>
@@ -491,7 +497,7 @@
           <summary>+ Add table</summary>
           <div class="pad">
             <form class="form-grid" onsubmit="createTable(event)">
-              <label class="field" for="tblName">Name <input id="tblName" class="input" required maxlength="50" /></label>
+              <label class="field" for="tblName">Name <input id="tblName" class="input" required aria-required="true" maxlength="50" /></label>
               <label class="field" for="tblCap">Seats <input id="tblCap" class="input" type="number" min="1" max="100" value="4" /></label>
               <label class="field" for="tblSection">Section <input id="tblSection" class="input" maxlength="50" placeholder="Indoor" /></label>
               <button class="btn-primary" type="submit">Create table</button>
@@ -517,12 +523,12 @@
           <summary>+ Add product</summary>
           <div class="pad">
             <form class="form-grid" onsubmit="createProduct(event)">
-              <label class="field" for="npCategory">Category <select id="npCategory" class="input" required></select></label>
-              <label class="field" for="npName">Name <input id="npName" class="input" required maxlength="200" /></label>
-              <label class="field" for="npBrand">Brand <input id="npBrand" class="input" required maxlength="200" /></label>
+              <label class="field" for="npCategory">Category <select id="npCategory" class="input" required aria-required="true"></select></label>
+              <label class="field" for="npName">Name <input id="npName" class="input" required aria-required="true" maxlength="200" /></label>
+              <label class="field" for="npBrand">Brand <input id="npBrand" class="input" required aria-required="true" maxlength="200" /></label>
               <label class="field" for="npVolume">Volume (ml) <input id="npVolume" class="input" type="number" min="1" value="750" /></label>
               <label class="field" for="npPack">Bottles / case <input id="npPack" class="input" type="number" min="1" max="1000" value="12" /></label>
-              <label class="field" for="npMrp">MRP (₹) <input id="npMrp" class="input" required inputmode="decimal" /></label>
+              <label class="field" for="npMrp">MRP (₹) <input id="npMrp" class="input" required aria-required="true" inputmode="decimal" /></label>
               <label class="field" for="npCost">Cost price (₹) <input id="npCost" class="input" inputmode="decimal" /></label>
               <label class="field" for="npBarcode">Barcode <input id="npBarcode" class="input" maxlength="64" /></label>
               <label class="field" for="npSku">SKU <input id="npSku" class="input" maxlength="64" /></label>
@@ -554,9 +560,9 @@
           <div class="card pad stack">
             <div class="h2">💥 Record breakage</div>
             <form class="form-grid" onsubmit="recordBreakage(event)">
-              <label class="field" for="breakProduct">Product <select id="breakProduct" class="input" required></select></label>
-              <label class="field" for="breakQty">Bottles <input id="breakQty" class="input" type="number" min="1" value="1" required /></label>
-              <label class="field" for="breakReason" style="grid-column:1/-1;">Reason <input id="breakReason" class="input" required minlength="3" maxlength="500" placeholder="Dropped while shelving" /></label>
+              <label class="field" for="breakProduct">Product <select id="breakProduct" class="input" required aria-required="true"></select></label>
+              <label class="field" for="breakQty">Bottles <input id="breakQty" class="input" type="number" min="1" value="1" required aria-required="true" /></label>
+              <label class="field" for="breakReason" style="grid-column:1/-1;">Reason <input id="breakReason" class="input" required aria-required="true" minlength="3" maxlength="500" placeholder="Dropped while shelving" /></label>
               <button class="btn-primary" type="submit" id="breakSubmit">Record breakage</button>
             </form>
           </div>
@@ -575,7 +581,7 @@
           </div>
           <form class="row end" id="invUploadForm" onsubmit="uploadSupplierInvoice(event)">
             <label class="field grow" for="invUploadFile" style="min-width:220px;">Invoice file (CSV, XLSX, PDF, PNG, JPG ≤ 10 MB)
-              <input id="invUploadFile" class="input input-sm" type="file" accept=".csv,.xlsx,.pdf,.png,.jpg,.jpeg" required />
+              <input id="invUploadFile" class="input input-sm" type="file" accept=".csv,.xlsx,.pdf,.png,.jpg,.jpeg" required aria-required="true" />
             </label>
             <label class="field" for="invUploadSupplier" style="width:180px;">Supplier (optional)
               <input id="invUploadSupplier" class="input input-sm" maxlength="200" placeholder="Auto-detected" />
@@ -667,14 +673,14 @@
           <summary>+ New scheme</summary>
           <div class="pad">
             <form class="form-grid" onsubmit="createScheme(event)">
-              <label class="field" for="scSupplier">Supplier <input id="scSupplier" class="input" required /></label>
-              <label class="field" for="scName">Scheme name <input id="scName" class="input" required /></label>
+              <label class="field" for="scSupplier">Supplier <input id="scSupplier" class="input" required aria-required="true" /></label>
+              <label class="field" for="scName">Scheme name <input id="scName" class="input" required aria-required="true" /></label>
               <label class="field" for="scType">Target type <select id="scType" class="input"><option value="QTY">Quantity (cases)</option><option value="VALUE">Value (₹)</option></select></label>
-              <label class="field" for="scTarget">Target <input id="scTarget" class="input" required inputmode="decimal" /></label>
-              <label class="field" for="scStart">Start <input id="scStart" class="input" type="date" required /></label>
-              <label class="field" for="scEnd">End <input id="scEnd" class="input" type="date" required /></label>
+              <label class="field" for="scTarget">Target <input id="scTarget" class="input" required aria-required="true" inputmode="decimal" /></label>
+              <label class="field" for="scStart">Start <input id="scStart" class="input" type="date" required aria-required="true" /></label>
+              <label class="field" for="scEnd">End <input id="scEnd" class="input" type="date" required aria-required="true" /></label>
               <label class="field" for="scAlert">Alert at % <input id="scAlert" class="input" inputmode="decimal" value="80" /></label>
-              <label class="field" for="scReward" style="grid-column:1/-1;">Reward <input id="scReward" class="input" required /></label>
+              <label class="field" for="scReward" style="grid-column:1/-1;">Reward <input id="scReward" class="input" required aria-required="true" /></label>
               <button class="btn-primary" type="submit">Create scheme</button>
             </form>
           </div>
@@ -701,9 +707,9 @@
             <div id="quotaList" class="table-wrap"></div>
             <form class="form-grid" onsubmit="createQuota(event)">
               <label class="field" for="qCategory">Category <select id="qCategory" class="input"></select></label>
-              <label class="field" for="qStart">Period start <input id="qStart" class="input" type="date" required /></label>
-              <label class="field" for="qEnd">Period end <input id="qEnd" class="input" type="date" required /></label>
-              <label class="field" for="qCases">Quota (cases) <input id="qCases" class="input" type="number" min="1" required /></label>
+              <label class="field" for="qStart">Period start <input id="qStart" class="input" type="date" required aria-required="true" /></label>
+              <label class="field" for="qEnd">Period end <input id="qEnd" class="input" type="date" required aria-required="true" /></label>
+              <label class="field" for="qCases">Quota (cases) <input id="qCases" class="input" type="number" min="1" required aria-required="true" /></label>
               <button class="btn-primary" type="submit">Add quota</button>
             </form>
           </div>
@@ -731,8 +737,8 @@
           <div class="card pad stack">
             <div class="h2">💰 Cash reconciliation</div>
             <label class="field" for="closingDate">Business date <input id="closingDate" class="input" type="date" /></label>
-            <label class="field" for="closingOpeningCash">Opening cash (₹) <input id="closingOpeningCash" class="input" inputmode="decimal" placeholder="0.00" required /></label>
-            <label class="field" for="closingActualCash">Actual cash counted (₹) <input id="closingActualCash" class="input" inputmode="decimal" placeholder="0.00" required /></label>
+            <label class="field" for="closingOpeningCash">Opening cash (₹) <input id="closingOpeningCash" class="input" inputmode="decimal" placeholder="0.00" required aria-required="true" /></label>
+            <label class="field" for="closingActualCash">Actual cash counted (₹) <input id="closingActualCash" class="input" inputmode="decimal" placeholder="0.00" required aria-required="true" /></label>
             <label class="field" for="closingWithdrawals">Cash withdrawals (₹) <input id="closingWithdrawals" class="input" inputmode="decimal" placeholder="0.00" /></label>
             <label class="field" for="closingNotes">Notes (optional) <input id="closingNotes" class="input" maxlength="1000" placeholder="Anything unusual today" /></label>
             <div id="closingLiveTotalBox" style="display:none;font-size:12px;margin:8px 0;padding:8px;background:#f3e8ff;border-radius:6px;border:1px solid #d8b4fe;"></div>
@@ -753,9 +759,9 @@
           <div class="h2">👥 Users</div>
           <div id="userList" class="table-wrap"></div>
           <form class="form-grid" onsubmit="createUser(event)">
-            <label class="field" for="nuName">Name <input id="nuName" class="input" required maxlength="100" /></label>
-            <label class="field" for="nuEmail">Email <input id="nuEmail" class="input" type="email" required /></label>
-            <label class="field" for="nuPass">Password <input id="nuPass" class="input" type="password" minlength="8" required autocomplete="new-password" /></label>
+            <label class="field" for="nuName">Name <input id="nuName" class="input" required aria-required="true" maxlength="100" /></label>
+            <label class="field" for="nuEmail">Email <input id="nuEmail" class="input" type="email" required aria-required="true" /></label>
+            <label class="field" for="nuPass">Password <input id="nuPass" class="input" type="password" minlength="8" required aria-required="true" autocomplete="new-password" /></label>
             <label class="field" for="nuRole">Role <select id="nuRole" class="input"></select></label>
             <button class="btn-primary" type="submit" id="nuSubmit">Create user</button>
           </form>
@@ -764,7 +770,7 @@
           <div class="h2">🖥 Terminals</div>
           <div id="terminalList" class="table-wrap"></div>
           <form class="form-grid" onsubmit="createTerminal(event)">
-            <label class="field" for="ntName">Terminal name <input id="ntName" class="input" required maxlength="100" /></label>
+            <label class="field" for="ntName">Terminal name <input id="ntName" class="input" required aria-required="true" maxlength="100" /></label>
             <button class="btn-primary" type="submit">Add terminal</button>
           </form>
         </div>
@@ -772,8 +778,8 @@
           <div class="h2">🏬 Branches</div>
           <div id="branchList" class="table-wrap"></div>
           <form class="form-grid" onsubmit="createBranch(event)">
-            <label class="field" for="nbName">Name <input id="nbName" class="input" required maxlength="200" /></label>
-            <label class="field" for="nbCode">Code (2–10 letters/digits) <input id="nbCode" class="input" required pattern="[A-Za-z0-9]{2,10}" /></label>
+            <label class="field" for="nbName">Name <input id="nbName" class="input" required aria-required="true" maxlength="200" /></label>
+            <label class="field" for="nbCode">Code (2–10 letters/digits) <input id="nbCode" class="input" required aria-required="true" pattern="[A-Za-z0-9]{2,10}" /></label>
             <label class="field" for="nbAddress">Address <input id="nbAddress" class="input" maxlength="500" /></label>
             <label class="field" for="nbGstin">GSTIN <input id="nbGstin" class="input" maxlength="15" /></label>
             <label class="field" for="nbExcise">Excise licence <input id="nbExcise" class="input" maxlength="100" /></label>
@@ -866,8 +872,20 @@ function lsJson(k, fallback) { try { const v = JSON.parse(lsGet(k) || 'null'); r
 function esc(v) {
   return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-const MONEY_RE = /^\d+(\.\d{1,6})?$/;
+const MONEY_RE = /^\d+(\.\d{1,2})?$/;
 function isMoney(v) { return MONEY_RE.test(String(v ?? '').trim()); }
+const PRECISION_MONEY_RE = /^\d+(\.\d{1,6})?$/;
+function isPrecisionMoney(v) { return PRECISION_MONEY_RE.test(String(v ?? '').trim()); }
+function formatCostInput(v) {
+  if (v === null || v === undefined || v === '') return '0.00';
+  const s = String(v).trim();
+  const parts = s.split('.');
+  if (parts.length === 2 && parts[1].length > 2) {
+    const trimmed = parts[1].replace(/0+$/, '');
+    return trimmed.length <= 2 ? `${parts[0]}.${(trimmed + '00').slice(0, 2)}` : `${parts[0]}.${trimmed}`;
+  }
+  return s;
+}
 /** Decimal string → integer paise (exact, no floats). */
 function toPaise(v) {
   if (v === null || v === undefined || v === '') return 0;
@@ -2092,8 +2110,8 @@ async function renderShiftOpen(el) {
     <div class="h2">Open a shift</div>
     <form class="row end" onsubmit="openShift(event)">
       <label class="field grow" for="shiftTerminal" style="min-width:180px;">Terminal
-        <select id="shiftTerminal" class="input" required>${terms.map((t) => `<option value="${t.id}">${esc(t.terminalName)}</option>`).join('')}</select></label>
-      <label class="field" for="shiftFloat" style="width:160px;">Opening float (₹)<input id="shiftFloat" class="input" inputmode="decimal" value="1000.00" required /></label>
+        <select id="shiftTerminal" class="input" required aria-required="true">${terms.map((t) => `<option value="${t.id}">${esc(t.terminalName)}</option>`).join('')}</select></label>
+      <label class="field" for="shiftFloat" style="width:160px;">Opening float (₹)<input id="shiftFloat" class="input" inputmode="decimal" value="1000.00" required aria-required="true" /></label>
       <button class="btn-primary" type="submit" id="shiftOpenBtn" style="min-height:38px;">Open Shift</button>
     </form></div>`;
 }
@@ -2315,7 +2333,7 @@ function openVoid(id) {
   if (!b) return;
   openModal('Void bill ' + b.billNumber, `<form class="stack" onsubmit="confirmVoid(event, '${b.id}')">
     <div class="small">Total ${money(b.total)} · ${esc(b.paymentMode)}. Stock is returned and the sale is reversed in the accounts. This cannot be undone.</div>
-    <label class="field" for="voidReason">Reason (min 5 characters)<textarea id="voidReason" class="input" rows="3" minlength="5" maxlength="500" required></textarea></label>
+    <label class="field" for="voidReason">Reason (min 5 characters)<textarea id="voidReason" class="input" rows="3" minlength="5" maxlength="500" required aria-required="true"></textarea></label>
     <div class="row"><button type="submit" class="btn-danger" id="voidConfirmBtn">Void bill</button><button type="button" class="btn-sec" onclick="closeModal()">Cancel</button></div>
   </form>`);
 }
@@ -2409,7 +2427,7 @@ async function openStatement(id) {
         <div class="stat-card"><div class="stat-label">Remaining</div><div class="stat-value mono ${remaining < 0 ? 'neg' : ''}">${fmtPaise(remaining)}</div></div>
       </div>
       <form class="form-grid" id="repayForm" onsubmit="recordRepayment(event, '${c.id}')">
-        <label class="field" for="repayAmount">Repayment (₹)<input id="repayAmount" class="input" inputmode="decimal" required /></label>
+        <label class="field" for="repayAmount">Repayment (₹)<input id="repayAmount" class="input" inputmode="decimal" required aria-required="true" /></label>
         <label class="field" for="repayMode">Mode<select id="repayMode" class="input"><option>CASH</option><option>UPI</option><option>CARD</option></select></label>
         <label class="field" for="repayNotes">Notes<input id="repayNotes" class="input" maxlength="500" /></label>
         <button type="submit" class="btn-primary" id="repayBtn" ${toPaise(st.outstanding) <= 0 ? 'disabled' : ''}>Record repayment</button>
@@ -2704,7 +2722,7 @@ function openMrp(id) {
   const p = S.productMap[id];
   openModal('Update MRP — ' + p.name, `<form class="stack" onsubmit="saveMrp(event, '${p.id}')">
     <div class="muted small">Current MRP ${money(p.mrp)}. The change is recorded in the price audit log under your name.</div>
-    <label class="field" for="newMrpInput">New MRP (₹)<input id="newMrpInput" class="input" inputmode="decimal" value="${esc(p.mrp)}" required /></label>
+    <label class="field" for="newMrpInput">New MRP (₹)<input id="newMrpInput" class="input" inputmode="decimal" value="${esc(p.mrp)}" required aria-required="true" /></label>
     <div class="row"><button type="submit" class="btn-primary" id="mrpSaveBtn">Save &amp; audit</button><button type="button" class="btn-sec" onclick="closeModal()">Cancel</button></div></form>`);
 }
 async function saveMrp(e, id) {
@@ -2834,7 +2852,7 @@ function readInvoiceLines() {
 }
 function computeInvoice() {
   const lines = readInvoiceLines();
-  const total = lines.reduce((s, l) => s + (isMoney(l.costPrice) && l.quantity ? toPaise(l.costPrice) * l.quantity : 0), 0);
+  const total = lines.reduce((s, l) => s + (isPrecisionMoney(l.costPrice) && l.quantity ? toPaise(l.costPrice) * l.quantity : 0), 0);
   $('invComputed').textContent = 'Computed total ' + fmtPaise(total);
   return total;
 }
@@ -2844,7 +2862,7 @@ function invoiceHeader() {
   const lines = readInvoiceLines();
   if (!supplierName || !invoiceNumber) throw new Error('Supplier and invoice number are required.');
   if (!lines.length) throw new Error('Add at least one line.');
-  if (lines.some((l) => !l.quantity || !isMoney(l.costPrice) || !isMoney(l.mrp))) throw new Error('Every line needs bottles, cost and MRP.');
+  if (lines.some((l) => !l.quantity || !isPrecisionMoney(l.costPrice) || !isMoney(l.mrp))) throw new Error('Every line needs bottles, cost and MRP.');
   const total = $('invTotal').value.trim() || paiseToStr(computeInvoice());
   if (!isMoney(total)) throw new Error('Invoice total must be an amount.');
   return { supplierName, invoiceNumber, invoiceDate: $('invDate').value || bizDate(), total, lines };
@@ -3044,7 +3062,7 @@ function invLineRowHtml(item, idx, editable) {
   const needsConfirm = item.matchStatus === 'SUGGESTED' && editable;
   return `<tr class="inv-edit-row" data-item-id="${esc(item.id || '')}" data-match-status="${esc(item.matchStatus || 'UNMATCHED')}">
     <td class="small muted">${idx + 1}</td>
-    <td>${editable ? `<input class="input input-sm ie-desc" value="${esc(item.rawDescription || '')}" required maxlength="500" aria-label="Line ${idx + 1} description" />` : esc(item.rawDescription)}</td>
+    <td>${editable ? `<input class="input input-sm ie-desc" value="${esc(item.rawDescription || '')}" required aria-required="true" maxlength="500" aria-label="Line ${idx + 1} description" />` : esc(item.rawDescription)}</td>
     <td>
       ${editable ? `<select class="input input-sm ie-prod" onchange="onInvDraftProductChange(this)" aria-label="Line ${idx + 1} catalog product">${prodOpts}</select>` : `<b>${esc(item.productName || 'Unmatched')}</b>`}
       <div class="row small" style="margin-top:4px; gap:6px;">
@@ -3054,7 +3072,7 @@ function invLineRowHtml(item, idx, editable) {
       </div>
     </td>
     <td class="right">${editable ? `<input class="input input-sm ie-qty right" type="number" min="1" max="100000" value="${item.quantity || 1}" style="width:78px;" oninput="recalcInvDraft()" aria-label="Line ${idx + 1} quantity" />` : item.quantity}</td>
-    <td class="right">${editable ? `<input class="input input-sm ie-cost right mono" inputmode="decimal" value="${esc(item.costPrice || '0.00')}" style="width:96px;" oninput="recalcInvDraft()" aria-label="Line ${idx + 1} cost price" />` : `<span class="mono">${money(item.costPrice)}</span>`}</td>
+    <td class="right">${editable ? `<input class="input input-sm ie-cost right mono" inputmode="decimal" value="${esc(formatCostInput(item.costPrice))}" style="width:96px;" oninput="recalcInvDraft()" aria-label="Line ${idx + 1} cost price" />` : `<span class="mono">${money(item.costPrice)}</span>`}</td>
     <td class="right">${editable ? `<input class="input input-sm ie-mrp right mono" inputmode="decimal" value="${esc(item.mrp || '0.00')}" style="width:96px;" oninput="recalcInvDraft()" aria-label="Line ${idx + 1} MRP" />` : `<span class="mono">${money(item.mrp)}</span>`}</td>
     <td class="right mono"><b class="ie-linetotal">${money(item.lineCostTotal)}</b>${item.extractedAmount && item.extractedAmount !== item.lineCostTotal ? `<div class="muted small">Doc: ${money(item.extractedAmount)}</div>` : ''}</td>
     <td class="small">${flags || '<span class="muted">—</span>'}</td>
@@ -3089,7 +3107,7 @@ function renderSupplierInvoiceDetail() {
     ${inv.status === 'REJECTED' && inv.rejectionReason ? `<div class="neg small">Rejected: ${esc(inv.rejectionReason)}</div>` : ''}
     <div class="form-grid">
       <label class="field" for="invEditSupplier">Supplier
-        <input id="invEditSupplier" class="input input-sm" value="${esc(inv.supplierName || '')}" ${editable ? '' : 'disabled'} maxlength="200" required />
+        <input id="invEditSupplier" class="input input-sm" value="${esc(inv.supplierName || '')}" ${editable ? '' : 'disabled'} maxlength="200" required aria-required="true" />
       </label>
       <label class="field" for="invEditNumber">Invoice number
         <input id="invEditNumber" class="input input-sm" value="${esc(numVal)}" placeholder="${inv.invoiceNumber && String(inv.invoiceNumber).startsWith('DRAFT-') ? esc(inv.invoiceNumber) + ' (enter real no.)' : 'e.g. INV-2026-01'}" ${editable ? '' : 'disabled'} maxlength="60" />
@@ -3226,13 +3244,13 @@ async function openAddProductModalForLine(target) {
       </div>
       <div class="form-grid">
         <label class="field" for="modProdCat">Category *
-          <select id="modProdCat" class="input input-sm" required>${catOptions}</select>
+          <select id="modProdCat" class="input input-sm" required aria-required="true">${catOptions}</select>
         </label>
         <label class="field" for="modProdName">Product Name *
-          <input id="modProdName" class="input input-sm" required value="${esc(desc)}" maxlength="200" />
+          <input id="modProdName" class="input input-sm" required aria-required="true" value="${esc(desc)}" maxlength="200" />
         </label>
         <label class="field" for="modProdBrand">Brand *
-          <input id="modProdBrand" class="input input-sm" required value="${esc(brandSuggestion)}" maxlength="100" />
+          <input id="modProdBrand" class="input input-sm" required aria-required="true" value="${esc(brandSuggestion)}" maxlength="100" />
         </label>
         <label class="field" for="modProdVol">Volume (ml)
           <input id="modProdVol" class="input input-sm" type="number" min="1" max="5000" value="${detectedVol}" placeholder="e.g. 750" />
@@ -3244,7 +3262,7 @@ async function openAddProductModalForLine(target) {
           <input id="modProdCost" class="input input-sm mono" inputmode="decimal" value="${esc(cost)}" placeholder="0.00" />
         </label>
         <label class="field" for="modProdMrp">MRP (₹) *
-          <input id="modProdMrp" class="input input-sm mono" inputmode="decimal" required value="${esc(mrp)}" placeholder="e.g. 750.00" />
+          <input id="modProdMrp" class="input input-sm mono" inputmode="decimal" required aria-required="true" value="${esc(mrp)}" placeholder="e.g. 750.00" />
         </label>
         <label class="field" for="modProdBarcode">Barcode (optional)
           <input id="modProdBarcode" class="input input-sm" placeholder="Scan or type barcode" maxlength="100" />
@@ -3369,7 +3387,7 @@ function recalcInvDraft() {
     const costEl = tr.querySelector('.ie-cost');
     if (!qtyEl || !costEl) return;
     const qty = intOrNull(qtyEl.value) || 0;
-    const costP = isMoney(costEl.value) ? toPaise(costEl.value) : 0;
+    const costP = isPrecisionMoney(costEl.value) ? toPaise(costEl.value) : 0;
     const lineP = qty * costP;
     sumPaise += lineP;
     const lt = tr.querySelector('.ie-linetotal');
@@ -3400,7 +3418,7 @@ function collectInvDraftPayload() {
     const confirmMatch = !!tr.querySelector('.ie-confirm')?.checked || tr.dataset.matchStatus === 'MANUAL';
     if (!rawDescription) throw new Error(`Line ${i + 1}: enter a description.`);
     if (quantity === null || Number.isNaN(quantity) || quantity < 0) throw new Error(`Line ${i + 1}: quantity must be a whole number.`);
-    if (!isMoney(costPrice)) throw new Error(`Line ${i + 1}: cost must be a valid amount.`);
+    if (!isPrecisionMoney(costPrice)) throw new Error(`Line ${i + 1}: cost must be a valid amount.`);
     if (!isMoney(mrp)) throw new Error(`Line ${i + 1}: MRP must be a valid amount.`);
     return {
       ...(tr.dataset.itemId ? { id: tr.dataset.itemId } : {}),
@@ -3478,7 +3496,7 @@ function openRejectSupplierInvoice(id) {
   openModal('Reject supplier invoice', `<form class="stack" onsubmit="confirmRejectSupplierInvoice(event, '${id}')">
     <div class="muted small">Rejected invoices do not change stock or accounts. Provide a reason (at least 5 characters).</div>
     <label class="field" for="invRejectReason">Rejection reason
-      <input id="invRejectReason" class="input" required minlength="5" maxlength="500" placeholder="Duplicate or wrong quantities" />
+      <input id="invRejectReason" class="input" required aria-required="true" minlength="5" maxlength="500" placeholder="Duplicate or wrong quantities" />
     </label>
     <div class="row">
       <button type="submit" class="btn-danger" id="invRejectConfirmBtn">Reject invoice</button>
@@ -3543,7 +3561,14 @@ async function createCounterSheet() {
       toast('Counter sheet created for ' + sheetDate, 'success');
       loadCounterRecent();
     } catch (e) {
-      if (e.status === 409) { toast('A sheet already exists for this date — opening it.', 'info'); await loadCounterForDate(); }
+      if (e.status === 409 || (e.message && e.message.toLowerCase().includes('already exists'))) {
+        toast('A sheet already exists for this date — opening it.', 'info');
+        if (e.data && e.data.details && e.data.details.sheetId) {
+          await openCounterSheet(e.data.details.sheetId);
+        } else {
+          await loadCounterForDate();
+        }
+      }
       else toast('Could not create sheet: ' + e.message, 'error');
     }
   });
@@ -3573,22 +3598,44 @@ function renderCounterSheet() {
   const mgr = can('manager');
   el.innerHTML = `<div class="pad row between">
       <div><div class="h2">Sheet for ${esc(sh.sheetDate)}</div><div class="muted small">${plural(sh.lines.length, 'product')}${sh.postedAt ? ' · posted ' + fmtDateTime(sh.postedAt) : ''}</div></div>
-      <span id="counterStatus">${statusBadge(sh.status)}</span></div>
+      <div class="row gap-2 items-center"><span id="counterStatus">${statusBadge(sh.status)}</span>${!draft && mgr && (sh.postedAt && sh.postedAt.slice(0, 10) === businessDateOf() || sh.sheetDate === businessDateOf()) ? '<button type="button" class="btn-sec btn-sm" id="counterRevertBtn" onclick="revertCounterSheet()" style="color:var(--warn); border-color:var(--warn);">🔄 Revert to Draft</button>' : ''}</div></div>
     <div class="table-wrap"><table class="table"><thead><tr><th>Product</th><th class="right">Opening</th><th class="right">Inward</th><th class="right">Closing</th><th class="right">Sold</th><th class="right">Rate</th><th class="right">Revenue</th></tr></thead><tbody>
-      ${sh.lines.map((l) => `<tr data-product="${l.productId}">
-        <td><b>${esc(l.productName)}</b>${l.closingSplit && l.packQuantity ? `<div class="muted small">${l.closingSplit.cases} cases + ${l.closingSplit.loose} loose</div>` : ''}</td>
+      ${sh.lines.map((l) => {
+        const available = l.openingBottles + l.inwardBottles;
+        const posSold = l.posSoldBottles || 0;
+        const expectedClosing = Math.max(0, available - posSold);
+        let rowClass = '';
+        let statusBadge = '';
+        const isSurplus = l.closingBottles > available;
+        const isApproved = !!l.adjustmentApprovedById;
+
+        if (isSurplus) {
+          rowClass = 'row-surplus';
+          statusBadge = `<span class="tag warn small" style="margin-left:6px;">⚠️ Surplus +${l.closingBottles - available}</span>`;
+        } else if (posSold > 0 && l.closingBottles < expectedClosing) {
+          rowClass = 'row-shortage';
+          statusBadge = `<span class="tag neg small" style="margin-left:6px;">🔻 Below Stock -${expectedClosing - l.closingBottles}</span>`;
+        } else if (posSold > 0 && l.closingBottles > expectedClosing) {
+          rowClass = 'row-excess';
+          statusBadge = `<span class="tag small" style="margin-left:6px; color:var(--info); border-color:var(--info);">📦 Shelf Excess +${l.closingBottles - expectedClosing}</span>`;
+        }
+        return `<tr data-product="${l.productId}" class="${rowClass}">
+        <td><b>${esc(l.productName)}</b>${statusBadge}${l.closingSplit && l.packQuantity ? `<div class="muted small">${l.closingSplit.cases} cases + ${l.closingSplit.loose} loose</div>` : ''}</td>
         <td class="right">${l.openingBottles}</td>
         <td class="right">${draft && mgr ? `<input id="ci-${l.productId}" class="input input-sm counter-inward" type="number" min="0" value="${l.inwardBottles}" style="width:80px;" aria-label="Inward bottles for ${esc(l.productName)}" oninput="updateCounterLive()" />` : l.inwardBottles}</td>
         <td class="right">${draft ? `<input id="cc-${l.productId}" class="input input-sm counter-closing" type="number" min="0" value="${l.closingBottles}" style="width:80px;" aria-label="Closing bottles for ${esc(l.productName)}" oninput="updateCounterLive()" />
-            ${mgr ? `<label class="check small" id="ca-wrap-${l.productId}" hidden><input type="checkbox" id="ca-${l.productId}" /> approve surplus</label>` : ''}` : l.closingBottles}</td>
+            ${mgr ? `<label class="check small" id="ca-wrap-${l.productId}" ${isSurplus ? '' : 'hidden'}><input type="checkbox" id="ca-${l.productId}" ${isApproved ? 'checked' : ''} onchange="S.sheetDirty = true;" /> <span class="${isApproved ? 'pos' : 'warn'}">approve surplus</span></label>` : ''}` : l.closingBottles}</td>
         <td class="right" id="cs-${l.productId}">${l.soldBottles}</td>
         <td class="right mono">${money(l.sellingRate)}</td>
-        <td class="right mono" id="cr-${l.productId}">${money(l.lineRevenue)}</td></tr>`).join('')}
+        <td class="right mono" id="cr-${l.productId}">${money(l.lineRevenue)}</td></tr>`;
+      }).join('')}
     </tbody><tfoot><tr><td colspan="6">Total revenue</td><td class="right mono" id="counterTotal">${money(sh.totalRevenue)}</td></tr></tfoot></table></div>
     ${draft ? `<div class="pad row">
       <button type="button" class="btn-primary" id="counterSaveBtn" onclick="saveCounterSheet()">Save counts</button>
+      <button type="button" class="btn-sec" id="counterSyncBtn" onclick="syncCounterSheet()">🔄 Sync from Sales</button>
+      <button type="button" class="btn-sec" id="counterDownloadBtn" onclick="downloadCounterSheet('xlsx')">⬇ Download Excel</button>
       ${mgr ? '<button type="button" class="btn-sec" id="counterPostBtn" onclick="postCounterSheet()">Post sheet</button>' : '<span class="muted small">A manager posts the sheet.</span>'}
-      <span id="counterDirty" class="muted small" aria-live="polite"></span></div>` : '<div class="pad muted small">Posted sheets are read-only.</div>'}`;
+      <span id="counterDirty" class="muted small" aria-live="polite"></span></div>` : `<div class="pad row between muted small"><span>Posted sheets are read-only.${!draft && mgr && (sh.postedAt && sh.postedAt.slice(0, 10) === businessDateOf() || sh.sheetDate === businessDateOf()) ? ' <b style="color:var(--warn);">(Posted today — you can revert to draft)</b>' : ''}</span><button type="button" class="btn-sec btn-sm" id="counterDownloadBtn" onclick="downloadCounterSheet('xlsx')">⬇ Download Excel</button></div>`}`;
 }
 function updateCounterLive() {
   const sh = S.sheet;
@@ -3600,8 +3647,12 @@ function updateCounterLive() {
     const inward = inwardEl ? intOrNull(inwardEl.value) : l.inwardBottles;
     const soldEl = $('cs-' + l.productId);
     const revEl = $('cr-' + l.productId);
+    const rowEl = document.querySelector(`tr[data-product="${l.productId}"]`);
     if (closing === null || Number.isNaN(closing) || inward === null || Number.isNaN(inward)) { soldEl.textContent = '?'; revEl.textContent = '—'; continue; }
-    const sold = l.openingBottles + inward - closing;
+    const available = l.openingBottles + inward;
+    const posSold = l.posSoldBottles || 0;
+    const expectedClosing = Math.max(0, available - posSold);
+    const sold = available - closing;
     const wrap = $('ca-wrap-' + l.productId);
     if (wrap) wrap.hidden = sold >= 0;
     soldEl.textContent = sold >= 0 ? String(sold) : `surplus ${-sold}`;
@@ -3609,11 +3660,37 @@ function updateCounterLive() {
     const rev = sold > 0 ? toPaise(l.sellingRate) * sold : 0;
     revEl.textContent = fmtPaise(rev);
     total += rev;
+
+    if (rowEl) {
+      rowEl.classList.remove('row-surplus', 'row-shortage', 'row-excess');
+      if (closing > available) {
+        rowEl.classList.add('row-surplus');
+      } else if (posSold > 0 && closing < expectedClosing) {
+        rowEl.classList.add('row-shortage');
+      } else if (posSold > 0 && closing > expectedClosing) {
+        rowEl.classList.add('row-excess');
+      }
+    }
   }
   $('counterTotal').textContent = fmtPaise(total);
   S.sheetDirty = true;
   if ($('counterDirty')) $('counterDirty').textContent = 'Unsaved changes — preview only until saved.';
 }
+async function revertCounterSheet() {
+  const sh = S.sheet;
+  if (!sh) return;
+  if (!confirm('Revert this counter sheet to Draft?\nStock corrections applied when posting will be reversed back to their pre-post quantities.')) return;
+  try {
+    S.sheet = await api('/counter-sheets/sheet/' + sh.id + '/unpost', { method: 'POST', body: {} });
+    S.sheetDirty = false;
+    toast('Counter sheet reverted to Draft — stock corrections reversed', 'success');
+    renderCounterSheet();
+    loadCounterSheets();
+  } catch (e) {
+    toast('Revert failed: ' + e.message, 'error');
+  }
+}
+
 async function saveCounterSheet(silent) {
   const sh = S.sheet;
   const lines = [];
@@ -3638,6 +3715,56 @@ async function saveCounterSheet(silent) {
     if (!silent) toast('Counts saved — revenue ' + money(S.sheet.totalRevenue), 'success');
     return true;
   } catch (e) { toast('Save failed: ' + e.message, 'error'); return false; }
+}
+async function downloadCounterSheet(format = 'xlsx') {
+  const sh = S.sheet;
+  if (!sh) { toast('No counter sheet loaded to download.', 'error'); return; }
+  try {
+    const url = format === 'xlsx' ? '/counter-sheets/sheet/' + sh.id + '/excel' : '/counter-sheets/sheet/' + sh.id + '/export';
+    const res = await apiFull(url, { raw: true });
+    if (res.res && res.res.ok) {
+      const blob = await res.res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'counter-sheet-' + sh.sheetDate + (format === 'xlsx' ? '.xlsx' : '.csv');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast('Counter sheet downloaded (' + (format === 'xlsx' ? 'Excel' : 'CSV') + ')', 'success');
+      return;
+    }
+  } catch (err) { console.error(err); }
+  const lines = [
+    'Daily Counter Sheet',
+    'Sheet Date: ' + sh.sheetDate,
+    'Status: ' + sh.status,
+    'Total Revenue: ' + sh.totalRevenue,
+    '',
+    'Product,Pack Qty,Opening,Inward,Closing,Sold,Rate,Revenue'
+  ];
+  for (const l of sh.lines) {
+    lines.push(`"${(l.productName || '').replace(/"/g, '""')}",${l.packQuantity || 1},${l.openingBottles},${l.inwardBottles},${l.closingBottles},${l.soldBottles},${l.sellingRate},${l.lineRevenue}`);
+  }
+  lines.push(`,,,,,,Total,${sh.totalRevenue}`);
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'counter-sheet-' + sh.sheetDate + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('Counter sheet downloaded', 'success');
+}
+
+async function syncCounterSheet() {
+  const sh = S.sheet;
+  if (!sh) return;
+  try {
+    S.sheet = await api(`/counter-sheets/sheet/${sh.id}/sync`, { method: 'POST' });
+    S.sheetDirty = false;
+    renderCounterSheet();
+    toast('Sheet synced with live sales — revenue ' + money(S.sheet.totalRevenue), 'success');
+  } catch (e) { toast('Sync failed: ' + e.message, 'error'); }
 }
 async function postCounterSheet() {
   if (!(await confirmModal('Post counter sheet?', 'Stock will be corrected to the closing counts as of the sheet day. Posted sheets cannot be edited.', 'Post sheet'))) return;
@@ -3845,8 +3972,8 @@ function showAccTab(k) {
       <label class="field" for="dbType">Type<select id="dbType" class="input input-sm"><option value="">All</option>${['SALES', 'PURCHASE', 'PAYMENT', 'RECEIPT', 'JOURNAL', 'CONTRA'].map((t) => `<option>${t}</option>`).join('')}</select></label><button type="button" class="btn-primary btn-sm" onclick="loadDayBook()">Load</button></div>`,
     ledgers: `<div class="row"><button type="button" class="btn-primary btn-sm" onclick="loadLedgers()">Refresh</button></div>`,
     expenses: `<form class="form-grid" onsubmit="recordExpense(event)">
-      <label class="field" for="expCategory">Category<input id="expCategory" class="input" required minlength="2" maxlength="60" placeholder="Electricity" /></label>
-      <label class="field" for="expAmount">Amount (₹)<input id="expAmount" class="input" inputmode="decimal" required /></label>
+      <label class="field" for="expCategory">Category<input id="expCategory" class="input" required aria-required="true" minlength="2" maxlength="60" placeholder="Electricity" /></label>
+      <label class="field" for="expAmount">Amount (₹)<input id="expAmount" class="input" inputmode="decimal" required aria-required="true" /></label>
       <label class="field" for="expMode">Paid by<select id="expMode" class="input"><option>CASH</option><option>UPI</option><option>CARD</option><option>BANK</option></select></label>
       <label class="field" for="expDate">Date<input id="expDate" class="input" type="date" value="${bizDate()}" /></label>
       <label class="field" for="expNotes">Notes<input id="expNotes" class="input" maxlength="500" /></label>
@@ -4193,7 +4320,7 @@ async function createBranch(e) {
 function renameBranch(id) {
   const b = S.branches.find((x) => x.id === id);
   openModal('Rename branch ' + b.code, `<form class="stack" onsubmit="saveBranchName(event, '${id}')">
-    <label class="field" for="rbName">Name<input id="rbName" class="input" value="${esc(b.name)}" required maxlength="200" /></label>
+    <label class="field" for="rbName">Name<input id="rbName" class="input" value="${esc(b.name)}" required aria-required="true" maxlength="200" /></label>
     <div class="row"><button type="submit" class="btn-primary">Save</button><button type="button" class="btn-sec" onclick="closeModal()">Cancel</button></div></form>`);
 }
 async function saveBranchName(e, id) {
@@ -4214,8 +4341,8 @@ async function loadSyndicates() {
         ${invoices.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Period</th><th class="right">Bills</th><th class="right">Gross</th><th class="right">Tax</th></tr></thead><tbody>
           ${invoices.map((i) => `<tr><td>${esc(i.periodStart)} → ${esc(i.periodEnd)}</td><td class="right">${i.billCount}</td><td class="right mono">${money(i.grossSales)}</td><td class="right mono">${money(i.totalTax)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="muted small">No consolidated invoices yet.</div>'}
         <form class="form-grid" onsubmit="createConsolidated(event, '${s.id}')">
-          <label class="field">Period start<input class="input ci-start" type="date" value="${monthStart()}" required /></label>
-          <label class="field">Period end<input class="input ci-end" type="date" value="${bizDate()}" required /></label>
+          <label class="field">Period start<input class="input ci-start" type="date" value="${monthStart()}" required aria-required="true" /></label>
+          <label class="field">Period end<input class="input ci-end" type="date" value="${bizDate()}" required aria-required="true" /></label>
           <button type="submit" class="btn-primary">Generate consolidated invoice</button></form></div>`;
     }));
     el.innerHTML = parts.join('<hr style="border:none; border-top:1px solid var(--border); margin:12px 0;">');
