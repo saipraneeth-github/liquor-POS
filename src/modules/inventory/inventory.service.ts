@@ -166,13 +166,13 @@ export async function applyApprovedInvoice(
   const stockAuditInserts = [];
   const productUpdatesMap = new Map<string, {
     costPrice: string;
-    mrp?: string;
-    previousCostPrice?: string;
-    costPerCase?: string;
+    mrp?: string | null;
+    previousCostPrice?: string | null;
+    costPerCase?: string | null;
     lastInvoiceId?: string;
     lastInvoiceNumber?: string;
-    lastInvoiceDate?: Date;
-    costUpdatedAt?: Date;
+    lastInvoiceDate?: string;
+    costUpdatedAt?: string;
   }>();
   const priceAuditInserts = [];
 
@@ -211,13 +211,13 @@ export async function applyApprovedInvoice(
 
     productUpdatesMap.set(productId, {
       costPrice: newCostPrice,
-      previousCostPrice: prevCostPrice ?? undefined,
-      costPerCase: caseRateVal ?? undefined,
+      previousCostPrice: prevCostPrice ?? null,
+      costPerCase: caseRateVal ?? null,
       lastInvoiceId: invoice.id,
       lastInvoiceNumber: invoice.invoiceNumber,
-      lastInvoiceDate: invoice.invoiceDate ?? new Date(),
-      costUpdatedAt: new Date(),
-      ...(mrpChanged ? { mrp: newMrp } : {}),
+      lastInvoiceDate: invoice.invoiceDate instanceof Date ? invoice.invoiceDate.toISOString() : (invoice.invoiceDate ? String(invoice.invoiceDate) : new Date().toISOString()),
+      costUpdatedAt: new Date().toISOString(),
+      mrp: mrpChanged ? newMrp : null,
     });
 
     if (mrpChanged) {
@@ -246,42 +246,42 @@ export async function applyApprovedInvoice(
     // Replaces O(N) sequential database updates with a single query.
     // Impact: Eliminates N+1 queries during invoice approval, massively reducing DB lock contention and transaction duration.
     const costPriceCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costPrice !== undefined ? data.costPrice : products.costPrice}`),
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costPrice}`),
       sql` `
     )} ELSE ${products.costPrice} END AS numeric)`;
 
     const mrpCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.mrp !== undefined ? data.mrp : products.mrp}`),
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.mrp ?? products.mrp}`),
       sql` `
     )} ELSE ${products.mrp} END AS numeric)`;
 
     const previousCostPriceCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.previousCostPrice !== undefined ? data.previousCostPrice : products.previousCostPrice}`),
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.previousCostPrice}`),
       sql` `
     )} ELSE ${products.previousCostPrice} END AS numeric)`;
 
     const costPerCaseCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costPerCase !== undefined ? data.costPerCase : products.costPerCase}`),
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costPerCase}`),
       sql` `
     )} ELSE ${products.costPerCase} END AS numeric)`;
 
     const lastInvoiceIdCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceId !== undefined ? data.lastInvoiceId : products.lastInvoiceId}`),
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceId}`),
       sql` `
     )} ELSE ${products.lastInvoiceId} END AS uuid)`;
 
     const lastInvoiceNumberCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceNumber !== undefined ? data.lastInvoiceNumber : products.lastInvoiceNumber}`),
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceNumber}`),
       sql` `
     )} ELSE ${products.lastInvoiceNumber} END AS text)`;
 
     const lastInvoiceDateCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceDate !== undefined ? data.lastInvoiceDate : products.lastInvoiceDate}`),
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.lastInvoiceDate}`),
       sql` `
     )} ELSE ${products.lastInvoiceDate} END AS timestamp)`;
 
     const costUpdatedAtCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costUpdatedAt !== undefined ? data.costUpdatedAt : products.costUpdatedAt}`),
+      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costUpdatedAt}`),
       sql` `
     )} ELSE ${products.costUpdatedAt} END AS timestamp)`;
 
