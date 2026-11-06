@@ -191,6 +191,21 @@ Design:
   - Added unit tests in `tests/unit/invoice.duplicate.test.ts` (4/4 passed) and integration tests in `tests/integration/invoices.int.test.ts` (3/3 passed).
   - Verification: `npm run build` clean (0 errors), Vitest **248/248 unit tests** passed, Playwright `supplier-invoices.spec.ts` passed.
 
+- **2026-11-06** -- Beer Bottle Themed Loader & Inward Double-Click Protection:
+  - Created animated SVG `BeerBottleLoader.tsx` with realistic golden beer liquid, wave oscillations, foam froth head, rising effervescent bubbles, crown cap, and glass sheen reflections.
+  - Implemented full-screen modal overlay during inward approval (`isApproving`) and bill scanning/uploading (`uploading`) to prevent double-clicks and reassure users while batch stock ledger writes complete.
+  - Added multi-stage pipeline indicators (`1. Saving bill ➔ 2. Inwarding stock ➔ 3. Live ledger`) with dynamic bottle count and total cost badges.
+  - Disabled all action buttons (`Confirm & Add to Live Stock`, `Proceed to Inward Confirmation`, `Confirm Inward`) with spinner state when processing.
+  - Mirrored themed beer bottle loader overlay into `preview.html`.
+  - Optimized post-approval cache refresh by executing `loadStock()` and `loadInvoices()` concurrently via `Promise.all`.
+
+- **2026-11-05** -- Database Latency Optimization & Neon Singapore Migration:
+  - Fixed bulk product update `TypeError [ERR_INVALID_ARG_TYPE]` on supplier invoice approval in `src/modules/inventory/inventory.service.ts` by converting `Date` objects to ISO strings before parameterized SQL execution.
+  - Replaced Ohio (`us-east-2`) database with high-speed Neon Asia Pacific / Singapore (`ap-southeast-1`) database pooler in `.env`.
+  - Ran `npm run db:migrate` and applied all schema migrations; populated catalog with `npm run db:seed`.
+  - Verified backend server running on `http://localhost:3001` and frontend Vite dev server running on `http://localhost:5173`.
+  - Confirmed `/health` ok and catalog queries executing smoothly.
+
 - **2026-10-31** -- On-the-Fly Catalog Product Creation for Missing Invoice Items:
   - Added dedicated `GET /api/v1/categories` route returning all categories with tax rates.
   - Updated `POST /api/v1/products` RBAC to `requireRole('cashier')` (previously manager) so store cashiers can register missing items while entering bills without interrupting the inward workflow.

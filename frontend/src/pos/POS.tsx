@@ -10,6 +10,7 @@ import {
 } from '../components/category-icons';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter, showToast } from '../lib/print';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 type Serving = { id: string; label: string; volumeMl: number | null; price: string };
 
@@ -542,7 +543,11 @@ export function POS() {
           )}
         </div>
 
-        {filteredProducts.length === 0 ? (
+        {loadingProducts ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700">
+            <BeerBottleLoader inline size="sm" title="Pouring POS Catalog…" subtitle="Fetching live counter stock & prices…" />
+          </div>
+        ) : filteredProducts.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-gray-500 bg-white dark:bg-gray-800 rounded-lg border border-dashed border-gray-300 dark:border-gray-700">
             <span className="text-3xl mb-2">🍹</span>
             <p className="font-semibold text-gray-700 dark:text-gray-200">No products found</p>
@@ -897,7 +902,7 @@ export function POS() {
                   </div>
 
                   {loadingCredit ? (
-                    <div className="p-2 text-center text-xs text-gray-500 animate-pulse">Loading khata customers...</div>
+                    <BeerBottleLoader inline size="sm" title="Loading Khata Customers…" />
                   ) : creditResults.length > 0 ? (
                     <div id="creditResults" className="max-h-36 overflow-y-auto border rounded divide-y dark:border-gray-700 dark:divide-gray-700 bg-white dark:bg-gray-800">
                       {creditResults.map((c) => {

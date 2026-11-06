@@ -28,12 +28,18 @@ const pageMinRole: Record<string, string> = {
 // Pages tied to one SaaS role: the Platform console is Super Admin only, Business Settings is Admin only
 const pageOnlyRole: Record<string, string> = { '/platform': 'super_admin' };
 
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
+
 export function ProtectedRoute() {
   const { user, saasRole, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center text-sm text-gray-500" id="sessionLoading">Loading…</div>;
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-slate-950" id="sessionLoading">
+        <BeerBottleLoader inline size="md" title="Chilling & Opening Session…" subtitle="Checking session credentials and active branch…" />
+      </div>
+    );
   }
 
   if (!user) {

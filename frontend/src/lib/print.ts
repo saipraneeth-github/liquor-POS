@@ -56,17 +56,8 @@ export function parseFieldErrors(err: unknown): Record<string, string> {
   }
 }
 
-export function showToast(msg: string, type: 'success' | 'error' | 'info' = 'success') {
-  const host = document.getElementById('toastHost');
-  if (!host) return;
-  const el = document.createElement('div');
-  el.className = `toast ${type} ${
-    type === 'error' ? 'bg-red-600' : type === 'info' ? 'bg-blue-600' : 'bg-emerald-600'
-  } text-white p-3 rounded-lg shadow-lg font-medium text-sm mb-2`;
-  el.textContent = msg;
-  host.appendChild(el);
-  setTimeout(() => el.remove(), 4500);
-}
+import { showToast } from './toast.js';
+export { showToast };
 
 export type PrintKind = 'bills' | 'kot';
 

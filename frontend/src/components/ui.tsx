@@ -61,3 +61,5 @@ export function Badge({ children, tone }: { children: ReactNode; tone: 'good' | 
   }[tone];
   return <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${cls}`}>{children}</span>;
 }
+
+export { BeerBottleLoader, type BeerBottleLoaderProps } from './BeerBottleLoader';

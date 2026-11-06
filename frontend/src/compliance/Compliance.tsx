@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface Category {
   id: string;
@@ -165,7 +166,7 @@ export function Compliance() {
 
         <div id="liftingReport" className="table-wrap overflow-x-auto text-sm">
           {loading ? (
-            <div className="p-4 text-center text-gray-500">Loading lifting report…</div>
+            <BeerBottleLoader inline size="sm" title="Loading Excise Lifting Report…" subtitle="Calculating lifted cases against statutory quotas…" />
           ) : liftingRows.length === 0 ? (
             <div className="p-4 text-center text-gray-500">No quotas overlap this range.</div>
           ) : (

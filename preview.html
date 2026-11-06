@@ -158,7 +158,26 @@
   /* ── App shell ───────────────────────────────────────────────────────────── */
   #mainApp { display: none; height: 100vh; height: 100dvh; }
   #mainApp.on { display: flex; }
-  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); width: 230px; flex-shrink: 0; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+  .sidebar {
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    width: 230px;
+    flex-shrink: 0;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+    transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), padding 0.25s, opacity 0.25s;
+  }
+  .sidebar.collapsed {
+    width: 0 !important;
+    padding: 0 !important;
+    border-right: none !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
   .brand { display: flex; align-items: center; gap: 10px; padding: 2px 4px; }
   .nav { display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow-y: auto; }
   .nav-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; cursor: pointer; color: var(--muted-foreground); font-size: 13px; font-weight: 500; background: none; border: none; text-align: left; width: 100%; }
@@ -167,7 +186,7 @@
   .user-card { padding: 10px 12px; background: var(--accent); border-radius: 10px; }
   .main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
   .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; background: var(--background); }
-  #menuBtn { display: none; }
+  #menuBtn { display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
   #pageTitle { font-weight: 700; font-size: 16px; }
   .branch-box { display: flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; }
   .branch-box select { width: auto; max-width: 220px; padding: 6px 10px; }
@@ -227,10 +246,47 @@
   .modal { display: none; position: fixed; inset: 0; background: var(--overlay); z-index: 200; align-items: center; justify-content: center; padding: 16px; }
   .modal.on { display: flex; }
   .modal-card { width: 100%; max-width: 560px; max-height: calc(100vh - 32px); overflow: auto; padding: 22px; }
-  #toastHost { position: fixed; right: 16px; bottom: 16px; z-index: 400; display: flex; flex-direction: column; gap: 8px; max-width: min(380px, calc(100vw - 32px)); }
-  .toast { background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--info); border-radius: 8px; padding: 10px 14px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
-  .toast.error { border-left-color: var(--danger); }
-  .toast.success { border-left-color: var(--success); }
+  #toastHost {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    left: auto;
+    bottom: auto;
+    transform: none;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
+    width: auto;
+    max-width: 540px;
+    padding: 0;
+    pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto;
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 24px;
+    font-size: 17px;
+    font-weight: 700;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    animation: toastSlideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    text-align: left;
+    line-height: 1.4;
+  }
+  .toast.error { background: #dc2626; color: #ffffff; border-color: #f87171; }
+  .toast.success { background: #16a34a; color: #ffffff; border-color: #4ade80; }
+  .toast.info { background: #2563eb; color: #ffffff; border-color: #60a5fa; }
+  @keyframes toastSlideInRight {
+    from { opacity: 0; transform: translateX(30px) scale(0.95); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
 
   /* ── Responsive ──────────────────────────────────────────────────────────── */
   @media (max-width: 900px) {
@@ -271,11 +327,82 @@
     .print-divider { border-top: 1px dashed black; margin: 4px 0; }
   }
   }
+
+  /* ─── Beer GIF Loader Styles ─── */
+  .beer-loader-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    animation: fadeIn 0.2s ease-out;
+  }
+  .beer-loader-overlay[hidden] { display: none !important; }
+  .beer-loader-card {
+    background: transparent;
+    color: #ffffff;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+    max-width: 400px;
+    width: 100%;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .beer-gif-wrap {
+    width: 200px;
+    height: 150px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+  }
+  .beer-gif-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    background: transparent;
+    mix-blend-mode: screen;
+  }
+  #beerLoaderTitle {
+    color: #ffffff !important;
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.6);
+  }
+  #beerLoaderSubtitle {
+    color: rgba(254, 240, 138, 0.92) !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+    margin-top: 6px;
+    max-width: 320px;
+  }
 </style>
 </head>
 <body>
 <a class="skip-link" href="#content">Skip to content</a>
 <div id="toastHost" role="status" aria-live="polite"></div>
+
+<!-- ═════════════════════ BEER GIF LOADER ═════════════════════ -->
+<div id="beerLoaderOverlay" class="beer-loader-overlay" hidden role="status" aria-live="polite">
+  <div class="beer-loader-card">
+    <div class="beer-gif-wrap">
+      <img src="Beer-loader.gif" alt="Loading…" class="beer-gif-img" />
+    </div>
+    <div class="h2" id="beerLoaderTitle">Pouring Stock into Live Inventory…</div>
+    <div class="muted small" id="beerLoaderSubtitle" style="margin-top:6px; max-width:320px;">Adding bottles to store stock &amp; updating accounting ledgers. Please wait…</div>
+    <div id="beerLoaderDetails" class="chip chip-amber" style="margin-top:12px; display:none;"></div>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════ LOGIN ═══════════════════════════════ -->
 <div id="loginPage">
@@ -311,12 +438,15 @@
 <!-- ═══════════════════════════════ MAIN APP ═══════════════════════════════ -->
 <div id="mainApp">
   <aside id="sidebar" class="sidebar" aria-label="Main navigation">
-    <div class="brand">
-      <div style="font-size:24px;" aria-hidden="true">🍾</div>
-      <div>
-        <div style="font-weight:700;">Liquor Counter</div>
-        <div class="muted small" id="sidebarBranch">—</div>
+    <div class="brand" style="justify-content: space-between;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="font-size:24px;" aria-hidden="true">🍾</div>
+        <div>
+          <div style="font-weight:700;">Liquor Counter</div>
+          <div class="muted small" id="sidebarBranch">—</div>
+        </div>
       </div>
+      <button type="button" class="theme-btn" onclick="toggleSidebar(false)" style="padding:4px 8px; font-size:13px; cursor:pointer;" title="Close sidebar (Ctrl+B)" aria-label="Close sidebar">✕</button>
     </div>
     <nav class="nav" id="navList"></nav>
     <div class="row">
@@ -941,6 +1071,26 @@ function toast(msg, kind = 'info', ms = 4500) {
   $('toastHost').appendChild(el);
   setTimeout(() => el.remove(), ms);
 }
+function showBeerLoader({ title, subtitle, bottlesCount, totalCost } = {}) {
+  const overlay = $('beerLoaderOverlay');
+  if (!overlay) return;
+  if (title) $('beerLoaderTitle').textContent = title;
+  if (subtitle) $('beerLoaderSubtitle').textContent = subtitle;
+  const det = $('beerLoaderDetails');
+  if (det) {
+    if (bottlesCount !== undefined || totalCost !== undefined) {
+      det.style.display = 'inline-block';
+      det.textContent = `🍾 ${bottlesCount || 0} bottles • ₹${money(totalCost || 0)}`;
+    } else {
+      det.style.display = 'none';
+    }
+  }
+  overlay.hidden = false;
+}
+function hideBeerLoader() {
+  const overlay = $('beerLoaderOverlay');
+  if (overlay) overlay.hidden = true;
+}
 function loading(el, msg = 'Loading…') { if (el) el.innerHTML = `<div class="state" role="status">⏳ ${esc(msg)}</div>`; }
 function empty(el, msg) { if (el) el.innerHTML = `<div class="state">${esc(msg)}</div>`; }
 function errorState(el, err) { if (el) el.innerHTML = `<div class="state error" role="alert">⚠ ${esc(err && err.message ? err.message : err)}</div>`; }
@@ -1044,6 +1194,11 @@ function confirmModal(title, message, okLabel = 'Confirm', danger = false) {
   });
 }
 document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+    e.preventDefault();
+    toggleSidebar();
+    return;
+  }
   if (e.key !== 'Escape') return;
   if ($('modal').classList.contains('on')) closeModal();
   else if ($('checkoutModal').classList.contains('on')) newBill();
@@ -1217,6 +1372,9 @@ async function bootstrap() {
   applyRoleVisibility();
   $('loginPage').hidden = true;
   $('mainApp').classList.add('on');
+  if (!NARROW_MQ.matches && localStorage.getItem('lc_sidebar_collapsed') === 'true') {
+    $('sidebar').classList.add('collapsed');
+  }
   syncSidebarInert();
   renderLastSync();
   renderOffline();
@@ -1292,15 +1450,23 @@ function syncSidebarInert() {
   sb.inert = NARROW_MQ.matches && !sb.classList.contains('open');
 }
 function toggleSidebar(force, focusTarget) {
-  const wasOpen = $('sidebar').classList.contains('open');
-  const open = typeof force === 'boolean' ? force : !wasOpen;
-  $('sidebar').classList.toggle('open', open);
-  $('sidebarBackdrop').classList.toggle('on', open);
-  $('menuBtn').setAttribute('aria-expanded', String(open));
-  syncSidebarInert();
-  if (!NARROW_MQ.matches || open === wasOpen) return;
-  if (open) { const first = $('sidebar').querySelector('.nav-item'); if (first) setTimeout(() => first.focus(), 0); }
-  else if ($('sidebar').contains(document.activeElement) || focusTarget) (focusTarget || $('menuBtn')).focus();
+  if (NARROW_MQ.matches) {
+    const wasOpen = $('sidebar').classList.contains('open');
+    const open = typeof force === 'boolean' ? force : !wasOpen;
+    $('sidebar').classList.toggle('open', open);
+    $('sidebarBackdrop').classList.toggle('on', open);
+    $('menuBtn').setAttribute('aria-expanded', String(open));
+    syncSidebarInert();
+    if (!NARROW_MQ.matches || open === wasOpen) return;
+    if (open) { const first = $('sidebar').querySelector('.nav-item'); if (first) setTimeout(() => first.focus(), 0); }
+    else if ($('sidebar').contains(document.activeElement) || focusTarget) (focusTarget || $('menuBtn')).focus();
+  } else {
+    const isCollapsed = $('sidebar').classList.contains('collapsed');
+    const nextCollapsed = typeof force === 'boolean' ? !force : !isCollapsed;
+    $('sidebar').classList.toggle('collapsed', nextCollapsed);
+    $('menuBtn').setAttribute('aria-expanded', String(!nextCollapsed));
+    try { localStorage.setItem('lc_sidebar_collapsed', String(nextCollapsed)); } catch {}
+  }
 }
 NARROW_MQ.addEventListener('change', () => { if (!NARROW_MQ.matches) toggleSidebar(false); syncSidebarInert(); });
 
@@ -2972,6 +3138,10 @@ async function uploadSupplierInvoice(e) {
   if (dt) fd.append('invoiceDate', dt);
   fd.append('file', file);
 
+  showBeerLoader({
+    title: 'Uncapping & Reading Supplier Bill…',
+    subtitle: 'Extracting line items, pack sizes & matching catalog products…'
+  });
   await withBtn($('invUploadBtn'), 'Extracting…', async () => {
     try {
       const res = await fetch(`/api/v1/invoices/${S.branchId}/upload`, {
@@ -2995,6 +3165,8 @@ async function uploadSupplierInvoice(e) {
       loadSupplierInvoices();
     } catch (err) {
       toast('Upload failed: ' + err.message, 'error', 7000);
+    } finally {
+      hideBeerLoader();
     }
   });
 }
@@ -3150,6 +3322,7 @@ function renderSupplierInvoiceDetail() {
       <div class="row">
         ${editable ? `<button type="button" class="btn-sec" id="invSaveDraftBtn" onclick="saveSupplierInvoiceDraft()">💾 Save draft</button>` : ''}
         ${editable && mgr && inv.id && inv.status === 'DRAFT' ? `<button type="button" class="btn-sec" id="invReviewBtn" onclick="reviewSupplierInvoice('${inv.id}')">✓ Mark reviewed</button>` : ''}
+        ${inv.status === 'REVIEWED' ? `<span class="chip chip-blue" style="font-weight:bold;">✓ Reviewed &amp; Verified</span>` : ''}
         ${editable && mgr ? `<button type="button" class="btn-primary" id="invApproveBtn" onclick="approveSupplierInvoice()">✅ Approve &amp; add stock</button>` : ''}
         ${editable && mgr && inv.id ? `<button type="button" class="btn-danger" id="invRejectBtn" onclick="openRejectSupplierInvoice('${inv.id}')">✕ Reject</button>` : ''}
       </div>
@@ -3463,13 +3636,18 @@ async function saveSupplierInvoiceDraft(silent) {
 
 async function reviewSupplierInvoice(id) {
   if (!(await saveSupplierInvoiceDraft(true))) return;
+  showBeerLoader({
+    title: 'Reviewing Supplier Invoice…',
+    subtitle: 'Checking catalog matches, line rates and excise taxes…'
+  });
   await withBtn($('invReviewBtn'), 'Reviewing…', async () => {
     try {
       S.activeInvoice = await api(`/invoices/detail/${id}/review`, { method: 'POST' });
       renderSupplierInvoiceDetail();
       loadSupplierInvoices();
-      toast('Invoice marked as reviewed', 'success');
+      toast('✓ Invoice marked as reviewed and ready for inwarding', 'success');
     } catch (e) { toast('Review failed: ' + e.message, 'error'); }
+    finally { hideBeerLoader(); }
   });
 }
 
@@ -3481,6 +3659,12 @@ async function approveSupplierInvoice() {
   if (!(await confirmModal('Approve supplier invoice?',
     `Approves invoice ${S.activeInvoice.invoice.invoiceNumber}, adds ${plural(totalBottles, 'bottle')} to stock and posts a purchase voucher for ${money(S.activeInvoice.invoice.linesTotal)}.`,
     'Approve invoice'))) return;
+  showBeerLoader({
+    title: 'Pouring Stock into Live Inventory…',
+    subtitle: `Adding ${totalBottles} bottles to store stock & updating ledgers…`,
+    bottlesCount: totalBottles,
+    totalCost: S.activeInvoice.invoice.linesTotal
+  });
   await withBtn($('invApproveBtn'), 'Approving…', async () => {
     try {
       S.activeInvoice = await api(`/invoices/detail/${id}/approve`, { method: 'POST' });
@@ -3489,6 +3673,7 @@ async function approveSupplierInvoice() {
       await loadCatalog();
       loadStockPage();
     } catch (e) { toast('Approval failed: ' + e.message, 'error'); }
+    finally { hideBeerLoader(); }
   });
 }
 

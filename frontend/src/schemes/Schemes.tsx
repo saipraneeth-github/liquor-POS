@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface Scheme {
   id: string;
@@ -250,7 +251,9 @@ export function Schemes() {
 
       <div id="schemeList" className="two-col grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {loading ? (
-          <div className="col-span-full p-8 text-center text-gray-500">Loading schemes…</div>
+          <div className="col-span-full">
+            <BeerBottleLoader inline size="sm" title="Loading Supplier Schemes…" subtitle="Evaluating purchase slabs and target rewards…" />
+          </div>
         ) : schemes.length === 0 ? (
           <div className="card state col-span-full p-8 text-center text-gray-500 bg-white rounded shadow">
             No schemes yet. Create one below.

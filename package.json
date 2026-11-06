@@ -19,6 +19,7 @@
     "db:push": "drizzle-kit push",
     "super-admin": "node --env-file=.env --import tsx src/db/create-super-admin.ts",
     "db:seed": "node --env-file=.env --import tsx src/db/seed.ts",
+    "db:clear-inventory": "node --env-file=.env --import tsx src/db/clear-inventory.ts",
     "db:migrate": "node --env-file=.env --import tsx src/db/migrate.ts",
     "dev:frontend": "cd frontend && npm run dev",
     "build:frontend": "cd frontend && npm run build"
@@ -58,7 +59,7 @@
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.28.1",
     "supertest": "^7.0.0",
-    "tsx": "^4.19.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },

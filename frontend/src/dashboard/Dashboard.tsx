@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface Bill {
   id: string;
@@ -120,7 +121,9 @@ export function Dashboard() {
             </div>
           </div>
         ) : loading ? (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading today's figures…</div>
+          <div className="card pad p-8 bg-white dark:bg-gray-800 rounded shadow">
+            <BeerBottleLoader inline size="sm" title="Pouring Today's Figures…" subtitle="Calculating paid bills, revenue & table status…" />
+          </div>
         ) : (
           <>
             <div className="stats grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -68,19 +68,24 @@ export async function seedDatabase(): Promise<void> {
   const catId = (name: string) => allCats.find((c) => c.name === name)!.id;
   console.log(' Categories seeded:', allCats.length);
 
-  // 4. Products & opening stock (looked up by barcode so re-runs attach stock to the right product)
+  // 4. Products & opening stock (opening stock only seeded if SEED_DEMO_STOCK=true)
+  const seedDemoStock = process.env.SEED_DEMO_STOCK === 'true';
   const productData = [
-    { categoryId: catId('Whisky'), name: 'Royal Challenge Premium Whisky 750ml', brand: 'Royal Challenge', volumeMl: 750, packQuantity: 12, mrp: '850.00',  costPrice: '620.00', barcode: '890123456001', sku: 'RC-750' },
-    { categoryId: catId('Whisky'), name: 'Blenders Pride Rare Premium 750ml',     brand: 'Blenders Pride',  volumeMl: 750, packQuantity: 12, mrp: '1050.00', costPrice: '780.00', barcode: '890123456002', sku: 'BP-750' },
-    { categoryId: catId('Beer'),   name: 'Kingfisher Premium Lager Beer 650ml',   brand: 'Kingfisher',      volumeMl: 650, packQuantity: 12, mrp: '180.00',  costPrice: '130.00', barcode: '890123456003', sku: 'KF-650' },
-    { categoryId: catId('Vodka'),  name: 'Magic Moments Vodka 750ml',             brand: 'Magic Moments',   volumeMl: 750, packQuantity: 12, mrp: '700.00',  costPrice: '520.00', barcode: '890123456004', sku: 'MM-750' },
-    { categoryId: catId('Rum'),    name: 'Old Monk XXX Rum 750ml',                brand: 'Old Monk',        volumeMl: 750, packQuantity: 12, mrp: '450.00',  costPrice: '330.00', barcode: '890123456005', sku: 'OM-750' },
+    { categoryId: catId('Whisky'), name: 'Royal Challenge Premium Whisky 750ml', brand: 'Royal Challenge', volumeMl: 750, packQuantity: 12, mrp: '850.00',  costPrice: null, barcode: '890123456001', sku: 'RC-750' },
+    { categoryId: catId('Whisky'), name: 'Blenders Pride Rare Premium 750ml',     brand: 'Blenders Pride',  volumeMl: 750, packQuantity: 12, mrp: '1050.00', costPrice: null, barcode: '890123456002', sku: 'BP-750' },
+    { categoryId: catId('Beer'),   name: 'Kingfisher Premium Lager Beer 650ml',   brand: 'Kingfisher',      volumeMl: 650, packQuantity: 12, mrp: '180.00',  costPrice: null, barcode: '890123456003', sku: 'KF-650' },
+    { categoryId: catId('Vodka'),  name: 'Magic Moments Vodka 750ml',             brand: 'Magic Moments',   volumeMl: 750, packQuantity: 12, mrp: '700.00',  costPrice: null, barcode: '890123456004', sku: 'MM-750' },
+    { categoryId: catId('Rum'),    name: 'Old Monk XXX Rum 750ml',                brand: 'Old Monk',        volumeMl: 750, packQuantity: 12, mrp: '450.00',  costPrice: null, barcode: '890123456005', sku: 'OM-750' },
   ];
 
   for (const p of productData) {
     await db.insert(products).values({ ...p, syndicateId: syndicate.id }).onConflictDoNothing();
-    const [prod] = await db.select().from(products).where(eq(products.barcode, p.barcode)).limit(1);
-    await db.insert(stock).values({ branchId, productId: prod.id, quantity: 100, reorderLevel: 10 }).onConflictDoNothing();
+    if (seedDemoStock) {
+      const [prod] = await db.select().from(products).where(eq(products.barcode, p.barcode)).limit(1);
+      if (prod) {
+        await db.insert(stock).values({ branchId, productId: prod.id, quantity: 100, reorderLevel: 10 }).onConflictDoNothing();
+      }
+    }
   }
   // 4b. Telangana Excise ICDC Catalog products
   for (const tp of TELANGANA_ICDC_PRODUCTS) {
@@ -93,16 +98,18 @@ export async function seedDatabase(): Promise<void> {
       exciseCode: tp.exciseCode,
       sku: tp.sku,
       mrp: tp.mrp,
-      costPrice: tp.costPrice,
+      costPrice: null,
       syndicateId: syndicate.id,
     };
     await db.insert(products).values(pVal).onConflictDoNothing();
-    const [prod] = await db.select().from(products).where(eq(products.sku, tp.sku)).limit(1);
-    if (prod) {
-      await db.insert(stock).values({ branchId, productId: prod.id, quantity: 50, reorderLevel: 10 }).onConflictDoNothing();
+    if (seedDemoStock) {
+      const [prod] = await db.select().from(products).where(eq(products.sku, tp.sku)).limit(1);
+      if (prod) {
+        await db.insert(stock).values({ branchId, productId: prod.id, quantity: 50, reorderLevel: 10 }).onConflictDoNothing();
+      }
     }
   }
-  console.log(` Products & stock seeded (${productData.length + TELANGANA_ICDC_PRODUCTS.length} total catalog products)`);
+  console.log(` Products seeded (${productData.length + TELANGANA_ICDC_PRODUCTS.length} total catalog products, demo stock: ${seedDemoStock})`);
 
   // 4b. Demo menu: two dishes and one bar bottle sold by the peg
   const demoCat = async (name: string, taxRate: string) => {
@@ -129,7 +136,9 @@ export async function seedDatabase(): Promise<void> {
         { productId: created.id, label: '90 ml', volumeMl: 90, price: '380.00', sortOrder: 2 },
         { productId: created.id, label: 'Full bottle', volumeMl: null, price: '2400.00', sortOrder: 3 },
       ]);
-      await db.insert(stock).values({ branchId, productId: created.id, quantity: 6, reorderLevel: 2 }).onConflictDoNothing();
+      if (seedDemoStock) {
+        await db.insert(stock).values({ branchId, productId: created.id, quantity: 6, reorderLevel: 2 }).onConflictDoNothing();
+      }
     }
   }
   console.log(' Demo kitchen + bar menu seeded');

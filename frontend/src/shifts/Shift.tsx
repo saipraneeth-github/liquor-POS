@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 const NOTE_VALUES = ['2000', '500', '200', '100', '50', '20', '10'];
 
@@ -224,7 +225,9 @@ export function Shift() {
 
       <div id="shiftBody">
         {loading ? (
-          <div className="card pad p-8 text-center text-gray-500 bg-white rounded shadow">Loading shift…</div>
+          <div className="card pad p-8 bg-white dark:bg-gray-800 rounded shadow">
+            <BeerBottleLoader inline size="sm" title="Loading Cashier Shift…" subtitle="Fetching terminal session & tender totals…" />
+          </div>
         ) : closeResult ? (
           <div className="card pad stack p-6 bg-white rounded shadow flex flex-col gap-4 max-w-lg" id="shiftCloseResult">
             <div className="row between flex justify-between items-center">

@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { errorMessage } from '../lib/print';
 import { Modal } from '../components/ui';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface UserItem {
   id: string;
@@ -240,7 +241,7 @@ export function Admin() {
         <div className="h2 text-lg font-bold border-b pb-2">👥 Users</div>
         <div id="userList" className="table-wrap overflow-x-auto text-sm">
           {loading ? (
-            <div className="p-4 text-center text-gray-500">Loading users…</div>
+            <BeerBottleLoader inline size="sm" title="Loading Staff & Users…" subtitle="Fetching branch user accounts and roles…" />
           ) : users.length === 0 ? (
             <div className="muted small text-gray-500">No users in this branch.</div>
           ) : (
@@ -441,7 +442,7 @@ export function Admin() {
             </div>
 
             {loadingPages ? (
-              <div className="state p-4 text-center text-gray-500">⏳ Loading…</div>
+              <BeerBottleLoader inline size="sm" title="Loading Permissions…" subtitle="Fetching page access rights…" />
             ) : (
               <div className="flex flex-col gap-3" id="modalBody">
                 <div className="grid grid-cols-2 gap-2 text-sm">

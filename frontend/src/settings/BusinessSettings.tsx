@@ -4,6 +4,7 @@ import { errorMessage, parseFieldErrors, showToast } from '../lib/print';
 import { useAuth } from '../auth/AuthProvider';
 import { Badge, Field, Modal, Stat } from '../components/ui';
 import { SubscriptionPanel } from '../billing/SubscriptionPanel';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface PrintJob { id: string; target: string; kind: string; status: 'PENDING' | 'SENT' | 'FAILED'; attempts: number; lastError: string | null; createdAt: string }
 
@@ -275,7 +276,7 @@ export function BusinessSettings() {
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-x-auto">
         {loading ? (
-          <div className="p-8 text-center text-sm text-gray-500">Loading branches…</div>
+          <BeerBottleLoader inline size="sm" title="Loading Store Branches…" subtitle="Fetching branch settings & printer configs…" />
         ) : branches.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">No branches found. Create one above!</div>
         ) : (

@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 type BillItem = {
   id: string;
@@ -213,7 +214,7 @@ export function Bills() {
       {/* Bills list */}
       <div id="billsList" className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-gray-500">Loading bills...</div>
+          <BeerBottleLoader inline size="sm" title="Loading Bills…" subtitle="Fetching counter receipts and payment breakdown…" />
         ) : filteredBills.length === 0 ? (
           <div className="p-8 text-center text-gray-500">
             {bills.length ? 'No bills match the search.' : 'No bills for this date.'}

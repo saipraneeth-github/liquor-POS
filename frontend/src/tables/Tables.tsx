@@ -3,6 +3,7 @@ import { X, Search, Plus, Minus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter, errorMessage } from '../lib/print';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import {
   classifyProductCategory,
   CATEGORY_DEFINITIONS,
@@ -650,7 +651,9 @@ export function Tables() {
       {/* Grid of Tables */}
       <div id="tableGrid" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {loading ? (
-          <div className="col-span-full p-8 text-center text-gray-500">Loading tables...</div>
+          <div className="col-span-full">
+            <BeerBottleLoader inline size="sm" title="Loading Tables & Bar Seats…" subtitle="Checking open sessions and running orders…" />
+          </div>
         ) : tables.length === 0 ? (
           <div className="col-span-full p-8 text-center text-gray-500">No tables found.</div>
         ) : (
@@ -861,8 +864,8 @@ export function Tables() {
 
                     {/* Bill summary preview */}
                     {loadingBill ? (
-                      <div className="p-3 text-center text-xs text-gray-500 bg-gray-50 dark:bg-gray-750 rounded border dark:border-gray-700 animate-pulse">
-                        Calculating table total...
+                      <div className="p-3 bg-gray-50 dark:bg-gray-750 rounded border dark:border-gray-700">
+                        <BeerBottleLoader inline size="sm" title="Calculating Table Bill…" subtitle="Applying pegs, dishes and GST breakdown…" />
                       </div>
                     ) : billSummary && (
                       <div className="p-3 bg-gray-50 dark:bg-gray-750 rounded-lg border dark:border-gray-700 text-xs space-y-1.5">

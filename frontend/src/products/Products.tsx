@@ -8,6 +8,7 @@ import {
 } from '../components/category-icons';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface Category {
   id: string;
@@ -301,7 +302,7 @@ export function Products() {
 
       <div className="card table-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow overflow-x-auto mb-6" id="prodTable">
         {loading ? (
-          <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading products…</div>
+          <BeerBottleLoader inline size="sm" title="Loading Product Catalog…" subtitle="Fetching brand names, barcodes, MRPs & tax categories…" />
         ) : filtered.length === 0 ? (
           <div className="state p-8 text-center text-gray-500 dark:text-gray-400">
             {products.length

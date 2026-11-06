@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package, Download, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface CounterLine {
   productId: string;
@@ -44,6 +45,7 @@ export function Counter() {
   const [recentSheets, setRecentSheets] = useState<RecentSheet[]>([]);
   const [sheet, setSheet] = useState<CounterSheet | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   // Local overrides for live input
@@ -293,15 +295,19 @@ export function Counter() {
   };
 
   const handlePostSheet = () => {
-    if (!sheet) return;
+    if (!sheet || isPosting) return;
     setConfirmModal({
       title: 'Post counter sheet?',
       message: 'Stock will be corrected to the closing counts as of the sheet day. Posted sheets cannot be edited.',
       onOk: async () => {
         setConfirmModal(null);
+        setIsPosting(true);
         if (dirty) {
           const ok = await handleSaveSheet(true);
-          if (!ok) return;
+          if (!ok) {
+            setIsPosting(false);
+            return;
+          }
         }
         try {
           const posted = await api.post<CounterSheet>(`/counter-sheets/sheet/${sheet.id}/post`, {});
@@ -311,6 +317,8 @@ export function Counter() {
           window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
         } catch (e: any) {
           showToast('Post failed: ' + e.message, 'error');
+        } finally {
+          setIsPosting(false);
         }
       },
     });
@@ -507,7 +515,7 @@ export function Counter() {
 
       <div className="card bg-white rounded shadow" id="counterSheet">
         {loading ? (
-          <div className="p-8 text-center text-gray-500">Loading sheet…</div>
+          <BeerBottleLoader inline size="sm" title="Loading Counter Sheet…" subtitle="Fetching opening, inward and sold bottle counts…" />
         ) : !sheet ? (
           <div className="state p-8 text-center text-gray-500">Pick a date and create or open a sheet.</div>
         ) : (
@@ -1025,6 +1033,14 @@ export function Counter() {
           </div>
         </div>
       )}
+
+      {/* Beer Bottle Loader for Sheet Posting */}
+      <BeerBottleLoader
+        open={isPosting}
+        title="Posting Counter Sheet…"
+        subtitle="Correcting closing bottle stock & writing audit adjustments…"
+        stage="inwarding"
+      />
     </section>
   );
 }

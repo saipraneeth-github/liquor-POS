@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface Customer {
   id: string;
@@ -244,7 +245,7 @@ export function Customers() {
 
             <div id="custList">
               {loadingCust ? (
-                <div className="p-4 text-gray-500">Loading customers...</div>
+                <BeerBottleLoader inline size="sm" title="Loading Khata Customers…" subtitle="Fetching customer list, balances & limits…" />
               ) : customers.length === 0 ? (
                 <div className="state p-4 text-gray-500 text-center">
                   {search ? 'No customers match.' : 'No customers yet.'}
@@ -398,7 +399,7 @@ export function Customers() {
 
         <div className="card pad p-4 bg-white rounded shadow" id="custStatement">
           {loadingStatement ? (
-            <div className="p-4 text-gray-500">Loading statement…</div>
+            <BeerBottleLoader inline size="sm" title="Loading Customer Statement…" subtitle="Compiling credit purchases and repayments…" />
           ) : !statement || !selectedCustomer ? (
             <div className="state p-8 text-center text-gray-500">Select a customer to see the khata statement.</div>
           ) : (

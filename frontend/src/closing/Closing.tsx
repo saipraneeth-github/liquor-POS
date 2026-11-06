@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, RefreshCw, CheckCircle, DollarSign, Smartphone, CreditCard, BookOpen } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface ClosingRow {
   id: string;
@@ -832,6 +833,14 @@ export function Closing() {
           </div>
         </div>
       )}
+
+      {/* Beer Bottle Loader for Day Closing */}
+      <BeerBottleLoader
+        open={submitting}
+        title="Closing Business Day…"
+        subtitle="Balancing register tenders, locking shifts, and posting day closing vouchers…"
+        stage="inwarding"
+      />
     </section>
   );
 }

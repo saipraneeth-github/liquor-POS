@@ -25,6 +25,7 @@ export default defineConfig({
       PORT: '3001',
       LEGACY_PREVIEW: '1',   // the original journeys drive preview.html at "/"; React specs use /login
       NODE_ENV: 'development',
+      SEED_DEMO_STOCK: 'true',
     },
   },
   projects: [

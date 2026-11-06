@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 type TrialBalanceRow = {
   name: string;
@@ -185,7 +186,11 @@ export function Ledger() {
         </button>
       </div>
 
-      {loading && <div className="p-8 text-center text-gray-500">Loading accounting report...</div>}
+      {loading && (
+        <div className="card pad p-8 bg-white dark:bg-gray-800 rounded shadow">
+          <BeerBottleLoader inline size="sm" title="Compiling Financial Ledgers…" subtitle="Calculating debit/credit balances across accounts…" />
+        </div>
+      )}
 
       {/* Trial Balance Tab */}
       {!loading && tab === 'tb' && tbData && (
@@ -366,6 +371,14 @@ export function Ledger() {
           )}
         </div>
       )}
+
+      {/* Beer Bottle Loader for Tally Export */}
+      <BeerBottleLoader
+        open={tallyDownloading}
+        title="Exporting Tally XML…"
+        subtitle="Generating ledger XML entries & financial vouchers for Tally import…"
+        stage="saving"
+      />
     </div>
   );
 }

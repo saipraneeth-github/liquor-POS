@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { errorMessage, showToast } from '../lib/print';
 import { Field, Modal, inr } from '../components/ui';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 export type MenuKind = 'kitchen' | 'bar';
 
@@ -316,7 +317,7 @@ export function MenuManager({ kind }: { kind: MenuKind }) {
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-x-auto">
         {loading ? (
-          <div className="p-8 text-center text-sm text-gray-500">Loading menu…</div>
+          <BeerBottleLoader inline size="sm" title="Loading Menu & Bar Servings…" subtitle="Fetching kitchen dishes, peg sizes and rates…" />
         ) : visible.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">{items.length === 0 ? copy.empty : 'No items match.'}</div>
         ) : (

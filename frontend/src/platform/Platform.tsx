@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { errorMessage, showToast } from '../lib/print';
 import { Badge, Field, Modal, Stat, inr } from '../components/ui';
+import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 type Plan = 'TRIAL' | 'STANDARD' | 'PRO';
 
@@ -330,7 +331,7 @@ export function Platform() {
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-x-auto">
         {loading ? (
-          <div className="p-8 text-center text-sm text-gray-500">Loading tenants…</div>
+          <BeerBottleLoader inline size="sm" title="Loading Syndicates & Stores…" subtitle="Fetching multi-store subscribers and branch limits…" />
         ) : visible.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">No tenants yet.</div>
         ) : (

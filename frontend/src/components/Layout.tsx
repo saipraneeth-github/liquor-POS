@@ -31,6 +31,7 @@ import {
   Moon,
   Menu,
   X,
+  PanelLeftClose,
 } from 'lucide-react';
 
 type NavItem = {
@@ -89,10 +90,42 @@ export function Layout() {
   const location = useLocation();
   const [showSignoutWarning, setShowSignoutWarning] = useState(false);
   const [dueAmount, setDueAmount] = useState<string | null>(null);
-  const [navOpen, setNavOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('lc_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [pw, setPw] = useState({ current: '', next: '' });
   const [pwError, setPwError] = useState<string | null>(null);
+
+  const toggleSidebar = () => {
+    if (window.innerWidth < 768) {
+      setMobileOpen((prev) => !prev);
+    } else {
+      setIsCollapsed((prev) => {
+        const next = !prev;
+        try {
+          localStorage.setItem('lc_sidebar_collapsed', String(next));
+        } catch {}
+        return next;
+      });
+    }
+  };
+
+  const closeSidebar = () => {
+    if (window.innerWidth < 768) {
+      setMobileOpen(false);
+    } else {
+      setIsCollapsed(true);
+      try {
+        localStorage.setItem('lc_sidebar_collapsed', 'true');
+      } catch {}
+    }
+  };
 
   // A Super Admin "support sign-in" keeps the original token so there is a way back
   const supportLabel = localStorage.getItem('support_return_token') ? localStorage.getItem('support_label') : null;
@@ -117,12 +150,20 @@ export function Layout() {
     }
   };
 
+  // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar, Escape to close on mobile
   useEffect(() => {
-    if (!navOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNavOpen(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [navOpen]);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        toggleSidebar();
+      }
+      if (e.key === 'Escape') {
+        if (mobileOpen) setMobileOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileOpen]);
 
   useEffect(() => {
     if (saasRole !== 'admin') return;
@@ -197,65 +238,98 @@ export function Layout() {
 
   return (
     <div className="flex h-dvh bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" id="mainApp">
-      {navOpen && <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setNavOpen(false)} />}
-      <aside onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setNavOpen(false); }} className={`fixed inset-y-0 left-0 z-40 md:static md:translate-x-0 transition-transform w-64 shrink-0 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-4 font-bold text-xl border-b dark:border-gray-700 flex items-center gap-2">
-          <Wine className="text-purple-600" />
-          <div>
-            <div className="font-bold">Liquor Counter</div>
-            <div className="text-xs text-gray-500 dark:text-gray-400" id="sidebarBranch">
-              {saasRole === 'super_admin' ? (activeBranch ? `Platform · ${activeBranch.code}` : 'Platform HQ') : activeBranch ? `${activeBranch.code} — ${activeBranch.name}` : 'MAIN-01 — Main Counter Branch'}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden backdrop-blur-xs transition-opacity"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+      <aside
+        onClick={(e) => {
+          if (window.innerWidth < 768 && (e.target as HTMLElement).closest('a')) {
+            setMobileOpen(false);
+          }
+        }}
+        className={`fixed inset-y-0 left-0 z-40 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col transition-all duration-300 ease-in-out md:static ${
+          mobileOpen ? 'translate-x-0 w-64 shadow-2xl' : '-translate-x-full md:translate-x-0'
+        } ${
+          isCollapsed
+            ? 'md:w-0 md:opacity-0 md:border-r-0 md:pointer-events-none overflow-hidden'
+            : 'md:w-64 md:opacity-100'
+        }`}
+      >
+        <div className="w-64 flex flex-col h-full shrink-0">
+          <div className="p-4 font-bold text-xl border-b dark:border-gray-700 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Wine className="text-purple-600 shrink-0" />
+              <div className="min-w-0">
+                <div className="font-bold truncate">Liquor Counter</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 truncate" id="sidebarBranch">
+                  {saasRole === 'super_admin' ? (activeBranch ? `Platform · ${activeBranch.code}` : 'Platform HQ') : activeBranch ? `${activeBranch.code} — ${activeBranch.name}` : 'MAIN-01 — Main Counter Branch'}
+                </div>
+              </div>
             </div>
+            <button
+              type="button"
+              id="sidebarCloseBtn"
+              aria-label="Close navigation sidebar"
+              title="Close sidebar (Ctrl+B)"
+              onClick={closeSidebar}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer shrink-0"
+            >
+              <PanelLeftClose size={18} className="hidden md:block" />
+              <X size={18} className="md:hidden" />
+            </button>
           </div>
-        </div>
-        <nav className="flex-1 overflow-y-auto p-4 space-y-4">
-          {groups.map((group) => (
-            <div key={group} className="space-y-1">
-              {groups.length > 1 && (
-                <div className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">{group}</div>
-              )}
-              {items.filter((i) => i.group === group).map((item) => {
-                const Icon = item.icon;
-                const isActive = location.pathname === item.path;
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    id={item.id}
-                    className={`flex items-center gap-3 px-3 py-2 rounded transition-colors ${
-                      isActive
-                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 font-medium'
-                        : 'hover:bg-gray-100 dark:hover:bg-gray-700/60 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    <Icon size={18} />
-                    {item.label}
-                  </Link>
-                );
-              })}
+          <nav className="flex-1 overflow-y-auto p-4 space-y-4">
+            {groups.map((group) => (
+              <div key={group} className="space-y-1">
+                {groups.length > 1 && (
+                  <div className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">{group}</div>
+                )}
+                {items.filter((i) => i.group === group).map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      id={item.id}
+                      className={`flex items-center gap-3 px-3 py-2 rounded transition-colors ${
+                        isActive
+                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 font-medium'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700/60 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      <Icon size={18} />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
+          <div className="p-4 border-t dark:border-gray-700 space-y-2">
+            <div className="mb-2 text-sm">
+              <div id="userDisplay" className="font-semibold">{user.name} ({saasRole ? ROLE_LABEL[saasRole] : user.role})</div>
+              <div id="emailDisplay" className="text-gray-500 dark:text-gray-400 text-xs truncate">{user.email}</div>
             </div>
-          ))}
-        </nav>
-        <div className="p-4 border-t dark:border-gray-700 space-y-2">
-          <div className="mb-2 text-sm">
-            <div id="userDisplay" className="font-semibold">{user.name} ({saasRole ? ROLE_LABEL[saasRole] : user.role})</div>
-            <div id="emailDisplay" className="text-gray-500 dark:text-gray-400 text-xs truncate">{user.email}</div>
+            <button
+              type="button"
+              id="changePasswordBtn"
+              onClick={() => { setPwError(null); setPwOpen(true); }}
+              className="w-full text-left px-2 py-1 text-xs text-gray-600 dark:text-gray-300 hover:underline cursor-pointer"
+            >
+              Change password
+            </button>
+            <button
+              onClick={handleLogoutClick}
+              className="flex items-center justify-center gap-2 w-full px-3 py-2 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+            >
+              <LogOut size={16} />
+              Sign out
+            </button>
           </div>
-          <button
-            type="button"
-            id="changePasswordBtn"
-            onClick={() => { setPwError(null); setPwOpen(true); }}
-            className="w-full text-left px-2 py-1 text-xs text-gray-600 dark:text-gray-300 hover:underline cursor-pointer"
-          >
-            Change password
-          </button>
-          <button
-            onClick={handleLogoutClick}
-            className="flex items-center justify-center gap-2 w-full px-3 py-2 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-sm font-medium transition-colors cursor-pointer"
-          >
-            <LogOut size={16} />
-            Sign out
-          </button>
         </div>
       </aside>
 
@@ -274,7 +348,14 @@ export function Layout() {
         )}
         <header className="h-14 shrink-0 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between gap-2 px-4 transition-colors">
           <div className="flex items-center gap-2 min-w-0">
-            <button type="button" id="navToggle" aria-label="Open menu" className="md:hidden p-2 -ml-2 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => setNavOpen(true)}>
+            <button
+              type="button"
+              id="navToggle"
+              aria-label={isCollapsed ? 'Open navigation menu' : 'Close navigation menu'}
+              title={isCollapsed ? 'Open sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+              className="p-2 -ml-2 rounded-lg cursor-pointer text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors flex items-center justify-center"
+              onClick={toggleSidebar}
+            >
               <Menu size={20} />
             </button>
             <div className="font-semibold text-lg truncate" id="pageTitle">{pageTitle}</div>

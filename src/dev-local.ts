@@ -9,6 +9,7 @@
 process.env.DATABASE_URL ??= 'pglite://./.pglite';
 process.env.JWT_SECRET ??= 'local_dev_only_secret_do_not_use_in_production';
 process.env.PORT ??= '3001';
+process.env.SEED_DEMO_STOCK ??= 'true';
 
 const { runMigrations } = await import('./db/migrate.js');
 const { seedDatabase } = await import('./db/seed.js');
