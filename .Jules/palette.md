@@ -7,3 +7,6 @@
 ## 2024-11-03 - Adding Accessible Loading States to Buttons
 **Learning:** Applying `aria-busy="true"` to buttons during asynchronous operations correctly communicates the loading state to assistive technologies, enhancing the user experience for screen reader users.
 **Action:** Use `aria-busy` in combination with disabling the button when providing visual loading feedback on any async interaction (e.g. form submissions, refreshing data).
+## 2026-11-04 - Adding Accessible Loading States to Buttons
+**Learning:** Applying `aria-busy="true"` to buttons during asynchronous operations correctly communicates the loading state to assistive technologies, enhancing the user experience for screen reader users.
+**Action:** Use `aria-busy` in combination with disabling the button when providing visual loading feedback on any async interaction (e.g. form submissions, refreshing data).
