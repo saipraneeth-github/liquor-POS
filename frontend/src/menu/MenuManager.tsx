@@ -367,11 +367,11 @@ export function MenuManager({ kind }: { kind: MenuKind }) {
                         ) : (
                           <div className="space-y-0.5">
                             <span className="inline-flex items-center gap-1 font-mono font-semibold text-xs text-gray-900 dark:text-gray-100">
-                              📦 {i.currentStock ?? i.stockQuantity} {kind === 'bar' ? 'bottles' : 'units'}
+                              {i.currentStock ?? i.stockQuantity} {kind === 'bar' ? 'bottles' : 'units'}
                             </span>
                             {kind === 'bar' && i.openMl ? (
                               <div className="text-[11px] text-blue-600 dark:text-blue-400 font-mono">
-                                💧 {i.openMl} ml open
+                                {i.openMl} ml open
                               </div>
                             ) : null}
                           </div>
@@ -379,7 +379,7 @@ export function MenuManager({ kind }: { kind: MenuKind }) {
                       </div>
                     ) : (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                        ✨ Made to order
+                        Made to order
                       </span>
                     )}
                   </td>

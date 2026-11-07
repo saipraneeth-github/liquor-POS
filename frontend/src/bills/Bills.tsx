@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { businessDate } from '../lib/business-day';
 
 type BillItem = {
   id: string;
@@ -36,8 +37,7 @@ type Bill = {
 };
 
 function todayIso(): string {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return businessDate();
 }
 
 const roleRank = { steward: 1, cashier: 2, manager: 3, owner: 4 };
@@ -145,7 +145,7 @@ export function Bills() {
   return (
     <div id="page-bills" className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold" id="billsTitle">🧾 Bill History</h2>
+        <h2 className="text-2xl font-bold" id="billsTitle">Bill History</h2>
       </div>
 
       {/* Filter card */}
@@ -207,7 +207,7 @@ export function Bills() {
           id="billsPending"
           className="bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 p-3 rounded-lg text-amber-800 dark:text-amber-200 text-sm flex justify-between items-center"
         >
-          <span>⏳ Pending sync: {pendingCount} offline bill{pendingCount > 1 ? 's' : ''} queued locally.</span>
+          <span>Pending sync: {pendingCount} offline bill{pendingCount > 1 ? 's' : ''} queued locally.</span>
         </div>
       )}
 
@@ -252,7 +252,7 @@ export function Bills() {
                       </span>
                       {b.customerName && (
                         <div className="text-[11px] text-gray-500 font-medium truncate max-w-[130px]" title={b.customerName}>
-                          👤 {b.customerName}
+                          {b.customerName}
                         </div>
                       )}
                     </td>
@@ -316,7 +316,7 @@ export function Bills() {
 
       {/* Modal Dialog */}
       {modalType && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full overflow-hidden border dark:border-gray-700">
             <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
               <h2 className="text-lg font-bold" id="modalTitle">
@@ -391,7 +391,7 @@ export function Bills() {
                     </span>
                     {parseFloat(selectedBill.discount || '0') > 0 && (
                       <span className="px-2 py-0.5 text-xs rounded font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 flex items-center gap-1">
-                        <span>🏷️</span> Discount: -₹{parseFloat(selectedBill.discount).toFixed(2)}
+                        Discount: -₹{parseFloat(selectedBill.discount).toFixed(2)}
                       </span>
                     )}
                     <span className="text-xs text-gray-500">
@@ -443,7 +443,7 @@ export function Bills() {
                         {parseFloat(selectedBill.discount || '0') > 0 && (
                           <tr className="text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20">
                             <td colSpan={3} className="p-2 font-semibold flex items-center gap-1">
-                              <span>🏷️</span> Discount Applied
+                              Discount Applied
                             </td>
                             <td className="p-2 text-right font-mono font-bold">-₹{parseFloat(selectedBill.discount).toFixed(2)}</td>
                           </tr>

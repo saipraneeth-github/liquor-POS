@@ -93,13 +93,13 @@ export function BeerBottleLoader({
         {(bottlesCount !== undefined || totalCost !== undefined) && (
           <div className="flex items-center gap-3 bg-amber-500/20 border border-amber-400/40 backdrop-blur-sm rounded-full px-4 py-1.5 text-xs font-semibold text-amber-200 mb-3 drop-shadow">
             {bottlesCount !== undefined && (
-              <span>🍾 <strong>{bottlesCount}</strong> bottles inwarding</span>
+              <span><strong>{bottlesCount}</strong> bottles inwarding</span>
             )}
             {bottlesCount !== undefined && totalCost !== undefined && (
               <span className="text-amber-400/60">•</span>
             )}
             {totalCost !== undefined && (
-              <span>💰 ₹{Number(totalCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              <span>₹{Number(totalCost).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
             )}
           </div>
         )}
@@ -109,13 +109,13 @@ export function BeerBottleLoader({
           <div className="w-full max-w-xs bg-black/40 backdrop-blur-md rounded-xl p-3 border border-white/10 flex flex-col gap-2 mt-2">
             <div className="flex items-center justify-between text-xs font-medium text-slate-300">
               <span className={stage === 'saving' ? 'text-amber-400 font-bold flex items-center gap-1' : 'text-emerald-400 font-semibold'}>
-                {stage === 'saving' ? '⏳ 1. Saving bill' : '✓ 1. Bill saved'}
+                {stage === 'saving' ? '1. Saving bill...' : '✓ 1. Bill saved'}
               </span>
               <span className={stage === 'inwarding' ? 'text-amber-400 font-bold flex items-center gap-1' : stage === 'refreshing' ? 'text-emerald-400 font-semibold' : ''}>
-                {stage === 'inwarding' ? '⏳ 2. Inwarding' : stage === 'refreshing' ? '✓ 2. Inwarded' : '2. Inwarding'}
+                {stage === 'inwarding' ? '2. Inwarding...' : stage === 'refreshing' ? '✓ 2. Inwarded' : '2. Inwarding'}
               </span>
               <span className={stage === 'refreshing' ? 'text-amber-400 font-bold flex items-center gap-1' : ''}>
-                {stage === 'refreshing' ? '⏳ 3. Ledger' : '3. Ledger'}
+                {stage === 'refreshing' ? '3. Ledger...' : '3. Ledger'}
               </span>
             </div>
 
@@ -133,7 +133,7 @@ export function BeerBottleLoader({
         )}
 
         <div className="mt-3 text-[11px] text-slate-300/80 font-medium drop-shadow">
-          🔒 Database operation in progress. Please do not refresh.
+          Database operation in progress. Please do not refresh.
         </div>
       </div>
     </div>

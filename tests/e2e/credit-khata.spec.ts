@@ -26,7 +26,7 @@ test('CREDIT sale to khata customer Ravi Kumar, then a repayment', async ({ page
   await page.fill('#creditSearch', 'Ravi');
   await page.locator('#creditResults .list-btn', { hasText: 'Ravi Kumar' }).click();
   const card = page.locator('#creditCustomerCard');
-  await expect(card).toContainText('Limit ₹5,000.00');
+  await expect(card).toContainText(/Limit\s*₹5,000\.00/);
   const remainingBefore = paise(await page.locator('#creditRemaining').innerText());
   expect(remainingBefore).toBe(500000 - before);
 

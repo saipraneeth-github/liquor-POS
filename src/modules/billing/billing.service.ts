@@ -213,7 +213,7 @@ export async function createBill(
   if (shortages.length > 0) {
     throw new BusinessRuleError(
       `Insufficient stock: ${shortages
-        .map((s) => `product ${s.productId} (requested ${s.requested}, available ${s.available})`)
+        .map((s) => `${productMap.get(s.productId)?.name ?? `product ${s.productId}`} (requested ${s.requested}, available ${s.available})`)
         .join(', ')}`,
     );
   }
@@ -312,7 +312,7 @@ export async function createBill(
           const updatedIds = new Set(updated.map((u) => u.productId));
           const missing = deltas.find((d) => !updatedIds.has(d.productId));
           if (missing) {
-            throw new BusinessRuleError(`Insufficient stock: product ${missing.productId} (requested ${-missing.delta})`);
+            throw new BusinessRuleError(`Insufficient stock: ${productMap.get(missing.productId)?.name ?? `product ${missing.productId}`} (requested ${-missing.delta})`);
           }
         }
       }

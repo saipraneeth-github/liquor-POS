@@ -658,6 +658,111 @@ export const expenses = pgTable('expenses', {
 });
 
 
+// ─── BANK STATEMENT RECONCILIATION ──────────────────────────────────────────
+
+// One real-world bank account. `scope` decides which books it is reconciled against:
+//   BRANCH    → the BANK ledger of `branchId` only
+//   SYNDICATE → the BANK ledgers of every branch in the syndicate (one account serving several outlets);
+//               `branchId` is then the branch whose books receive the vouchers posted from the statement.
+export const bankAccounts = pgTable('bank_accounts', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  branchId:    uuid('branch_id').notNull().references(() => branches.id),
+  syndicateId: uuid('syndicate_id').references(() => syndicates.id),
+  scope:       text('scope').notNull().default('BRANCH'),        // 'BRANCH' | 'SYNDICATE'
+  name:        text('name').notNull(),                            // free label, e.g. "HDFC Current"
+  bankName:    text('bank_name'),
+  accountLast4: text('account_last4'),                            // never the full number
+  isActive:    boolean('is_active').notNull().default(true),
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqBranchName: uniqueIndex('uq_bank_account_branch_name').on(t.branchId, t.name),
+}));
+
+export const bankStatements = pgTable('bank_statements', {
+  id:               uuid('id').primaryKey().defaultRandom(),
+  accountId:        uuid('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  uploadedById:     uuid('uploaded_by_id').references(() => users.id),
+  originalFilename: text('original_filename'),
+  fileHash:         text('file_hash').notNull(),                  // sha256 of the file: the same file twice is refused
+  source:           text('source').notNull(),                     // 'CSV' | 'EXCEL' | 'PDF'
+  periodStart:      date('period_start'),
+  periodEnd:        date('period_end'),
+  openingBalance:   numeric('opening_balance', { precision: 16, scale: 2 }),
+  closingBalance:   numeric('closing_balance', { precision: 16, scale: 2 }),
+  lineCount:        integer('line_count').notNull().default(0),
+  duplicateCount:   integer('duplicate_count').notNull().default(0),   // lines skipped because an earlier upload had them
+  status:           text('status').notNull().default('IMPORTED'),      // 'IMPORTED' | 'RECONCILED'
+  balanceCheck:     jsonb('balance_check').$type<Record<string, unknown>>(),
+  mapping:          jsonb('mapping').$type<Record<string, unknown>>(),
+  warnings:         jsonb('warnings').$type<string[]>(),
+  createdAt:        timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqAccountFile: uniqueIndex('uq_bank_statement_account_file').on(t.accountId, t.fileHash),
+}));
+
+export const bankStatementLines = pgTable('bank_statement_lines', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  statementId: uuid('statement_id').notNull().references(() => bankStatements.id, { onDelete: 'cascade' }),
+  accountId:   uuid('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  lineNo:      integer('line_no').notNull(),
+  txnDate:     date('txn_date').notNull(),
+  valueDate:   date('value_date'),
+  narration:   text('narration').notNull().default(''),
+  reference:   text('reference'),
+  debit:       numeric('debit',  { precision: 16, scale: 2 }).notNull().default('0'),    // money out of the account
+  credit:      numeric('credit', { precision: 16, scale: 2 }).notNull().default('0'),    // money into the account
+  balance:     numeric('balance', { precision: 16, scale: 2 }),
+  hash:        text('hash').notNull(),                            // identity of the transaction across overlapping statements
+  status:      text('status').notNull().default('UNMATCHED'),     // UNMATCHED | SUGGESTED | MATCHED | IGNORED
+  category:    text('category'),                                  // how it was resolved (SETTLEMENT, CASH_DEPOSIT, BANK_CHARGE, …)
+  suggestion:  jsonb('suggestion').$type<Record<string, unknown>>(),
+  confidence:  numeric('confidence', { precision: 4, scale: 3 }),
+  feeAmount:   numeric('fee_amount', { precision: 16, scale: 2 }).notNull().default('0'),
+  note:        text('note'),
+  voucherId:   uuid('voucher_id').references(() => journalVouchers.id),   // set when accepting this line posted a voucher
+  ignoreReason: text('ignore_reason'),                            // PERSONAL | OTHER_BUSINESS | NOT_OURS | OTHER — why it is not the store's
+  ignoredByRuleId: uuid('ignored_by_rule_id'),                    // the rule that ignored it automatically (null = a person did)
+  ruleExempt:  boolean('rule_exempt').notNull().default(false),   // a person un-ignored it: ignore rules must leave it alone from now on
+  resolvedById: uuid('resolved_by_id').references(() => users.id),
+  resolvedAt:  timestamp('resolved_at', { withTimezone: true }),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqAccountHash: uniqueIndex('uq_bank_line_account_hash').on(t.accountId, t.hash),
+  idxStatement:  index('idx_bank_line_statement').on(t.statementId, t.status),
+}));
+
+// "Ignore lines like this" for one bank account: personal spend, another business's money, and so on.
+// SUGGEST rules only propose ignoring; AUTO rules ignore on import (and say which rule did it). A line that matches
+// something in the books is never auto-ignored.
+export const bankIgnoreRules = pgTable('bank_ignore_rules', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  accountId:   uuid('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  pattern:     text('pattern').notNull(),                         // case-insensitive text found in the narration / reference
+  side:        text('side').notNull().default('ANY'),             // ANY | IN (credits) | OUT (debits)
+  minAmount:   numeric('min_amount', { precision: 16, scale: 2 }),
+  maxAmount:   numeric('max_amount', { precision: 16, scale: 2 }),
+  reason:      text('reason').notNull(),                          // PERSONAL | OTHER_BUSINESS | NOT_OURS | OTHER
+  action:      text('action').notNull().default('SUGGEST'),       // SUGGEST | AUTO
+  isActive:    boolean('is_active').notNull().default(true),
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  idxAccount: index('idx_bank_ignore_rule_account').on(t.accountId),
+}));
+
+// Which book entries (BANK-ledger journal lines) a statement line accounts for. A card/UPI settlement is one
+// statement line matching many sale entries, so this is one-to-many; a book entry is reconciled at most once.
+export const bankLineMatches = pgTable('bank_line_matches', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  lineId:        uuid('line_id').notNull().references(() => bankStatementLines.id, { onDelete: 'cascade' }),
+  journalLineId: uuid('journal_line_id').notNull().references(() => journalLines.id),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqJournalLine: uniqueIndex('uq_bank_match_journal_line').on(t.journalLineId),
+  idxLine:       index('idx_bank_match_line').on(t.lineId),
+}));
+
 // ─── MENU AVAILABILITY PER BRANCH ───────────────────────────────────────────
 
 // A branch can switch a menu item off without touching the shared menu

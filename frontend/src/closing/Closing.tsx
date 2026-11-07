@@ -3,6 +3,7 @@ import { X, RefreshCw, CheckCircle, DollarSign, Smartphone, CreditCard, BookOpen
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { businessDate } from '../lib/business-day';
 
 interface ClosingRow {
   id: string;
@@ -64,7 +65,7 @@ export function Closing() {
   const { user } = useAuth();
   const branchId = user?.branchId;
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = businessDate();
   const [closingDate, setClosingDate] = useState(todayStr);
 
   // Auto-calculated live sales from system bills
@@ -196,7 +197,22 @@ export function Closing() {
   // Final Total Sales for Day Closing = Cash + UPI + Card + Credit
   const finalDayGrossSales = numCashSales + numUpiSales + numCardSales + numCreditSales;
   const totalDigitalCollected = numUpiSales + numCardSales;
-  const totalMoneyCollectedToday = numActualCash + totalDigitalCollected;
+  // Money taken from customers today. The opening float is not a collection, so it is excluded
+  // (the drawer count below still includes it, because that is what physically sits in the till).
+  const totalMoneyCollectedToday = numCashSales + totalDigitalCollected;
+
+  // Figures the manager changed away from what the system computed from bills. The server requires a
+  // written reason for these and keeps the variance on the closing record.
+  const sameMoney = (a: string, b: string) => Math.abs((parseFloat(a) || 0) - (parseFloat(b) || 0)) < 0.005;
+  const overriddenChannels: string[] = autoSales && !isAlreadyClosed
+    ? ([
+        ['Cash', cashSales, autoSales.cashSales],
+        ['UPI', upiSales, autoSales.upiSales],
+        ['Card', cardSales, autoSales.cardSales],
+        ['Credit', creditSales, autoSales.creditSales],
+      ] as const).filter(([, mine, system]) => !sameMoney(mine, system)).map(([name]) => name)
+    : [];
+  const overrideNeedsNote = overriddenChannels.length > 0 && notes.trim().length < 10;
 
   const resetToAutoSales = () => {
     if (!autoSales) return;
@@ -230,6 +246,11 @@ export function Closing() {
     const act = parseFloat(actualCash.trim());
     if (isNaN(act)) {
       showToast('Enter the cash you counted.', 'error');
+      return;
+    }
+    if (overrideNeedsNote) {
+      showToast(`You changed ${overriddenChannels.join(', ')} from the system figure. Add a note (10+ characters) explaining why.`, 'error');
+      document.getElementById('closingNotes')?.focus();
       return;
     }
     setConfirmOpen(true);
@@ -273,8 +294,8 @@ export function Closing() {
       {/* Top Header & Date Selector */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border dark:border-gray-700">
         <div>
-          <h2 className="text-xl font-bold flex items-center gap-2 text-gray-900 dark:text-gray-100" id="closingTitle">
-            <span>🔒</span> Daily Closing &amp; Sales Reconciliation
+          <h2 className="text-2xl font-bold flex items-center gap-2 text-gray-900 dark:text-gray-100" id="closingTitle">
+            Daily Closing &amp; Sales Reconciliation
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             Auto-calculated sales breakdown from bills today. Review, verify, or adjust Cash, UPI, and Card before locking.
@@ -580,8 +601,14 @@ export function Closing() {
 
             <div>
               <label htmlFor="closingNotes" className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                Closing Remarks / Notes (optional)
+                Closing Remarks / Notes {overriddenChannels.length > 0 ? '(required: figures changed)' : '(optional)'}
               </label>
+              {overriddenChannels.length > 0 && (
+                <div id="closingOverrideWarning" role="alert" className="mb-1.5 text-[11px] rounded border border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-200 p-2">
+                  {overriddenChannels.join(', ')} differ from the system's billed figure. This is recorded on the closing
+                  and in the audit log. Explain why (e.g. bank / EDC settlement slip number).
+                </div>
+              )}
               <input
                 id="closingNotes"
                 disabled={isAlreadyClosed}
@@ -597,10 +624,9 @@ export function Closing() {
               id="btnSubmitClosing"
               disabled={submitting || isAlreadyClosed}
               onClick={handleSubmitClick}
-              className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow cursor-pointer disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-sm shadow cursor-pointer disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
-              <span>🔒</span>
-              <span>{isAlreadyClosed ? 'Day Already Closed & Locked' : submitting ? 'Closing day…' : 'Close Day & Save Report'}</span>
+                            <span>{isAlreadyClosed ? 'Day Already Closed & Locked' : submitting ? 'Closing day…' : 'Close Day & Save Report'}</span>
             </button>
 
             <div id="closingStatusMsg" role="status">
@@ -610,7 +636,7 @@ export function Closing() {
               {statusMsg && statusMsg.type === 'success' && statusMsg.data && (
                 <div className="p-3.5 bg-emerald-50 text-emerald-900 rounded-lg border border-emerald-200 text-xs space-y-1">
                   <div>
-                    ✅ <b>Day Closed &amp; Locked</b> (Audit ID: {String(statusMsg.data.id).slice(0, 8)}…)
+                    <b>Day Closed &amp; Locked</b> (Audit ID: {String(statusMsg.data.id).slice(0, 8)}…)
                   </div>
                   <div>
                     Business date {statusMsg.data.businessDate} · Gross ₹{parseFloat(statusMsg.data.grossSales).toFixed(2)} (
@@ -676,19 +702,19 @@ export function Closing() {
             {/* Detailed Sales Channels Grid */}
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-purple-800/60 text-xs">
               <div className="bg-white/10 p-2.5 rounded-lg">
-                <span className="text-purple-300 text-[11px] block">💵 Cash Sales</span>
+                <span className="text-purple-300 text-[11px] block">Cash Sales</span>
                 <span className="font-mono font-bold text-sm">₹{numCashSales.toFixed(2)}</span>
               </div>
               <div className="bg-white/10 p-2.5 rounded-lg">
-                <span className="text-purple-300 text-[11px] block">📱 UPI Sales</span>
+                <span className="text-purple-300 text-[11px] block">UPI Sales</span>
                 <span className="font-mono font-bold text-sm">₹{numUpiSales.toFixed(2)}</span>
               </div>
               <div className="bg-white/10 p-2.5 rounded-lg">
-                <span className="text-purple-300 text-[11px] block">💳 Card Sales</span>
+                <span className="text-purple-300 text-[11px] block">Card Sales</span>
                 <span className="font-mono font-bold text-sm">₹{numCardSales.toFixed(2)}</span>
               </div>
               <div className="bg-white/10 p-2.5 rounded-lg">
-                <span className="text-purple-300 text-[11px] block">📖 Khata Sales</span>
+                <span className="text-purple-300 text-[11px] block">Khata Sales</span>
                 <span className="font-mono font-bold text-sm">₹{numCreditSales.toFixed(2)}</span>
               </div>
             </div>
@@ -696,13 +722,13 @@ export function Closing() {
             {/* Total Money Collected Today */}
             <div className="bg-white/10 p-3 rounded-lg border border-white/10 space-y-1.5 text-xs">
               <div className="flex justify-between items-center text-purple-200">
-                <span>Total Money Collected Today:</span>
+                <span title="Cash + UPI + Card sales. Excludes the opening float and credit (khata) sales.">Total Collected from Customers (Cash + UPI + Card):</span>
                 <span id="closingTotalCollected" className="font-mono font-bold text-emerald-300 text-sm">
                   ₹{totalMoneyCollectedToday.toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between text-[11px] text-purple-300">
-                <span>Cash in Drawer (Counted):</span>
+                <span>Cash in Drawer (Counted, incl. opening float):</span>
                 <span className="font-mono font-semibold">₹{numActualCash.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-[11px] text-purple-300">
@@ -773,7 +799,7 @@ export function Closing() {
 
       {/* Confirmation Modal */}
       {confirmOpen && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
           <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-start">
               <h3 className="text-lg font-bold" id="modalTitle">Close day {closingDate}?</h3>
@@ -824,7 +850,7 @@ export function Closing() {
                 type="button"
                 id="confirmOk"
                 disabled={submitting}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm cursor-pointer disabled:opacity-50"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm cursor-pointer disabled:opacity-50"
                 onClick={executeClosing}
               >
                 {submitting ? 'Closing…' : 'Close day'}

@@ -74,7 +74,7 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
     expect(totalText).not.toBe('₹0.00');
 
     // Click Checkout
-    const checkoutBtn = page.locator('button[onclick="checkout()"]');
+    const checkoutBtn = page.locator('#checkoutBtn');
     await expect(checkoutBtn).toBeVisible();
     await checkoutBtn.click();
 
@@ -93,10 +93,14 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
     await page.click('button:has-text("Sign In")');
 
     // Cashier-level screens are reachable…
-    const navTabs = ['dashboard', 'pos', 'shift', 'bills', 'customers', 'tables', 'products', 'stock', 'counter'];
-    for (const tab of navTabs) {
-      await page.click(`#nav-${tab}`);
-      await expect(page.locator(`#page-${tab}`)).toBeVisible();
+    // [menu item, id of the page it opens]
+    const navTabs: Array<[string, string]> = [
+      ['dashboard', 'dashboard'], ['pos', 'pos'], ['shift', 'shift'], ['bills', 'bills'], ['customers', 'customers'],
+      ['tables', 'tables'], ['products', 'products'], ['inventory', 'stock'], ['counter', 'counter'],
+    ];
+    for (const [nav, pageId] of navTabs) {
+      await page.click(`#nav-${nav}`);
+      await expect(page.locator(`#page-${pageId}`)).toBeVisible();
     }
     // …manager-only screens are not offered to a cashier
     for (const tab of ['schemes', 'compliance', 'accounting', 'closing', 'admin']) {

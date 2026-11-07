@@ -206,7 +206,7 @@ export function Ledger() {
             {tbData.isBalanced ? 'Balanced ✓' : `Not balanced — difference ${fmtMoney(tbData.difference)}`}
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700">
                 <tr>

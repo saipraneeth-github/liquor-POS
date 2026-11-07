@@ -23,6 +23,12 @@ function getActionCopy(url: string, method: string): { title: string; subtitle: 
   if (url.includes('/bills') && method === 'POST') {
     return { title: 'Processing Counter Bill…', subtitle: 'Recording payment & deducting live store stock…' };
   }
+  if (url.includes('/bank/') && url.includes('/statements')) {
+    return { title: 'Reading Bank Statement…', subtitle: 'Detecting columns and checking that the balances add up…' };
+  }
+  if (url.includes('/bank/')) {
+    return { title: 'Updating Bank Reconciliation…', subtitle: 'Matching the statement line with your books…' };
+  }
   if (url.includes('/closing')) {
     return { title: 'Finalizing Daily Closing…', subtitle: 'Reconciling tender totals and locking registers…' };
   }
@@ -121,6 +127,18 @@ class ApiClient {
         method: 'DELETE',
         headers: this.getHeaders(false),
       });
+      return await handleResponse<T>(res);
+    } finally {
+      stopGlobalLoading();
+    }
+  }
+
+  /** Multipart upload (a file plus text fields). The browser sets the Content-Type boundary itself. */
+  async upload<T>(url: string, form: FormData): Promise<T> {
+    const { title, subtitle } = getActionCopy(url, 'POST');
+    startGlobalLoading(title, subtitle);
+    try {
+      const res = await fetch(`${API_BASE}${url}`, { method: 'POST', headers: this.getHeaders(false), body: form });
       return await handleResponse<T>(res);
     } finally {
       stopGlobalLoading();

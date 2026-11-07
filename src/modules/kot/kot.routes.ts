@@ -83,7 +83,8 @@ export async function kotRoutes(app: FastifyInstance) {
     const params = z.object({ kotOrderId: z.string().uuid() }).safeParse(req.params);
     if (!params.success) return reply.status(404).send({ error: 'KOT order not found' });
 
-    const rawBranchId = (req.body as any)?.branchId || (req.query as any)?.branchId;
+    const rawBranchId = (req.body as { branchId?: unknown } | null | undefined)?.branchId
+      || (req.query as { branchId?: unknown } | null | undefined)?.branchId;
     let targetBranchId: string;
 
     if (rawBranchId && typeof rawBranchId === 'string' && z.string().uuid().safeParse(rawBranchId).success) {
@@ -112,7 +113,8 @@ export async function kotRoutes(app: FastifyInstance) {
     const params = SessionParams.safeParse(req.params);
     if (!params.success) return reply.status(404).send({ error: 'Session not found' });
 
-    const rawBranchId = (req.body as any)?.branchId || (req.query as any)?.branchId;
+    const rawBranchId = (req.body as { branchId?: unknown } | null | undefined)?.branchId
+      || (req.query as { branchId?: unknown } | null | undefined)?.branchId;
     let targetBranchId: string;
 
     if (rawBranchId && typeof rawBranchId === 'string' && z.string().uuid().safeParse(rawBranchId).success) {

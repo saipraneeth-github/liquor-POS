@@ -57,7 +57,9 @@ test('offline bills stay with the cashier who rang them: the next user to sign i
   await expect(page.locator('#checkoutHistoryBtn')).toHaveText('View pending');
   await page.click('#checkoutHistoryBtn');
   await expect(page.locator('#billsPending')).toContainText('Pending sync');
-  const cashierKey = await page.evaluate(() => (window as unknown as { queueKey: () => string }).queueKey());
+  // The offline queue is kept per signed-in user under this storage key prefix
+  const cashierKey = await page.evaluate(() => Object.keys(localStorage).find((k) => k.startsWith('lc_offline_bills:')) ?? '');
+  expect(cashierKey).not.toBe('');
 
   // Signing out warns about the unsynced bill (in-page confirmation) and keeps it on the device
   await page.click('button:has-text("Sign out")');
@@ -69,10 +71,12 @@ test('offline bills stay with the cashier who rang them: the next user to sign i
   await login(page, 'manager@liquor.com');
   // Give the manager session time to run its sync pass; the cashier's bill must stay queued and untouched
   await page.waitForTimeout(3000);
-  const state = await page.evaluate((k) => ({
-    cashier: JSON.parse(localStorage.getItem(k) || '[]').length,
-    manager: JSON.parse(localStorage.getItem((window as unknown as { queueKey: () => string }).queueKey()) || '[]').length,
-  }), cashierKey);
-  expect(state).toEqual({ cashier: 1, manager: 0 });
-  await expect(page.locator('#lastSync')).toHaveText('');
+  const state = await page.evaluate((k) => {
+    const queued = (key: string) => JSON.parse(localStorage.getItem(key) || '[]').length as number;
+    const others = Object.keys(localStorage).filter((x) => x.startsWith('lc_offline_bills:') && x !== k);
+    return { cashier: queued(k), others: others.reduce((n, x) => n + queued(x), 0) };
+  }, cashierKey);
+  expect(state).toEqual({ cashier: 1, others: 0 });
+  // the manager's session did not sync anything, so there is no sync message on screen
+  await expect(page.locator('#lastSync')).toHaveCount(0);
 });

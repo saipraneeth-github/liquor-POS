@@ -36,6 +36,7 @@ const PAGE_KEYS = [
   'schemes',
   'compliance',
   'accounting',
+  'bank',
   'closing',
   'admin',
 ];
@@ -56,6 +57,7 @@ const PAGE_MIN_ROLE: Record<string, string> = {
   schemes: 'manager',
   compliance: 'manager',
   accounting: 'manager',
+  bank: 'manager',
   closing: 'manager',
   admin: 'manager',
 };
@@ -235,10 +237,13 @@ export function Admin() {
 
   return (
     <section className="page active" id="page-admin" aria-labelledby="adminTitle">
-      <h2 className="h1 text-xl font-bold mb-4" id="adminTitle">⚙ Administration</h2>
+      <div className="mb-5">
+        <h2 className="text-2xl font-bold" id="adminTitle">Administration</h2>
+        <p className="text-sm text-gray-500 mt-0.5">Who can sign in at this branch, what each person can open, and which counters are set up.</p>
+      </div>
 
       <div className="card pad stack p-6 bg-white rounded shadow mb-6 flex flex-col gap-4">
-        <div className="h2 text-lg font-bold border-b pb-2">👥 Users</div>
+        <div className="h2 text-lg font-bold border-b pb-2">Users</div>
         <div id="userList" className="table-wrap overflow-x-auto text-sm">
           {loading ? (
             <BeerBottleLoader inline size="sm" title="Loading Staff & Users…" subtitle="Fetching branch user accounts and roles…" />
@@ -360,7 +365,7 @@ export function Admin() {
           </label>
           <div className="col-span-full">
             <button
-              className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm disabled:opacity-50"
+              className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm disabled:opacity-50"
               type="submit"
               id="nuSubmit"
               disabled={creatingUser}
@@ -372,7 +377,7 @@ export function Admin() {
       </div>
 
       <div className="card pad stack p-6 bg-white rounded shadow mb-6 flex flex-col gap-4">
-        <div className="h2 text-lg font-bold border-b pb-2">🖥 Terminals</div>
+        <div className="h2 text-lg font-bold border-b pb-2">Terminals</div>
         <div id="terminalList" className="table-wrap overflow-x-auto text-sm">
           {terminals.length === 0 ? (
             <div className="muted small text-gray-500">No terminals.</div>
@@ -414,7 +419,7 @@ export function Admin() {
             />
           </label>
           <button
-            className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm disabled:opacity-50"
+            className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm disabled:opacity-50"
             type="submit"
             disabled={creatingTerminal}
           >
@@ -424,7 +429,7 @@ export function Admin() {
       </div>
 
       {editingUserId && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
           <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
             <div className="flex justify-between items-start mb-1">
               <h3 className="text-lg font-bold" id="modalTitle">Page permissions</h3>
@@ -472,7 +477,7 @@ export function Admin() {
                   </button>
                   <button
                     type="button"
-                    className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium"
+                    className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium"
                     onClick={handleSavePages}
                   >
                     Save

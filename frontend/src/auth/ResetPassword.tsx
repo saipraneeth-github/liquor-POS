@@ -1,12 +1,10 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Sun, Moon } from 'lucide-react';
 import { api } from '../api/client';
 import { errorMessage } from '../lib/print';
-import { useTheme } from '../context/ThemeContext';
+import { AuthShell } from './AuthShell';
 
 export function ResetPassword() {
-  const { theme, toggleTheme } = useTheme();
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const [password, setPassword] = useState('');
@@ -31,33 +29,39 @@ export function ResetPassword() {
   };
 
   return (
-    <div className="relative flex min-h-dvh items-center justify-center bg-gray-50 dark:bg-gray-900 p-4" id="resetPage">
-      <button
-        type="button"
-        onClick={toggleTheme}
-        className="absolute top-4 right-4 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 shadow-sm transition-colors cursor-pointer flex items-center gap-2 text-xs font-medium"
-        aria-label="Toggle dark/light theme"
-      >
-        {theme === 'dark' ? <><Sun size={18} className="text-amber-400" /><span className="hidden sm:inline">Light</span></> : <><Moon size={18} className="text-purple-600" /><span className="hidden sm:inline">Dark</span></>}
-      </button>
-      <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-6 space-y-4">
-        <h1 className="text-xl font-bold">Choose a new password</h1>
-        {!token ? (
-          <p className="text-sm text-red-600">This link is incomplete. Ask for a new reset link.</p>
-        ) : done ? (
-          <p className="text-sm text-emerald-700" id="resetDone">Your password has been changed. You can sign in now.</p>
-        ) : (
-          <form onSubmit={submit} className="space-y-4">
-            {error && <div className="text-sm text-red-600" id="resetError">{error}</div>}
-            <input id="resetNew" className="input-base" type="password" required minLength={8} autoComplete="new-password" placeholder="New password (8+ characters)" value={password} onChange={(e) => setPassword(e.target.value)} />
-            <input id="resetConfirm" className="input-base" type="password" required minLength={8} autoComplete="new-password" placeholder="Repeat the new password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-            <button id="resetSubmit" type="submit" disabled={busy} className="w-full py-2 text-sm font-semibold bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg cursor-pointer">
-              {busy ? 'Saving…' : 'Change password'}
-            </button>
-          </form>
-        )}
-        <Link to="/login" className="block text-sm text-purple-600 hover:underline">Go to sign in</Link>
-      </div>
-    </div>
+    <AuthShell id="resetPage" heading="Choose a new password" text="Pick something you will remember and nobody else can guess. At least 8 characters.">
+      <h1>Choose a new password</h1>
+      {!token ? (
+        <>
+          <div className="lc-alert bad" role="alert"><span>This link is incomplete. Ask for a new reset link.</span></div>
+          <Link to="/forgot-password" className="lc-link" style={{ alignSelf: 'flex-start', marginLeft: -6 }}>Get a new link</Link>
+        </>
+      ) : done ? (
+        <>
+          <div className="lc-alert good" id="resetDone" role="status"><span>Your password has been changed. You can sign in now.</span></div>
+          <Link to="/login" className="lc-btn lc-btn-primary">Go to sign in</Link>
+        </>
+      ) : (
+        <form onSubmit={submit} className="lc-login-form" style={{ padding: 0, maxWidth: 'none' }}>
+          {error && <div className="lc-alert bad" id="resetError" role="alert"><span>{error}</span></div>}
+          <div className="lc-field">
+            <label htmlFor="resetNew">New password</label>
+            <div className="lc-input">
+              <input id="resetNew" type="password" required minLength={8} autoComplete="new-password" placeholder="8 or more characters" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
+          </div>
+          <div className="lc-field">
+            <label htmlFor="resetConfirm">Repeat the new password</label>
+            <div className="lc-input">
+              <input id="resetConfirm" type="password" required minLength={8} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            </div>
+          </div>
+          <button id="resetSubmit" type="submit" disabled={busy} aria-busy={busy} className="lc-btn lc-btn-primary">
+            {busy ? 'Saving…' : 'Change password'}
+          </button>
+          <Link to="/login" className="lc-link" style={{ alignSelf: 'flex-start', marginLeft: -6 }}>Back to sign in</Link>
+        </form>
+      )}
+    </AuthShell>
   );
 }

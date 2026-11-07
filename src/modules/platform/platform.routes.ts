@@ -2,6 +2,7 @@
  * platform.routes.ts — Super Admin (platform owner) back office + the Admin's own subscription view.
  *
  * GET   /api/v1/platform/overview        — totals across all tenants (platform owner)
+ * GET   /api/v1/platform/dashboard       — MRR, plan mix, trial funnel, billed revenue by month, "needs action" queue (platform owner)
  * GET   /api/v1/platform/tenants         — tenants with plan, usage and admins (platform owner)
  * POST  /api/v1/platform/tenants         — create a tenant and its first Admin (platform owner)
  * PATCH /api/v1/platform/tenants/:id     — plan, branch limit, suspend / activate (platform owner)
@@ -31,6 +32,7 @@ import {
   createTenant,
   listTenants,
   platformOverview,
+  platformDashboard,
   tenantSummary,
   updateTenant,
 } from './platform.service.js';
@@ -51,6 +53,11 @@ export async function platformRoutes(app: FastifyInstance) {
   app.get('/platform/overview', { preHandler: owner }, async (req, reply) => {
     if (!(await superAdminOnly(getUser(req), reply))) return;
     return platformOverview();
+  });
+
+  app.get('/platform/dashboard', { preHandler: owner }, async (req, reply) => {
+    if (!(await superAdminOnly(getUser(req), reply))) return;
+    return platformDashboard();
   });
 
   app.get('/platform/tenants', { preHandler: owner }, async (req, reply) => {

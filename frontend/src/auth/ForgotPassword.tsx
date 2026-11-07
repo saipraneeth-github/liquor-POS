@@ -1,12 +1,10 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Sun, Moon } from 'lucide-react';
 import { api } from '../api/client';
 import { errorMessage } from '../lib/print';
-import { useTheme } from '../context/ThemeContext';
+import { AuthShell } from './AuthShell';
 
 export function ForgotPassword() {
-  const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
@@ -27,33 +25,31 @@ export function ForgotPassword() {
   };
 
   return (
-    <div className="relative flex min-h-dvh items-center justify-center bg-gray-50 dark:bg-gray-900 p-4" id="forgotPage">
-      <button
-        type="button"
-        onClick={toggleTheme}
-        className="absolute top-4 right-4 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 shadow-sm transition-colors cursor-pointer flex items-center gap-2 text-xs font-medium"
-        aria-label="Toggle dark/light theme"
-      >
-        {theme === 'dark' ? <><Sun size={18} className="text-amber-400" /><span className="hidden sm:inline">Light</span></> : <><Moon size={18} className="text-purple-600" /><span className="hidden sm:inline">Dark</span></>}
-      </button>
-      <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-6 space-y-4">
-        <h1 className="text-xl font-bold">Forgot your password?</h1>
-        {sent ? (
-          <p className="text-sm text-gray-600 dark:text-gray-300" id="forgotSent">
-            If that address has an account, a reset link is on its way. It works for one hour. Check your spam folder if it does not arrive.
-          </p>
-        ) : (
-          <form onSubmit={submit} className="space-y-4">
-            <p className="text-sm text-gray-500">Enter the e-mail you sign in with and we will send you a link to choose a new password.</p>
-            {error && <div className="text-sm text-red-600">{error}</div>}
-            <input id="forgotEmail" className="input-base" type="email" required autoFocus placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <button id="forgotSubmit" type="submit" disabled={busy} className="w-full py-2 text-sm font-semibold bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg cursor-pointer">
-              {busy ? 'Sending…' : 'Send reset link'}
-            </button>
-          </form>
-        )}
-        <Link to="/login" className="block text-sm text-purple-600 hover:underline">Back to sign in</Link>
-      </div>
-    </div>
+    <AuthShell id="forgotPage" heading="Locked out? It happens." text="We will send a link to your e-mail so you can choose a new password and get back to the counter.">
+      <h1>Forgot your password?</h1>
+      {sent ? (
+        <>
+          <div className="lc-alert good" id="forgotSent" role="status">
+            <span>If that address has an account, a reset link is on its way. It works for one hour. Check your spam folder if it does not arrive.</span>
+          </div>
+          <Link to="/login" className="lc-link" style={{ alignSelf: 'flex-start', marginLeft: -6 }}>Back to sign in</Link>
+        </>
+      ) : (
+        <form onSubmit={submit} className="lc-login-form" style={{ padding: 0, maxWidth: 'none' }}>
+          <p className="lead">Enter the e-mail you sign in with and we will send you a link to choose a new password.</p>
+          {error && <div className="lc-alert bad" role="alert"><span>{error}</span></div>}
+          <div className="lc-field">
+            <label htmlFor="forgotEmail">Email</label>
+            <div className="lc-input">
+              <input id="forgotEmail" type="email" required autoFocus autoComplete="username" inputMode="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+          </div>
+          <button id="forgotSubmit" type="submit" disabled={busy} aria-busy={busy} className="lc-btn lc-btn-primary">
+            {busy ? 'Sending…' : 'Send reset link'}
+          </button>
+          <Link to="/login" className="lc-link" style={{ alignSelf: 'flex-start', marginLeft: -6 }}>Back to sign in</Link>
+        </form>
+      )}
+    </AuthShell>
   );
 }

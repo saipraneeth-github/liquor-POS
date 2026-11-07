@@ -20,7 +20,11 @@ test('owner picks a branch (persisted across reload) and closes the day for it',
   await page.reload();
   await expect(page.locator('#mainApp')).toBeVisible();
   await expect(page.locator('#sidebarBranch')).toContainText('MAIN-01');
-  const mainId = await page.locator('#branchSelect').inputValue();
+
+  // Close the day for the new branch. (MAIN-01 is shared with other specs, and a branch can only be closed once a day.)
+  await page.locator('#branchSelect').selectOption({ label: `${code} — E2E Branch ${code}` });
+  await expect(page.locator('#sidebarBranch')).toContainText(code);
+  const closedBranchId = await page.locator('#branchSelect').inputValue();
 
   // Close the day for the selected branch
   await page.click('#nav-closing');
@@ -34,7 +38,7 @@ test('owner picks a branch (persisted across reload) and closes the day for it',
     page.click('#confirmOk'),
   ]);
   expect(resp.status()).toBe(201);
-  expect(resp.request().postDataJSON().branchId).toBe(mainId);
+  expect(resp.request().postDataJSON().branchId).toBe(closedBranchId);
   await expect(page.locator('#closingStatusMsg')).toContainText('Day Closed & Locked');
   await expect(page.locator('#closingHistory table')).toBeVisible();
 });

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getCategoryInfo } from '../components/category-icons';
-import { X, Trash2 } from 'lucide-react';
+import { X, Trash2, AlertTriangle, FileText, Camera, PackageOpen, Loader2 } from 'lucide-react';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { showToast } from '../lib/toast';
+import { businessDate } from '../lib/business-day';
 
 interface StockRow {
   productId: string;
@@ -158,6 +159,15 @@ interface CreateProductModalState {
   exciseCode: string;
 }
 
+/** What the bill's lines add up to. A bill typed in by hand carries a stale "0.00" until it is saved, so work it out from the lines. */
+function invoiceLinesTotal(data: ActiveInvoiceData | null): string {
+  if (!data) return '0.00';
+  const saved = parseFloat(data.invoice.linesTotal || '0');
+  if (data.invoice.id && saved > 0) return saved.toFixed(2);
+  const computed = data.items.reduce((sum, it) => sum + (it.quantity || 0) * parseFloat(it.costPrice || '0'), 0);
+  return computed.toFixed(2);
+}
+
 export function Inventory() {
   const { user } = useAuth();
   const branchId = user?.branchId;
@@ -297,8 +307,8 @@ export function Inventory() {
 
   const loadBreakage = async () => {
     if (!branchId || !isManager) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const past = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const today = businessDate();
+    const past = businessDate(-30);
     try {
       const res = await api.get<{ entries: any[] }>(`/compliance/breakage/${branchId}?from=${past}&to=${today}`);
       setBreakLog(res.entries);
@@ -506,7 +516,7 @@ export function Inventory() {
 
   const startManualDraft = () => {
     const first = products[0];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = businessDate();
     setActiveInvoice({
       invoice: {
         id: '',
@@ -741,6 +751,10 @@ export function Inventory() {
 
   // ── Save, Review & Approve ────────────────────────────────────────────────
 
+  // The id of the bill after the latest successful save. A bill typed in by hand has no id until its first save, and the
+  // state set by that save is not visible to the handler that asked for it, so callers read the id from here.
+  const savedInvoiceIdRef = useRef<string>('');
+
   const saveDraft = async (silent = false): Promise<boolean> => {
     if (!activeInvoice) return false;
     const inv = activeInvoice.invoice;
@@ -773,9 +787,11 @@ export function Inventory() {
     try {
       if (inv.id) {
         const updated = await api.put<ActiveInvoiceData>('/invoices/detail/' + inv.id, payload);
+        savedInvoiceIdRef.current = updated.invoice.id || inv.id;
         setActiveInvoice(updated);
       } else {
         const created = await api.post<ActiveInvoiceData>('/invoices/' + branchId, payload);
+        savedInvoiceIdRef.current = created.invoice.id;
         setActiveInvoice(created);
       }
       loadInvoices();
@@ -788,7 +804,7 @@ export function Inventory() {
   };
 
   const handleReview = async () => {
-    if (!activeInvoice || !activeInvoice.invoice.id || isReviewing) return;
+    if (!activeInvoice || isReviewing) return;
     setIsReviewing(true);
     const ok = await saveDraft(true);
     if (!ok) {
@@ -796,7 +812,7 @@ export function Inventory() {
       return;
     }
     try {
-      const updated = await api.post<ActiveInvoiceData>(`/invoices/detail/${activeInvoice.invoice.id}/review`, {});
+      const updated = await api.post<ActiveInvoiceData>(`/invoices/detail/${savedInvoiceIdRef.current || activeInvoice.invoice.id}/review`, {});
       setActiveInvoice(updated);
       await loadInvoices();
       showToast(`✓ Invoice #${activeInvoice.invoice.invoiceNumber || 'Draft'} marked as REVIEWED. Ready for inward confirmation.`, 'success');
@@ -845,9 +861,9 @@ export function Inventory() {
 
   const handleApprove = () => {
     if (isApproving) return;
-    if (!activeInvoice || !activeInvoice.invoice.id) return;
+    if (!activeInvoice) return;
     const totalBottles = activeInvoice.items.reduce((sum, it) => sum + (it.quantity || 0), 0);
-    const totalCost = parseFloat(activeInvoice.invoice.linesTotal || activeInvoice.invoice.totalAmount).toFixed(2);
+    const totalCost = invoiceLinesTotal(activeInvoice);
 
     setConfirmModal({
       title: 'Confirm Stock Inward',
@@ -863,7 +879,7 @@ export function Inventory() {
             return;
           }
           setApprovalStage('inwarding');
-          await api.post<ActiveInvoiceData>(`/invoices/detail/${activeInvoice.invoice.id}/approve`, {});
+          await api.post<ActiveInvoiceData>(`/invoices/detail/${savedInvoiceIdRef.current || activeInvoice.invoice.id}/approve`, {});
           showToast(`✓ Success: ${totalBottles} bottles added to store inventory!`, 'success');
           setApprovalStage('refreshing');
           await Promise.all([loadStock(), loadInvoices()]);
@@ -950,11 +966,16 @@ export function Inventory() {
   return (
     <section className="page active p-4 md:p-6 max-w-7xl mx-auto" id="page-stock" aria-labelledby="stockTitle">
       {/* ── Top Header & Tab Navigation ────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2" id="stockTitle">
-            <span>📦</span> Store Inventory &amp; Supplier Bills
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-50" id="stockTitle">
+            Store Inventory &amp; Supplier Bills
           </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {activeTab === 'upload' ? 'Add a supplier bill, check what was read, then confirm it into stock.'
+              : activeTab === 'history' ? 'Every supplier bill, with its review and inward status.'
+              : 'Live bottle counts, cost and margin for this store.'}
+          </p>
         </div>
 
         {/* Tab Switcher */}
@@ -963,18 +984,18 @@ export function Inventory() {
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'upload'
-                ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                ? 'bg-purple-600 text-white shadow-sm font-semibold'
                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
             }`}
             onClick={() => setActiveTab('upload')}
           >
-            <span>📥</span> Add Supplier Bill
+            Add Supplier Bill
           </button>
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'history'
-                ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                ? 'bg-purple-600 text-white shadow-sm font-semibold'
                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
             }`}
             onClick={() => {
@@ -982,7 +1003,7 @@ export function Inventory() {
               loadInvoices();
             }}
           >
-            <span>📋</span> Bill History
+            Bill History
             <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-mono">
               {invoices.length}
             </span>
@@ -991,7 +1012,7 @@ export function Inventory() {
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'stock'
-                ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                ? 'bg-purple-600 text-white shadow-sm font-semibold'
                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
             }`}
             onClick={() => {
@@ -999,7 +1020,7 @@ export function Inventory() {
               loadStock();
             }}
           >
-            <span>🍾</span> Current Store Stock
+            Current Store Stock
           </button>
         </div>
       </div>
@@ -1016,7 +1037,7 @@ export function Inventory() {
                 {i > 0 && <span className={`h-px w-8 sm:w-14 ${wizardStep >= n ? 'bg-emerald-500' : 'bg-gray-300'}`} />}
                 <span
                   className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    wizardStep === n ? 'bg-blue-600 text-white' : wizardStep > n ? 'bg-emerald-500 text-white' : 'bg-gray-200 text-gray-500'
+                    wizardStep === n ? 'bg-purple-600 text-white' : wizardStep > n ? 'bg-emerald-500 text-white' : 'bg-gray-200 text-gray-500'
                   }`}
                 >
                   {wizardStep > n ? '✓' : n}
@@ -1036,7 +1057,7 @@ export function Inventory() {
               {/* Friendly Error Banner */}
               {uploadError && (
                 <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm flex items-start gap-3">
-                  <span className="text-xl">⚠️</span>
+                  <AlertTriangle size={20} className="shrink-0 mt-0.5" aria-hidden="true" />
                   <div className="flex-1">
                     <div className="font-bold">Check Required</div>
                     <p className="mt-0.5">{uploadError}</p>
@@ -1060,7 +1081,7 @@ export function Inventory() {
                   <div
                     className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
                       isDragActive
-                        ? 'border-blue-500 bg-blue-50'
+                        ? 'border-purple-500 bg-purple-50'
                         : uploadFile
                         ? 'border-emerald-400 bg-emerald-50/40 dark:bg-emerald-900/20'
                         : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 bg-gray-50/50 dark:bg-gray-800/40'
@@ -1090,7 +1111,7 @@ export function Inventory() {
 
                     {uploadFile ? (
                       <div className="space-y-2">
-                        <div className="text-3xl">📄</div>
+                        <FileText size={32} className="mx-auto text-gray-400" aria-hidden="true" />
                         <div className="font-bold text-gray-900 text-base">{uploadFile.name}</div>
                         <div className="text-xs text-gray-500">
                           File size: {(uploadFile.size / 1024 / 1024).toFixed(2)} MB — Ready to read
@@ -1108,7 +1129,7 @@ export function Inventory() {
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <div className="text-4xl">📸</div>
+                        <Camera size={36} className="mx-auto text-gray-400" aria-hidden="true" />
                         <div className="font-bold text-gray-900 text-base">
                           Click to select bill or drag file here
                         </div>
@@ -1129,7 +1150,7 @@ export function Inventory() {
                     </label>
                     <input
                       id="invUploadNumber"
-                      className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
                       maxLength={60}
                       placeholder="e.g. ICDC032070940 or INV-001"
                       value={uploadNumber}
@@ -1139,7 +1160,7 @@ export function Inventory() {
                     {/* Real-time Debounce Feedback */}
                     {dupCheckStatus === 'checking' && (
                       <div className="text-xs text-blue-600 flex items-center gap-1 font-medium mt-1">
-                        <span>⏳</span> Checking if bill was already added…
+                        Checking if bill was already added…
                       </div>
                     )}
                     {dupCheckStatus === 'available' && (
@@ -1150,7 +1171,7 @@ export function Inventory() {
                     {dupCheckStatus === 'duplicate' && (
                       <div className="p-3 bg-red-50 border border-red-300 rounded-lg text-xs text-red-800 mt-2 space-y-1">
                         <div className="font-bold flex items-center gap-1">
-                          <span>⚠️</span> Already Uploaded
+                          Already Uploaded
                         </div>
                         <p>{dupCheckMsg}</p>
                         {dupCheckExisting?.id && (
@@ -1159,7 +1180,7 @@ export function Inventory() {
                             className="mt-1 px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded font-medium text-xs flex items-center gap-1 cursor-pointer"
                             onClick={() => openInvoice(dupCheckExisting.id)}
                           >
-                            <span>👁️</span> Open Existing Bill
+                            Open Existing Bill
                           </button>
                         )}
                       </div>
@@ -1173,7 +1194,7 @@ export function Inventory() {
                     </label>
                     <input
                       id="invUploadSupplier"
-                      className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
                       maxLength={200}
                       placeholder="e.g. ICDC / TSBCL"
                       value={uploadSupplier}
@@ -1189,7 +1210,7 @@ export function Inventory() {
                     <input
                       id="invUploadDate"
                       type="date"
-                      className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      className="w-full p-2.5 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none"
                       value={uploadDate}
                       onChange={(e) => setUploadDate(e.target.value)}
                     />
@@ -1203,18 +1224,18 @@ export function Inventory() {
                     className="text-xs text-blue-600 hover:text-blue-800 font-semibold underline flex items-center gap-1 cursor-pointer"
                     onClick={startManualDraft}
                   >
-                    <span>✍️</span> Enter bill items manually
+                    Enter bill items manually
                   </button>
 
                   <button
                     id="invUploadBtn"
                     type="submit"
                     disabled={uploading || dupCheckStatus === 'duplicate' || !uploadFile}
-                    className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
                     {uploading ? (
                       <>
-                        <span className="animate-spin">⏳</span> Reading Bill Items…
+                        <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Reading Bill Items…
                       </>
                     ) : (
                       <>
@@ -1319,7 +1340,7 @@ export function Inventory() {
                   />
                   {editDupStatus === 'duplicate' && (
                     <div className="text-[11px] text-red-600 font-bold mt-1">
-                      ⚠️ {editDupMsg}
+                      {editDupMsg}
                     </div>
                   )}
                 </div>
@@ -1400,7 +1421,7 @@ export function Inventory() {
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800">
-                            ⚠️ Diff: ₹{diff.toFixed(2)}
+                            Diff: ₹{diff.toFixed(2)}
                           </span>
                         )}
                         {hasDepotLedger && (
@@ -1505,7 +1526,7 @@ export function Inventory() {
                                   );
                                 })()}
                                 <input
-                                  className="ie-desc w-full px-1 py-0.5 rounded text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-400 focus:bg-white outline-none"
+                                  className="ie-desc w-full px-1 py-0.5 rounded text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-purple-400 focus:bg-white outline-none"
                                   value={it.rawDescription}
                                   onChange={(e) => handleLineDescChange(idx, e.target.value)}
                                   title="Description as printed on the bill"
@@ -1575,7 +1596,7 @@ export function Inventory() {
                                 );
                               })()}
                               {(it.flags || []).length > 0 && (
-                                <div className="text-[11px] text-amber-700">⚠ {it.flags.join(', ')}</div>
+                                <div className="text-[11px] text-amber-700">{it.flags.join(', ')}</div>
                               )}
                             </td>
                             <td className="py-3 px-2 text-right">
@@ -1648,7 +1669,7 @@ export function Inventory() {
                     className="min-h-[44px] px-4 py-2 text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 rounded-lg border flex items-center gap-1.5 cursor-pointer"
                     onClick={() => saveDraft()}
                   >
-                    <span>💾</span> Save Draft
+                    Save Draft
                   </button>
                 </div>
 
@@ -1694,10 +1715,10 @@ export function Inventory() {
                     <button
                       type="button"
                       disabled={isApproving}
-                      className="min-h-[48px] px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer transition-all"
+                      className="min-h-[48px] px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer transition-all"
                       onClick={() => setWizardStep(3)}
                     >
-                      <span>➡️</span> Proceed to Inward Confirmation
+                      Proceed to Inward Confirmation
                     </button>
                   )}
                 </div>
@@ -1709,7 +1730,7 @@ export function Inventory() {
           {wizardStep === 3 && activeInvoice && (
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800 p-6 max-w-3xl mx-auto space-y-6">
               <div className="text-center space-y-1">
-                <div className="text-4xl">📦</div>
+                <PackageOpen size={36} className="mx-auto text-gray-400" aria-hidden="true" />
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Confirm Stock Inward</h2>
               </div>
 
@@ -1723,7 +1744,7 @@ export function Inventory() {
                 <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/50 rounded-xl text-center">
                   <div className="text-xs text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Total Amount</div>
                   <div className="text-2xl font-bold text-emerald-900 dark:text-emerald-100 mt-1 font-mono">
-                    ₹{parseFloat(activeInvoice.invoice.linesTotal || activeInvoice.invoice.totalAmount).toFixed(2)}
+                    ₹{invoiceLinesTotal(activeInvoice)}
                   </div>
                 </div>
 
@@ -1772,7 +1793,7 @@ export function Inventory() {
                   className="min-h-[48px] px-6 py-2.5 text-sm font-semibold text-gray-700 dark:text-slate-200 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 rounded-lg border dark:border-slate-700 flex items-center gap-1.5 cursor-pointer"
                   onClick={() => setWizardStep(2)}
                 >
-                  <span>✏️</span> Edit or Fix Items
+                  Edit or Fix Items
                 </button>
 
                 {isManager ? (
@@ -1809,11 +1830,11 @@ export function Inventory() {
                       >
                       {isApproving ? (
                         <>
-                          <span className="animate-spin text-lg">🍺</span> Pouring into Live Stock...
+                          <Loader2 size={18} className="animate-spin" aria-hidden="true" /> Pouring into Live Stock...
                         </>
                       ) : (
                         <>
-                          <span>✅</span> Confirm &amp; Add to Live Stock
+                          Confirm &amp; Add to Live Stock
                         </>
                       )}
                     </button>
@@ -1822,7 +1843,7 @@ export function Inventory() {
                 ) : (
                   <button
                     type="button"
-                    className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 cursor-pointer"
                     onClick={async () => {
                       await saveDraft();
                       showToast('Bill submitted for manager review.', 'success');
@@ -2023,11 +2044,11 @@ export function Inventory() {
                 disabled={s.k === 'bottles'}
                 onClick={() => setStockFilter(s.k === 'low' || s.k === 'out' ? (stockFilter === s.k ? 'all' : s.k) : 'all')}
                 className={`text-left p-4 bg-white rounded-xl border transition-colors ${
-                  stockFilter === s.k ? 'ring-2 ring-blue-500' : s.k !== 'bottles' ? 'hover:border-gray-400 cursor-pointer' : ''
+                  stockFilter === s.k ? 'ring-2 ring-purple-500' : s.k !== 'bottles' ? 'hover:border-gray-400 cursor-pointer' : ''
                 }`}
               >
                 <div className="text-xs text-gray-500">{s.label}</div>
-                <div className={`text-2xl font-semibold font-mono mt-1 ${s.cls}`}>{s.val}</div>
+                <div className={`text-2xl font-bold font-display tabular-nums mt-1 ${s.cls}`}>{s.val}</div>
               </button>
             ))}
           </div>
@@ -2047,14 +2068,14 @@ export function Inventory() {
                   onChange={(e) => setStockCategoryFilter(e.target.value)}
                   className="p-2 border dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-200 cursor-pointer font-medium"
                 >
-                  <option value="all">🍷 All Types</option>
-                  <option value="beer">🍺 Beer</option>
-                  <option value="whisky">🥃 Whisky</option>
-                  <option value="wine">🍷 Wine</option>
-                  <option value="vodka">🍸 Vodka</option>
-                  <option value="rum">🍹 Rum</option>
-                  <option value="gin">🌿 Gin</option>
-                  <option value="brandy">🍇 Brandy</option>
+                  <option value="all">All Types</option>
+                  <option value="beer">Beer</option>
+                  <option value="whisky">Whisky</option>
+                  <option value="wine">Wine</option>
+                  <option value="vodka">Vodka</option>
+                  <option value="rum">Rum</option>
+                  <option value="gin">Gin</option>
+                  <option value="brandy">Brandy</option>
                 </select>
               </div>
 
@@ -2067,7 +2088,7 @@ export function Inventory() {
                       onClick={() => setStockFilter(f)}
                       className={`px-3 py-1.5 rounded-md cursor-pointer font-medium transition-colors ${
                         stockFilter === f
-                          ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                          ? 'bg-purple-600 text-white font-semibold shadow-xs'
                           : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100'
                       }`}
                     >
@@ -2090,7 +2111,7 @@ export function Inventory() {
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-rose-700 border-rose-200 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800 cursor-pointer transition-colors"
                   onClick={() => setShowBreakage((v) => !v)}
                 >
-                  {showBreakage ? '✕ Hide Breakage' : '💥 Record Breakage'}
+                  {showBreakage ? '✕ Hide Breakage' : 'Record Breakage'}
                 </button>
 
                 {isManager && (
@@ -2111,14 +2132,14 @@ export function Inventory() {
                 <BeerBottleLoader inline size="sm" title="Loading Store Stock…" subtitle="Fetching live bottle counts, cost prices & reorder levels…" />
               ) : visibleStock.length === 0 ? (
                 <div className="p-8 text-center text-gray-500 text-sm space-y-2">
-                  <div className="text-3xl">📦</div>
+                  <PackageOpen size={32} className="mx-auto text-gray-400" aria-hidden="true" />
                   <div className="font-semibold text-gray-700 dark:text-gray-300">No products in store stock</div>
                   <div className="text-xs text-gray-400">
                     Upload and confirm a supplier invoice in the "Add Supplier Bill" tab to inward bottles into stock.
                   </div>
                   <button
                     type="button"
-                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer"
+                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg cursor-pointer"
                     onClick={() => {
                       setActiveTab('upload');
                       setWizardStep(1);
@@ -2352,12 +2373,12 @@ export function Inventory() {
       {/* ADD MISSING PRODUCT TO CATALOG MODAL                                   */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {createProductModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center [&>*]:my-auto p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4 my-8">
             <div className="flex items-start justify-between border-b pb-3">
               <div>
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <span>➕</span> Add Missing Product to Catalog
+                  Add Missing Product to Catalog
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">
                   Line #{createProductModal.lineIdx + 1}: &ldquo;{createProductModal.rawDescription}&rdquo;
@@ -2375,7 +2396,7 @@ export function Inventory() {
 
             {productFormError && (
               <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-xs rounded-lg font-medium">
-                ⚠️ {productFormError}
+                {productFormError}
               </div>
             )}
 
@@ -2387,7 +2408,7 @@ export function Inventory() {
                 </label>
                 <input
                   id="newProdName"
-                  className="w-full mt-1 p-2.5 border rounded-lg text-sm bg-white font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full mt-1 p-2.5 border rounded-lg text-sm bg-white font-medium focus:ring-2 focus:ring-purple-500 outline-none"
                   value={createProductModal.name}
                   onChange={(e) => setCreateProductModal({ ...createProductModal, name: e.target.value })}
                   placeholder="e.g. Royal Challenge Premium Whisky 750ml"
@@ -2529,7 +2550,7 @@ export function Inventory() {
               </div>
 
               <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
-                ℹ️ Saving this product will add it to your store catalog and immediately link it to line #{createProductModal.lineIdx + 1} with ₹{parseFloat(createProductModal.mrp || '0').toFixed(2)} MRP.
+                Saving this product will add it to your store catalog and immediately link it to line #{createProductModal.lineIdx + 1} with ₹{parseFloat(createProductModal.mrp || '0').toFixed(2)} MRP.
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -2543,9 +2564,9 @@ export function Inventory() {
                 <button
                   type="submit"
                   disabled={savingProduct}
-                  className="min-h-[44px] px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-bold text-xs shadow-sm flex items-center gap-2 cursor-pointer"
+                  className="min-h-[44px] px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold text-xs shadow-sm flex items-center gap-2 cursor-pointer"
                 >
-                  {savingProduct ? 'Saving to Catalog…' : '💾 Save to Catalog & Link Line'}
+                  {savingProduct ? 'Saving to Catalog…' : 'Save to Catalog & Link Line'}
                 </button>
               </div>
             </form>
@@ -2555,7 +2576,7 @@ export function Inventory() {
 
       {/* Confirmation Modal */}
       {confirmModal && (
-        <div id="modal" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div id="modal" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
           <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold" id="confirmTitle">
@@ -2587,7 +2608,7 @@ export function Inventory() {
                 id="confirmOk"
                 type="button"
                 disabled={isApproving}
-                className="min-h-[44px] px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center gap-2"
+                className="min-h-[44px] px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center gap-2"
                 onClick={confirmModal.onOk}
               >
                 {isApproving ? 'Pouring...' : 'Confirm Inward'}
@@ -2605,7 +2626,7 @@ export function Inventory() {
         subtitle="Adding bottles to store stock, updating ledgers, and securing audit logs..."
         stage={approvalStage}
         bottlesCount={activeInvoice?.items.reduce((sum, it) => sum + (it.quantity || 0), 0)}
-        totalCost={parseFloat(activeInvoice?.invoice.linesTotal || activeInvoice?.invoice.totalAmount || '0').toFixed(2)}
+        totalCost={invoiceLinesTotal(activeInvoice ?? null)}
       />
 
       {/* 2. During Invoice Upload & PDF/Image Extraction */}

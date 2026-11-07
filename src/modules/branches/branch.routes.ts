@@ -16,7 +16,7 @@ const IdParams = z.object({ id: z.string().uuid() });
 
 function formatValidationPayload(error: z.ZodError) {
   const flattened = error.flatten();
-  const fieldEntries = Object.entries(flattened.fieldErrors);
+  const fieldEntries = Object.entries(flattened.fieldErrors) as [string, string[] | undefined][];
   const parts: string[] = [];
   if (flattened.formErrors.length) parts.push(...flattened.formErrors);
   for (const [field, msgs] of fieldEntries) {

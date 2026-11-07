@@ -33,10 +33,11 @@ test('role gating: steward cannot see accounting or billing; cashier cannot open
   for (const tab of ['accounting', 'pos', 'bills', 'closing', 'admin', 'schemes']) {
     await expect(page.locator(`#nav-${tab}`)).toHaveCount(0);
   }
-  // Forcing navigation is refused with a visible message and the page stays hidden
-  await page.evaluate(() => (window as unknown as { showPage: (p: string) => void }).showPage('accounting'));
+  // Typing the address of a manager screen is refused with a visible message, and the steward is sent back to the dashboard
+  await page.goto('/accounting');
   await expect(page.locator('#toastHost')).toContainText('cannot open Accounting');
-  await expect(page.locator('#page-accounting')).toBeHidden();
+  await expect(page.locator('#page-accounting')).toHaveCount(0);
+  await expect(page.locator('#page-dashboard')).toBeVisible();
 
   // Stewards do table service: Tables & KOT is reachable and lists the branch tables
   await expect(page.locator('#nav-tables')).toBeVisible();
@@ -46,6 +47,7 @@ test('role gating: steward cannot see accounting or billing; cashier cannot open
   await expect(page.locator('#page-tables .mgr-only')).toBeHidden();
 
   await page.click('button:has-text("Sign out")');
+  await expect(page.locator('#loginPage')).toBeVisible();
   await login(page, 'cashier@liquor.com');
   await expect(page.locator('#nav-pos')).toBeVisible();
   await expect(page.locator('#nav-accounting')).toHaveCount(0);

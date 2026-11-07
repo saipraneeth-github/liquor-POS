@@ -24,8 +24,9 @@ test('steward: sees an occupied table, raises a KOT and moves an item along the 
 
   await page.click('#tblActKot');
   await expect(page.locator('#modalTitle')).toContainText('New KOT');
-  await expect(page.locator('.kot-product').first()).toHaveAttribute('aria-label', 'Product');
-  await page.click('#kotCreateBtn');
+  // Add the first drink on the list, then send the order to the bar
+  await page.locator('#modalBody button', { hasText: 'Add' }).first().click();
+  await page.getByRole('button', { name: /Submit & Create Bar KOT/ }).click();
   await expect(page.locator('#toastHost')).toContainText(`KOT sent to bar for ${name}`);
 
   // Re-open the KOT list; only server-allowed moves are offered

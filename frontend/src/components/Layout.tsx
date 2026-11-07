@@ -22,6 +22,7 @@ import {
   Target,
   ShieldCheck,
   BookOpen,
+  Landmark,
   Lock,
   Settings,
   Building2,
@@ -65,6 +66,7 @@ const navItems: NavItem[] = [
   { path: '/schemes', label: 'Schemes', icon: Target, id: 'nav-schemes', min: 'manager', group: 'Money & Compliance', pageKey: 'schemes' },
   { path: '/compliance', label: 'Compliance', icon: ShieldCheck, id: 'nav-compliance', min: 'manager', group: 'Money & Compliance', pageKey: 'compliance' },
   { path: '/accounting', label: 'Accounting', icon: BookOpen, id: 'nav-accounting', min: 'manager', group: 'Money & Compliance', pageKey: 'accounting' },
+  { path: '/bank', label: 'Bank Reconciliation', icon: Landmark, id: 'nav-bank', min: 'manager', group: 'Money & Compliance', pageKey: 'bank' },
   { path: '/closing', label: 'Day Closing', icon: Lock, id: 'nav-closing', min: 'manager', group: 'Money & Compliance', pageKey: 'closing' },
 
   { path: '/admin', label: 'Staff & Terminals', icon: Settings, id: 'nav-admin', min: 'manager', group: 'Business', pageKey: 'admin' },
@@ -250,7 +252,7 @@ export function Layout() {
             setMobileOpen(false);
           }
         }}
-        className={`fixed inset-y-0 left-0 z-40 bg-white dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col transition-all duration-300 ease-in-out md:static ${
+        className={`fixed inset-y-0 left-0 z-40 bg-[#0e2a21] dark:bg-[#0c2219] text-[#e7f0eb] border-r border-white/5 flex flex-col transition-all duration-300 ease-in-out md:static ${
           mobileOpen ? 'translate-x-0 w-64 shadow-2xl' : '-translate-x-full md:translate-x-0'
         } ${
           isCollapsed
@@ -259,12 +261,12 @@ export function Layout() {
         }`}
       >
         <div className="w-64 flex flex-col h-full shrink-0">
-          <div className="p-4 font-bold text-xl border-b dark:border-gray-700 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <Wine className="text-purple-600 shrink-0" />
+          <div className="p-4 text-xl border-b border-white/10 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="grid place-items-center size-9 rounded-lg bg-white/10 shrink-0"><Wine size={20} className="text-[#dda64a]" /></span>
               <div className="min-w-0">
-                <div className="font-bold truncate">Liquor Counter</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 truncate" id="sidebarBranch">
+                <div className="font-display font-bold tracking-tight truncate">Liquor Counter</div>
+                <div className="text-xs font-normal text-[#9db7ac] truncate" id="sidebarBranch">
                   {saasRole === 'super_admin' ? (activeBranch ? `Platform · ${activeBranch.code}` : 'Platform HQ') : activeBranch ? `${activeBranch.code} — ${activeBranch.name}` : 'MAIN-01 — Main Counter Branch'}
                 </div>
               </div>
@@ -275,7 +277,7 @@ export function Layout() {
               aria-label="Close navigation sidebar"
               title="Close sidebar (Ctrl+B)"
               onClick={closeSidebar}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer shrink-0"
+              className="p-1.5 rounded-lg text-[#9db7ac] hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
             >
               <PanelLeftClose size={18} className="hidden md:block" />
               <X size={18} className="md:hidden" />
@@ -285,7 +287,7 @@ export function Layout() {
             {groups.map((group) => (
               <div key={group} className="space-y-1">
                 {groups.length > 1 && (
-                  <div className="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">{group}</div>
+                  <div className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7f9b8f]">{group}</div>
                 )}
                 {items.filter((i) => i.group === group).map((item) => {
                   const Icon = item.icon;
@@ -295,10 +297,11 @@ export function Layout() {
                       key={item.path}
                       to={item.path}
                       id={item.id}
-                      className={`flex items-center gap-3 px-3 py-2 rounded transition-colors ${
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                         isActive
-                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 font-medium'
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700/60 text-gray-700 dark:text-gray-300'
+                          ? 'bg-white/12 text-white font-semibold shadow-[inset_3px_0_0_#dda64a]'
+                          : 'text-[#c4d6cd] hover:bg-white/6 hover:text-white'
                       }`}
                     >
                       <Icon size={18} />
@@ -309,22 +312,22 @@ export function Layout() {
               </div>
             ))}
           </nav>
-          <div className="p-4 border-t dark:border-gray-700 space-y-2">
+          <div className="p-4 border-t border-white/10 space-y-2">
             <div className="mb-2 text-sm">
               <div id="userDisplay" className="font-semibold">{user.name} ({saasRole ? ROLE_LABEL[saasRole] : user.role})</div>
-              <div id="emailDisplay" className="text-gray-500 dark:text-gray-400 text-xs truncate">{user.email}</div>
+              <div id="emailDisplay" className="text-[#9db7ac] text-xs truncate">{user.email}</div>
             </div>
             <button
               type="button"
               id="changePasswordBtn"
               onClick={() => { setPwError(null); setPwOpen(true); }}
-              className="w-full text-left px-2 py-1 text-xs text-gray-600 dark:text-gray-300 hover:underline cursor-pointer"
+              className="w-full text-left px-2 py-1 text-xs text-[#c4d6cd] hover:text-white hover:underline cursor-pointer"
             >
               Change password
             </button>
             <button
               onClick={handleLogoutClick}
-              className="flex items-center justify-center gap-2 w-full px-3 py-2 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-sm font-medium transition-colors cursor-pointer"
+              className="flex items-center justify-center gap-2 w-full px-3 py-2 text-[#f5b1a8] border border-[#f2796b]/40 hover:bg-[#f2796b]/12 rounded-lg text-sm font-medium transition-colors cursor-pointer"
             >
               <LogOut size={16} />
               Sign out
@@ -358,7 +361,7 @@ export function Layout() {
             >
               <Menu size={20} />
             </button>
-            <div className="font-semibold text-lg truncate" id="pageTitle">{pageTitle}</div>
+            <div className="font-display font-bold text-lg tracking-tight truncate" id="pageTitle">{pageTitle}</div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 text-sm min-w-0 shrink">
             {user.role === 'owner' && branches.length > 0 && (
@@ -393,7 +396,7 @@ export function Layout() {
                 </>
               ) : (
                 <>
-                  <Moon size={16} className="text-purple-600" />
+                  <Moon size={16} className="text-purple-700" />
                   <span className="hidden sm:inline">Dark</span>
                 </>
               )}
@@ -428,7 +431,7 @@ export function Layout() {
 
       {/* Sign-out with unsynced bills warning modal */}
       {showSignoutWarning && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 border dark:border-gray-700">
             <div className="flex justify-between items-start mb-2">
               <h2 className="text-lg font-bold text-red-600 dark:text-red-400" id="modalTitle">

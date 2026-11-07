@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { inr } from '../components/ui';
 import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { businessDate } from '../lib/business-day';
 
 const NOTE_VALUES = ['2000', '500', '200', '100', '50', '20', '10'];
 
@@ -106,7 +108,7 @@ export function Shift() {
     }
 
     if (isManager) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = businessDate();
       try {
         const rows = await api.get<ShiftSession[]>(`/shifts?branchId=${branchId}&date=${today}`);
         setHistory(rows);
@@ -142,9 +144,7 @@ export function Shift() {
   };
 
   const formattedDiscrepancy = (val: number) => {
-    const prefix = val < 0 ? '-₹' : '₹';
-    const absVal = Math.abs(val).toFixed(2);
-    return `${prefix}${absVal} (${discrepancyLabel(val)})`;
+    return `${val < 0 ? '-' : ''}${inr(Math.abs(val))} (${discrepancyLabel(val)})`;
   };
 
   const handleOpenShift = async (e: React.FormEvent) => {
@@ -193,7 +193,7 @@ export function Shift() {
       const disc = parseFloat(res.discrepancy);
       showToast(`Shift closed — discrepancy ₹${disc.toFixed(2)}`, disc === 0 ? 'success' : 'info');
       if (isManager) {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = businessDate();
         const rows = await api.get<ShiftSession[]>(`/shifts?branchId=${branchId}&date=${today}`);
         setHistory(rows);
       }
@@ -209,7 +209,7 @@ export function Shift() {
     <section className="page active" id="page-shift" aria-labelledby="shiftTitle">
       <div className="row between flex justify-between items-center mb-4">
         <div>
-          <h2 className="h1 text-xl font-bold" id="shiftTitle">⏱ Cashier Shift</h2>
+          <h2 className="h1 text-2xl font-bold" id="shiftTitle">Cashier Shift</h2>
           <div className="muted small text-xs text-gray-500">
             Open a shift on a terminal, track live collections and close with a cash count.
           </div>
@@ -240,24 +240,24 @@ export function Shift() {
               <tbody>
                 <tr className="border-b">
                   <td className="py-2 text-sm">Cash collected</td>
-                  <td className="py-2 text-right font-mono text-sm">₹{parseFloat(closeResult.cashCollected).toFixed(2)}</td>
+                  <td className="py-2 text-right font-mono text-sm">{inr(closeResult.cashCollected)}</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-2 text-sm">Card / UPI / Credit</td>
                   <td className="py-2 text-right font-mono text-sm">
-                    ₹{parseFloat(closeResult.cardCollected).toFixed(2)} / ₹{parseFloat(closeResult.upiCollected).toFixed(2)} / ₹{parseFloat(closeResult.creditCollected).toFixed(2)}
+                    {inr(closeResult.cardCollected)} / {inr(closeResult.upiCollected)} / {inr(closeResult.creditCollected)}
                   </td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-2 text-sm">Expected cash</td>
                   <td className="py-2 text-right font-mono text-sm" id="shiftResultExpected">
-                    ₹{parseFloat(closeResult.expectedCash).toFixed(2)}
+                    {inr(closeResult.expectedCash)}
                   </td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-2 text-sm">Counted cash</td>
                   <td className="py-2 text-right font-mono text-sm" id="shiftResultCounted">
-                    ₹{parseFloat(closeResult.countedCash).toFixed(2)}
+                    {inr(closeResult.countedCash)}
                   </td>
                 </tr>
                 <tr className="border-b font-bold">
@@ -279,7 +279,7 @@ export function Shift() {
             </table>
             <button
               type="button"
-              className="btn-primary mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium"
+              className="btn-primary mt-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium"
               onClick={loadShiftPage}
             >
               Open a new shift
@@ -322,7 +322,7 @@ export function Shift() {
                   />
                 </label>
                 <button
-                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium"
+                  className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium"
                   type="submit"
                   id="shiftOpenBtn"
                   style={{ minHeight: '38px' }}
@@ -343,38 +343,38 @@ export function Shift() {
                 </span>
               </div>
               <div className="muted small text-xs text-gray-500">
-                Opened {new Date(currentShift.openedAt).toLocaleString('en-IN')} · Opening float ₹{parseFloat(currentShift.openingFloat).toFixed(2)}
+                Opened {new Date(currentShift.openedAt).toLocaleString('en-IN')} · Opening float {inr(currentShift.openingFloat)}
               </div>
               <table className="table w-full text-left" aria-label="Live shift totals">
                 <tbody id="shiftTotals">
                   <tr className="border-b">
                     <td className="py-2 text-sm">Cash</td>
                     <td className="py-2 text-right font-mono text-sm" id="shiftCash">
-                      ₹{parseFloat(currentShift.summary.cashCollected).toFixed(2)}
+                      {inr(currentShift.summary.cashCollected)}
                     </td>
                   </tr>
                   <tr className="border-b">
                     <td className="py-2 text-sm">Card</td>
                     <td className="py-2 text-right font-mono text-sm">
-                      ₹{parseFloat(currentShift.summary.cardCollected).toFixed(2)}
+                      {inr(currentShift.summary.cardCollected)}
                     </td>
                   </tr>
                   <tr className="border-b">
                     <td className="py-2 text-sm">UPI</td>
                     <td className="py-2 text-right font-mono text-sm">
-                      ₹{parseFloat(currentShift.summary.upiCollected).toFixed(2)}
+                      {inr(currentShift.summary.upiCollected)}
                     </td>
                   </tr>
                   <tr className="border-b">
                     <td className="py-2 text-sm">Credit (khata)</td>
                     <td className="py-2 text-right font-mono text-sm">
-                      ₹{parseFloat(currentShift.summary.creditCollected).toFixed(2)}
+                      {inr(currentShift.summary.creditCollected)}
                     </td>
                   </tr>
                   <tr className="border-b font-bold">
                     <td className="py-2 text-sm">Gross collected</td>
                     <td className="py-2 text-right font-mono text-sm">
-                      ₹{parseFloat(currentShift.summary.grossCollected).toFixed(2)}
+                      {inr(currentShift.summary.grossCollected)}
                     </td>
                   </tr>
                   <tr className="border-b">
@@ -432,7 +432,7 @@ export function Shift() {
                             />
                           </td>
                           <td className="py-1.5 text-right font-mono" id={`denomAmt-${v}`}>
-                            ₹{amt.toFixed(2)}
+                            {inr(amt)}
                           </td>
                         </tr>
                       );
@@ -497,7 +497,7 @@ export function Shift() {
               </label>
 
               <button
-                className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium disabled:opacity-50"
+                className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium disabled:opacity-50"
                 type="button"
                 id="shiftCloseBtn"
                 disabled={closing}
@@ -545,13 +545,13 @@ export function Shift() {
                         {new Date(s.openedAt).toLocaleTimeString('en-IN')}
                       </td>
                       <td className="py-2 text-right font-mono">
-                        {s.expectedCash ? `₹${parseFloat(s.expectedCash).toFixed(2)}` : '—'}
+                        {s.expectedCash ? `${inr(s.expectedCash)}` : '—'}
                       </td>
                       <td className="py-2 text-right font-mono">
-                        {s.countedCash ? `₹${parseFloat(s.countedCash).toFixed(2)}` : '—'}
+                        {s.countedCash ? `${inr(s.countedCash)}` : '—'}
                       </td>
                       <td className={`py-2 text-right font-mono ${s.discrepancy && parseFloat(s.discrepancy) < 0 ? 'text-red-600' : ''}`}>
-                        {s.discrepancy ? `₹${parseFloat(s.discrepancy).toFixed(2)}` : '—'}
+                        {s.discrepancy ? `${inr(s.discrepancy)}` : '—'}
                       </td>
                     </tr>
                   ))}
@@ -563,7 +563,7 @@ export function Shift() {
       </div>
 
       {confirmOpen && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
           <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
             <div className="flex justify-between items-start mb-2">
               <h3 className="text-lg font-bold" id="confirmTitle">Close shift?</h3>
@@ -577,7 +577,7 @@ export function Shift() {
               </button>
             </div>
             <p className="text-gray-600 dark:text-gray-300 mb-6 text-sm" id="confirmText">
-              Counted ₹{counted.toFixed(2)} against the server's expected cash. The shift cannot be reopened.
+              Counted {inr(counted)} against the server's expected cash. The shift cannot be reopened.
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -591,7 +591,7 @@ export function Shift() {
               <button
                 type="button"
                 id="confirmOk"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm"
                 onClick={executeCloseShift}
               >
                 Close shift

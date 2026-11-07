@@ -4,7 +4,9 @@ import { eq, and, gte, lt, inArray, desc, sql } from 'drizzle-orm';
 import { reconcileDailyClosing, type CashFloatInput } from './closing.engine.js';
 import { businessDateOf, businessDayBounds } from '../../lib/business-day.js';
 import type { JwtPayload } from '../auth/auth.service.js';
-import { ConflictError } from '../../lib/errors.js';
+import { BusinessRuleError, ConflictError } from '../../lib/errors.js';
+import { logAudit } from '../../lib/audit.js';
+import { Decimal } from 'decimal.js';
 
 export interface SubmitClosingInput {
   branchId: string;
@@ -22,6 +24,11 @@ export interface SubmitClosingInput {
 export async function performDailyClosing(input: SubmitClosingInput, user: JwtPayload) {
   // Only this branch's bills rung in on the business day being closed
   const businessDate = input.businessDate ?? businessDateOf();
+  // A day that has not happened yet cannot be closed: it would lock that date (one closing per day) before
+  // any sale exists and block the real closing later. ISO dates compare correctly as strings.
+  if (businessDate > businessDateOf()) {
+    throw new BusinessRuleError(`Cannot close ${businessDate}: that business day has not started yet.`);
+  }
   const { start, end } = businessDayBounds(businessDate);
 
   // ── Guard: one closing per branch per calendar day ─────────────────────────
@@ -75,18 +82,37 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
       }
     : undefined;
 
-  const recon = reconcileDailyClosing(
-    dayBills.map((b) => ({
-      id: b.id,
-      total: b.total,
-      taxAmount: b.taxAmount,
-      paymentMode: b.paymentMode ?? 'CASH',
-      status: b.status,
-    })),
-    cashFloat,
-    input.actualCashCounted,
-    salesOverride,
-  );
+  const billRows = dayBills.map((b) => ({
+    id: b.id,
+    total: b.total,
+    taxAmount: b.taxAmount,
+    paymentMode: b.paymentMode ?? 'CASH',
+    status: b.status,
+  }));
+
+  // Managers may correct card/UPI/cash figures to match a bank or EDC settlement, but never silently:
+  // any figure that differs from what the system computed needs a written reason, and the variance is kept.
+  const system = reconcileDailyClosing(billRows, cashFloat, input.actualCashCounted);
+  const variances: string[] = [];
+  if (salesOverride) {
+    for (const key of ['cashSales', 'cardSales', 'upiSales', 'creditSales'] as const) {
+      const submitted = salesOverride[key];
+      if (submitted === undefined) continue;
+      if (!new Decimal(submitted).equals(new Decimal(system[key]))) {
+        variances.push(`${key}: system ${system[key]} -> submitted ${new Decimal(submitted).toFixed(2)}`);
+      }
+    }
+  }
+  if (variances.length > 0 && (input.notes ?? '').trim().length < 10) {
+    throw new BusinessRuleError(
+      `Closing figures differ from the system (${variances.join('; ')}). Add a note (10+ characters) explaining why.`,
+    );
+  }
+
+  const recon = reconcileDailyClosing(billRows, cashFloat, input.actualCashCounted, salesOverride);
+  const storedNotes = variances.length > 0
+    ? `${(input.notes ?? '').trim()}\n[Figures overridden by ${user.email}] ${variances.join('; ')}`
+    : input.notes;
 
   const [closingRecord] = await db
     .insert(dailyClosings)
@@ -109,10 +135,14 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
       totalBillsCount: recon.totalBillsCount,
       paidBillsCount: recon.paidBillsCount,
       voidedBillsCount: recon.voidedBillsCount,
-      notes: input.notes,
+      notes: storedNotes,
       status: 'CLOSED',
     })
     .returning();
+
+  if (variances.length > 0) {
+    await logAudit(user.sub, 'closing.override', { type: 'daily_closing', id: closingRecord.id }, { businessDate, variances });
+  }
 
   return { ...closingRecord, businessDate };
 }

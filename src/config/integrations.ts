@@ -7,6 +7,8 @@
  * Read lazily so tests can change process.env.
  */
 
+import { randomBytes } from 'node:crypto';
+
 export type PaymentProvider = 'razorpay' | 'mock';
 
 export interface PaymentConfig {
@@ -38,7 +40,27 @@ export function paymentConfig(): PaymentConfig {
   };
   // Razorpay only when explicitly chosen AND the keys are present; anything else falls back to the test gateway
   const provider: PaymentProvider = wanted === 'razorpay' && razorpay.keyId && razorpay.keySecret ? 'razorpay' : 'mock';
-  return { provider, currency: 'INR', razorpay, mockSecret: process.env.MOCK_PAYMENT_SECRET || 'dev-only-mock-secret' };
+  return { provider, currency: 'INR', razorpay, mockSecret: process.env.MOCK_PAYMENT_SECRET || DEFAULT_MOCK_SECRET };
+}
+
+// The test gateway signs "payments" with this secret. The public default is only for dev/test: in production an
+// unset MOCK_PAYMENT_SECRET gets an unguessable per-process value, so nobody can forge a signed payment from source.
+const DEFAULT_MOCK_SECRET = process.env.NODE_ENV === 'production'
+  ? randomBytes(32).toString('hex')
+  : 'dev-only-mock-secret';
+
+/**
+ * Production must not run on the test gateway: it lets a tenant Admin "pay" their own invoice without money
+ * moving. Set ALLOW_MOCK_PAYMENTS=1 only for a staging/demo deployment that is deliberately using it.
+ */
+export function assertPaymentsSafeForProduction(): void {
+  if (process.env.NODE_ENV !== 'production') return;
+  if (paymentConfig().provider === 'mock' && process.env.ALLOW_MOCK_PAYMENTS !== '1') {
+    throw new Error(
+      'Payments are on the built-in test gateway in production. Set PAYMENT_PROVIDER=razorpay with RAZORPAY_KEY_ID, '
+      + 'RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET, or set ALLOW_MOCK_PAYMENTS=1 for a demo deployment.',
+    );
+  }
 }
 
 export function mailConfig(): MailConfig {

@@ -1202,7 +1202,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if ($('modal').classList.contains('on')) closeModal();
   else if ($('checkoutModal').classList.contains('on')) newBill();
-  else toggleSidebar(false);
+  else closeMobileDrawer();
 });
 $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closeModal(); });
 
@@ -1372,7 +1372,7 @@ async function bootstrap() {
   applyRoleVisibility();
   $('loginPage').hidden = true;
   $('mainApp').classList.add('on');
-  if (!NARROW_MQ.matches && localStorage.getItem('lc_sidebar_collapsed') === 'true') {
+  if (!NARROW_MQ.matches && localStorage.getItem(SIDEBAR_PREF_KEY) === 'true') {
     $('sidebar').classList.add('collapsed');
   }
   syncSidebarInert();
@@ -1443,6 +1443,8 @@ function applyRoleVisibility() {
   document.querySelectorAll('.owner-only').forEach((el) => { el.hidden = !isOwner(); });
 }
 const NARROW_MQ = window.matchMedia('(max-width: 900px)');
+// v2: the original 'lc_sidebar_collapsed' value was corrupted by navigation collapsing the sidebar, so it is ignored.
+const SIDEBAR_PREF_KEY = 'lc_sidebar_collapsed_v2';
 /** At phone width a closed drawer is off-screen, so it must not take Tab focus. */
 function syncSidebarInert() {
   const sb = $('sidebar');
@@ -1465,10 +1467,26 @@ function toggleSidebar(force, focusTarget) {
     const nextCollapsed = typeof force === 'boolean' ? !force : !isCollapsed;
     $('sidebar').classList.toggle('collapsed', nextCollapsed);
     $('menuBtn').setAttribute('aria-expanded', String(!nextCollapsed));
-    try { localStorage.setItem('lc_sidebar_collapsed', String(nextCollapsed)); } catch {}
+    try { localStorage.setItem(SIDEBAR_PREF_KEY, String(nextCollapsed)); } catch {}
   }
 }
-NARROW_MQ.addEventListener('change', () => { if (!NARROW_MQ.matches) toggleSidebar(false); syncSidebarInert(); });
+// Closes the PHONE drawer only. On desktop `toggleSidebar(false)` means "collapse the sidebar" (and remembers it),
+// so navigation / Escape must never call it there, or the menu disappears after the first click.
+function closeMobileDrawer(focusTarget) {
+  if (!NARROW_MQ.matches) return;
+  toggleSidebar(false, focusTarget);
+}
+NARROW_MQ.addEventListener('change', () => {
+  if (!NARROW_MQ.matches) {
+    // Grew to desktop: drop the phone-drawer state and restore the user's saved desktop preference
+    $('sidebar').classList.remove('open');
+    $('sidebarBackdrop').classList.remove('on');
+    let saved = false;
+    try { saved = localStorage.getItem(SIDEBAR_PREF_KEY) === 'true'; } catch {}
+    $('sidebar').classList.toggle('collapsed', saved);
+  }
+  syncSidebarInert();
+});
 
 const LOADERS = {
   dashboard: () => loadDashboard(),
@@ -1504,7 +1522,7 @@ function showPage(id) {
   $('pageTitle').textContent = p.title;
   document.title = p.title + ' — Liquor Counter';
   // After navigating from the phone drawer, move focus into the content (the drawer item is now off-screen)
-  toggleSidebar(false, $('content'));
+  closeMobileDrawer($('content'));
   const loader = LOADERS[id];
   if (loader) Promise.resolve().then(loader).catch((e) => console.warn('page load failed', id, e));
 }

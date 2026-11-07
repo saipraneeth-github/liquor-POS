@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { errorMessage, showToast } from '../lib/print';
 import { Badge, Field, Stat, inr } from '../components/ui';
+import { businessDate } from '../lib/business-day';
 
 interface StockRow {
   productId: string;
@@ -41,7 +42,7 @@ interface CountRow {
   by: string | null;
 }
 
-const isoDay = (offset = 0) => new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10);
+const isoDay = (offset = 0) => businessDate(offset);
 
 /** Peg control: compare the open bottle with what the system expects and see where ml go missing. */
 export function PourControl() {

@@ -14,8 +14,9 @@ test('manager voids a bill from bill history with a reason', async ({ page }) =>
 
   // Reason is validated (min 5 chars) before the request is sent
   await row.getByRole('button', { name: 'Void' }).click();
+  // The reason needs at least 5 characters: the confirm button stays disabled until it has them
   await page.fill('#voidReason', 'bad');
-  await page.click('#voidConfirmBtn');
+  await expect(page.locator('#voidConfirmBtn')).toBeDisabled();
   await expect(page.locator('#modal')).toBeVisible();
 
   await page.fill('#voidReason', 'Customer returned the bottle unopened');

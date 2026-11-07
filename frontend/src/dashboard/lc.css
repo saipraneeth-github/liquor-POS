@@ -1,0 +1,235 @@
+/*
+ * The "Liquor Counter" look for the sign-in screen and the dashboards.
+ * Tokens are scoped to .lc (light) and .dark .lc (the app switches themes with a class on <html>).
+ * Every class carries the lc- prefix: the app's global stylesheet restyles generic names like .card, .input and table in dark mode.
+ */
+.lc {
+  --bg: #E7EDEA; --surface: #F7FAF8; --surface-2: #FFFFFF; --line: #CFD9D5;
+  --text: #11201B; --muted: #55675F;
+  --accent: #9A6A1B; --accent-soft: #EFE2C6;
+  --ink: #11201B; --on-ink: #F2F7F4;
+  --good: #1B7A52; --good-soft: #D5EBDF; --warn: #B4540A; --warn-soft: #F6E1CB; --bad: #B3261E; --bad-soft: #F5D9D5; --info-soft: #D9E6EE;
+  --s-cash: #A97A22; --s-upi: #1C8583; --s-card: #3A5BB0; --s-khata: #85468B;
+  --brand-bg: #0E2A21; --brand-text: #E7F0EB; --brand-muted: #9DB7AC;
+  --font-display: "Bricolage Grotesque Variable", "Hanken Grotesk Variable", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  background: var(--bg); color: var(--text); font: 400 14px/1.5 var(--font-body);
+  container-type: inline-size; -webkit-font-smoothing: antialiased;
+}
+.dark .lc {
+  --bg: #0A1310; --surface: #111C18; --surface-2: #17251F; --line: #253630; --text: #E5EEE9; --muted: #8FA49C;
+  --accent: #DDA64A; --accent-soft: #35290F; --ink: #E5EEE9; --on-ink: #0A1310;
+  --good: #4CC38A; --good-soft: #143427; --warn: #F29B4B; --warn-soft: #3A2412; --bad: #F2796B; --bad-soft: #3D1B17; --info-soft: #172A36;
+  --s-cash: #DDA64A; --s-upi: #43C2BE; --s-card: #8AA6EE; --s-khata: #C990D0;
+  --brand-bg: #0C2219;
+}
+.lc *, .lc *::before, .lc *::after { box-sizing: border-box; }
+/* :where() keeps this reset at zero specificity, so every .lc-btn / .lc-att / .lc-link colour below still wins */
+/* Only the pointer: Tailwind's base layer already makes buttons inherit font and colour, and an unlayered rule here would
+   beat Tailwind's layered utilities (text-white, cursor-not-allowed ...) on any Tailwind button inside a .lc page. */
+:where(.lc) button:not(:disabled) { cursor: pointer; }
+.lc :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.lc-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* The dashboard fills the app's content area edge to edge (the app's <main> pads by 1rem) */
+.lc-bleed { margin: -1rem; min-height: calc(100% + 2rem); }
+.lc-page { padding: 20px; display: flex; flex-direction: column; gap: 16px; max-width: 1280px; margin: 0 auto; }
+
+/* ── greeting, buttons, attention ── */
+.lc-greet { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.lc-greet h2 { margin: 0; font: 700 26px/1.1 var(--font-display); letter-spacing: -.015em; text-wrap: balance; }
+.lc-greet p { margin: 4px 0 0; color: var(--muted); }
+.lc-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; border-radius: 10px; padding: 10px 16px; font-weight: 700; }
+.lc-btn-primary { background: var(--ink); color: var(--on-ink); }
+.lc-btn-primary:hover { filter: brightness(1.15); }
+.lc-btn-ghost { background: var(--surface); border-color: var(--line); color: var(--text); }
+.lc-btn-ghost:hover { background: var(--surface-2); }
+.lc-btn-big { padding: 14px 22px; font-size: 16px; border-radius: 12px; }
+.lc-btn[disabled] { opacity: .5; cursor: not-allowed; }
+.lc-kbd { font: 500 11px/1 var(--font-mono); padding: 3px 6px; border-radius: 5px; border: 1px solid currentColor; opacity: .7; }
+.lc-link { border: 0; background: transparent; color: var(--accent); font-weight: 700; padding: 4px 6px; border-radius: 6px; }
+.lc-link:hover { background: var(--accent-soft); }
+.lc-updated { color: var(--muted); font-size: 12px; }
+
+.lc-attention { display: flex; flex-wrap: wrap; gap: 8px; }
+.lc-att { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; border: 0; font-weight: 600; text-align: left; max-width: 100%; }
+.lc-att svg { flex: none; }
+.lc-att small { font-weight: 500; opacity: .85; }
+.lc-att.bad { background: var(--bad-soft); color: var(--bad); }
+.lc-att.warn { background: var(--warn-soft); color: var(--warn); }
+.lc-att.good { background: var(--good-soft); color: var(--good); }
+.lc-att:hover { filter: brightness(.97); }
+
+/* ── cards and figures ── */
+.lc-grid { display: grid; gap: 16px; }
+.lc-g-kpi { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.lc-g-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lc-g-2 { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+.lc-g-2e { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lc-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.lc-card h3 { margin: 0 0 12px; font: 700 12px/1.2 var(--font-body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.lc-card h3 em { font-style: normal; letter-spacing: 0; text-transform: none; font-weight: 500; }
+.lc-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.lc-kpi { display: flex; flex-direction: column; gap: 6px; }
+.lc-kpi .label { color: var(--muted); font-weight: 600; font-size: 12px; }
+.lc-kpi .value { font: 700 30px/1 var(--font-display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.lc-kpi .value small { font-size: 16px; color: var(--muted); font-weight: 600; }
+.lc-kpi .sub { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lc-delta { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; font-size: 12px; padding: 2px 7px; border-radius: 999px; }
+.lc-delta.up { color: var(--good); background: var(--good-soft); }
+.lc-delta.down { color: var(--bad); background: var(--bad-soft); }
+.lc-delta.flat { color: var(--muted); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+
+.lc-spark-wrap { position: relative; margin-top: 2px; }
+.lc-spark { width: 100%; height: 34px; display: block; }
+.lc-spark .area { fill: var(--accent-soft); }
+.lc-spark .line { fill: none; stroke: var(--accent); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.lc-spark-end { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.lc-tables { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.lc-tables i { width: 14px; height: 14px; border-radius: 4px; border: 1.5px solid var(--line); }
+.lc-tables i.on { background: var(--accent); border-color: var(--accent); }
+
+.lc-mixbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; background: var(--line); }
+.lc-mixbar span { display: block; min-width: 4px; }
+.lc-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin-top: 12px; }
+.lc-legend div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lc-legend .nm { color: var(--muted); }
+.lc-legend .lc-num { margin-left: auto; font-weight: 500; }
+.lc-sw { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
+
+.lc-list { display: flex; flex-direction: column; }
+.lc-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); min-width: 0; }
+.lc-row:first-child { border-top: 0; padding-top: 0; }
+.lc-row:last-child { padding-bottom: 0; }
+.lc-row .grow { flex: 1; min-width: 0; }
+.lc-row .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-row .s { color: var(--muted); font-size: 12px; }
+.lc-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .03em; white-space: nowrap; }
+.lc-pill.cash { background: var(--accent-soft); color: var(--s-cash); }
+.lc-pill.upi { background: var(--good-soft); color: var(--s-upi); }
+.lc-pill.card { background: var(--info-soft); color: var(--s-card); }
+.lc-pill.credit { background: var(--surface-2); color: var(--s-khata); box-shadow: inset 0 0 0 1px var(--line); }
+.lc-pill.bad { background: var(--bad-soft); color: var(--bad); }
+.lc-pill.warn { background: var(--warn-soft); color: var(--warn); }
+.lc-pill.good { background: var(--good-soft); color: var(--good); }
+.lc-pill.muted { background: var(--surface-2); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
+
+.lc-steps { display: flex; flex-direction: column; gap: 10px; }
+.lc-step { display: flex; align-items: center; gap: 10px; background: transparent; border: 0; text-align: left; padding: 0; width: 100%; }
+.lc-step .ico { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.lc-step.done .ico { background: var(--good-soft); color: var(--good); }
+.lc-step.todo .ico { background: var(--warn-soft); color: var(--warn); }
+.lc-step.done .nm { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+.lc-step.todo:hover .nm { text-decoration: underline; }
+.lc-progress { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; position: relative; }
+.lc-progress i { display: block; height: 100%; background: var(--good); border-radius: 4px; }
+.lc-progress.accent i { background: var(--accent); }
+
+.lc-chart { width: 100%; height: auto; display: block; }
+.lc-chart text { fill: var(--muted); font: 500 10.5px var(--font-mono); }
+.lc-chart .grid-l { stroke: var(--line); stroke-width: 1; fill: none; }
+.lc-chart .bar { fill: var(--accent); }
+.lc-chart .bar.now { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 2; }
+.lc-chart .prev { fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 4 3; }
+.lc-chart .prev-dot { fill: var(--muted); }
+.lc-chart-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; color: var(--muted); font-size: 12px; align-items: center; }
+.lc-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.lc-hbar { display: grid; grid-template-columns: minmax(130px, 40%) 1fr auto; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.lc-hbar:first-child { border-top: 0; padding-top: 0; }
+.lc-hbar .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.lc-hbar .track { height: 8px; border-radius: 4px; background: var(--line); position: relative; }
+.lc-hbar .track i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.lc-hbar .track b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); border-radius: 1px; }
+.lc-hbar .fig { white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.lc-aging { display: flex; height: 28px; border-radius: 8px; overflow: hidden; gap: 2px; background: var(--line); }
+.lc-aging span { display: grid; place-items: center; font: 500 11px var(--font-mono); color: #fff; min-width: 6px; }
+
+.lc-empty { padding: 28px 12px; text-align: center; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.lc-empty b { color: var(--text); font: 700 16px var(--font-display); }
+.lc-error { padding: 14px 16px; border-radius: 12px; background: var(--bad-soft); color: var(--bad); display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+@keyframes lc-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.lc-skel { border-radius: 8px; background: linear-gradient(90deg, var(--line) 0%, var(--surface-2) 50%, var(--line) 100%); background-size: 200% 100%; animation: lc-shimmer 1.6s linear infinite; }
+.lc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── sign in ── */
+.lc-login { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); min-height: 100dvh; }
+.lc-login-brand { background: var(--brand-bg); color: var(--brand-text); padding: 32px; display: flex; flex-direction: column; justify-content: space-between; gap: 24px; position: relative; overflow: hidden; }
+.lc-login-brand h2 { margin: 0; font: 700 40px/1.02 var(--font-display); letter-spacing: -.025em; text-wrap: balance; max-width: 13ch; position: relative; z-index: 1; }
+.lc-login-brand p { margin: 10px 0 0; color: var(--brand-muted); max-width: 34ch; position: relative; z-index: 1; }
+.lc-brandmark { display: flex; align-items: center; gap: 10px; min-width: 0; position: relative; z-index: 1; }
+.lc-brandmark b { font: 700 15px/1.1 var(--font-display); }
+.lc-brandmark small { display: block; color: var(--brand-muted); font-size: 12px; }
+.lc-mark { width: 32px; height: 32px; flex: none; }
+.lc-shelf { position: absolute; left: 0; right: 0; bottom: 0; height: 150px; pointer-events: none; opacity: .5; }
+.lc-shelf rect { fill: #1B4A3B; }
+.lc-shelf .hl { fill: #C7952E; opacity: .9; }
+.lc-shelf .plank { fill: #123528; }
+.lc-brand-foot { position: relative; display: flex; flex-wrap: wrap; gap: 8px; z-index: 1; }
+.lc-chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 999px; background: rgba(255,255,255,.08); color: var(--brand-text); font-size: 12px; font-weight: 600; }
+.lc-dot { width: 8px; height: 8px; border-radius: 50%; background: #4CC38A; flex: none; }
+.lc-dot.bad { background: #F2796B; }
+.lc-dot.wait { background: #9DB7AC; }
+.lc-login-form-wrap { padding: 40px 32px; display: flex; align-items: center; justify-content: center; position: relative; }
+.lc-theme-btn { position: absolute; top: 16px; right: 16px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 7px 12px; font-weight: 600; font-size: 12px; }
+.lc-login-form { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
+.lc-login-form h1 { margin: 0; font: 700 28px/1.1 var(--font-display); letter-spacing: -.015em; }
+.lc-login-form .lead { margin: -8px 0 0; color: var(--muted); }
+.lc-field { display: flex; flex-direction: column; gap: 6px; }
+.lc-field label { font-weight: 600; font-size: 13px; }
+.lc-input { display: flex; align-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
+.lc-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* the app's global dark stylesheet restyles every <input>; this one is deliberately transparent inside its own box */
+.lc .lc-input input { flex: 1; min-width: 0; border: 0 !important; background: transparent !important; color: var(--text) !important; padding: 12px 14px; outline: none !important; font-size: 15px; border-radius: 10px; }
+.lc .lc-input input::placeholder { color: var(--muted) !important; }
+.lc-input button { border: 0; background: transparent; color: var(--muted); font-weight: 700; font-size: 12px; padding: 8px 12px; border-radius: 8px; }
+.lc-input button:hover { color: var(--text); }
+.lc-hint { font-size: 12px; color: var(--warn); display: flex; align-items: center; gap: 6px; min-height: 18px; }
+.lc-alert { padding: 10px 12px; border-radius: 10px; font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+.lc-alert svg { flex: none; margin-top: 2px; }
+.lc-alert.bad { background: var(--bad-soft); color: var(--bad); }
+.lc-alert.warn { background: var(--warn-soft); color: var(--warn); }
+.lc-alert.good { background: var(--good-soft); color: var(--good); }
+.lc-form-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.lc-check { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; }
+.lc .lc-check input { width: 16px; height: 16px; accent-color: var(--accent); }
+.lc-login-form .lc-btn-primary { width: 100%; padding: 13px; font-size: 15px; }
+
+/* ── Super Admin: the "needs action" queue ── */
+.lc-queue { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.lc-q { display: flex; flex-direction: column; gap: 3px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-left-width: 4px; border-radius: 12px; padding: 12px 14px; color: var(--text); }
+.lc-q b { font: 700 26px/1.1 var(--font-display); }
+.lc-q span { color: var(--muted); font-size: 12px; }
+.lc-q.bad { border-left-color: var(--bad); }
+.lc-q.warn { border-left-color: var(--warn); }
+.lc-q.good { border-left-color: var(--good); }
+.lc-q.zero { border-left-color: var(--line); opacity: .6; cursor: default; }
+.lc-q:not(.zero):hover { background: var(--surface-2); }
+.lc-q[aria-pressed="true"] { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--accent); }
+.lc-filterbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+
+/* ── the content area is its own responsive world ── */
+@container (min-width: 861px) {
+  .lc-brand-foot { margin-bottom: 110px; }   /* sit above the bottle shelf on the tall panel */
+}
+@container (max-width: 860px) {
+  .lc-g-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lc-g-2, .lc-g-3 { grid-template-columns: minmax(0, 1fr); }
+  .lc-login { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .lc-login-brand { min-height: 280px; }
+  .lc-login-brand h2 { font-size: 32px; }
+}
+@container (max-width: 560px) {
+  .lc-page { padding: 16px; gap: 14px; }
+  .lc-g-kpi, .lc-g-2e { grid-template-columns: minmax(0, 1fr); }
+  .lc-greet h2 { font-size: 22px; }
+  .lc-btn-big { width: 100%; }
+  .lc-hbar { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; }
+  .lc-hbar .track { grid-column: 1 / -1; order: 3; }
+  .lc-login-brand { padding: 24px 20px; min-height: 240px; }
+  .lc-login-brand h2 { font-size: 28px; }
+  .lc-login-form-wrap { padding: 56px 20px 32px; }
+}
+@media (prefers-reduced-motion: reduce) { .lc *, .lc *::before, .lc *::after { animation: none !important; transition: none !important; } }

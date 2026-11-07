@@ -21,14 +21,11 @@ import {
   postSheet,
   unpostSheet,
   syncSheetWithSales,
-  getSheetCsv,
-  getBranchSheetCsv,
-  getSheetExcel,
-  getBranchSheetExcel,
   CreateSheetSchema,
   ListSheetsQuerySchema,
   UpdateLinesSchema,
 } from './counter.service.js';
+import { getSheetCsv, getBranchSheetCsv, getSheetExcel, getBranchSheetExcel } from './counter.export.js';
 
 const BranchParams = z.object({ branchId: z.string().uuid() });
 const IdParams = z.object({ id: z.string().uuid() });

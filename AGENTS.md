@@ -39,7 +39,7 @@ Imports inside `src/` must use the `.js` extension (e.g. `import { db } from '..
 
 ```
 src/
-  app.ts                   buildApp(): plugins, route registration (/api/v1), accounting event handlers, /health, preview UI
+  app.ts                   buildApp(): plugins, route registration (/api/v1), accounting event handlers, /health, serves the built React app at /
   index.ts                 Starts the server (auto-migrates when on PGlite)
   dev-local.ts             Zero-setup runner: PGlite in ./.pglite, migrate, seed on first run, start
   db/
@@ -61,13 +61,13 @@ drizzle/                   Generated SQL migrations (drizzle-kit generate)
 tests/
   unit/*.test.ts           Engine tests
   integration/*.int.test.ts  Real app + real SQL on in-memory PGlite via setupIntegration() (tests/integration/helpers.ts)
-  e2e/*.spec.ts            Playwright journeys through preview.html (fresh PGlite DB per run)
-preview.html               Single-file web UI (served at / and /preview)
+  e2e/*.spec.ts            Playwright journeys through the React app (fresh PGlite DB per run; build the frontend first)
+frontend/                  The React web app (Vite). Built into dist/frontend and served by the API at /
 ```
 
 Modules: `auth`, `users`, `branches`, `syndicates`, `products`, `billing`, `stock` (engine only),
 `inventory`, `closing`, `tables`, `kot`, `terminals`, `shifts`, `counters`, `customers`, `schemes`,
-`compliance`, `accounting`, `expenses`.
+`compliance`, `accounting`, `expenses`, `bank` (statement upload + reconciliation).
 
 ### Architecture rules
 - Keep the **engine / service / routes** split. New business rules go in an `*.engine.ts` as pure
@@ -92,6 +92,7 @@ Modules: `auth`, `users`, `branches`, `syndicates`, `products`, `billing`, `stoc
 - Bar: `tables` → `table_sessions` → `kot_orders` (KITCHEN | BAR) → `kot_items`
 - Accounting: `account_ledgers` (system codes CASH, BANK, SUNDRY_DEBTORS, SALES, OUTPUT_GST, …) → `journal_vouchers` (unique per source) → `journal_lines`; `expenses`
 - Syndicate billing: `consolidated_invoices`; page permissions: `user_page_permissions`
+- Bank reconciliation: `bank_accounts` (`scope` BRANCH | SYNDICATE; only the last 4 digits are stored) → `bank_statements` (unique per account + file hash) → `bank_statement_lines` (unique per account + transaction `hash`, status `UNMATCHED | SUGGESTED | MATCHED | IGNORED`); `bank_line_matches` links a line to the BANK-ledger `journal_lines` it accounts for (a journal line is matched at most once)
 
 ## 5. Auth & RBAC
 
@@ -127,10 +128,11 @@ Login: `POST /api/v1/auth/login {email, password}` → `{ token }`. Send as `Aut
 | Schemes | `GET/POST /schemes/:branchId` · `GET /schemes/:branchId/alerts` · `POST /schemes/:schemeId/purchase` · `GET/POST /schemes/:schemeId/slabs` · `GET /schemes/:schemeId/payout` | manager |
 | Compliance | `GET/POST /compliance/quotas/:branchId` · `GET /compliance/lifting/:branchId` · `POST /compliance/breakage/:branchId` (cashier) · `GET /compliance/breakage/:branchId` · `GET /compliance/stock-audit/:branchId` (manager) | |
 | Accounting | `GET/POST /accounting/ledgers/:branchId` · `GET /accounting/ledgers/:branchId/:ledgerId/entries` · `GET /accounting/vouchers/:branchId` · `POST /accounting/journal/:branchId` · `GET /accounting/trial-balance/:branchId` · `GET /accounting/profit-loss/:branchId` · `GET /accounting/balance-sheet/:branchId` · `GET /accounting/tally-export/:branchId` (XML) · `GET/POST /expenses/:branchId` | manager |
+| Bank reconciliation | `GET/POST /bank/accounts` · `PATCH /bank/accounts/:id` · `POST /bank/accounts/:id/statements/preview` (multipart, saves nothing) · `POST /bank/accounts/:id/statements` (multipart: import + auto-match) · `GET /bank/accounts/:id/statements` · `GET /bank/statements/:id[/lines\|/summary]` · `POST /bank/statements/:id/match\|accept-suggestions\|ignore\|apply-ignore-suggestions\|finalize` · `GET/POST /bank/accounts/:id/rules` · `PATCH/DELETE /bank/rules/:id` · `DELETE /bank/statements/:id` · `GET /bank/lines/:id/candidates` · `POST /bank/lines/:id/accept\|match\|post\|ignore\|unmatch` | manager (a SYNDICATE-scope account: owner) |
 | Bar | `GET /tables/:branchId` (steward, branch-scoped) · `POST /tables/:tableId/open|close` (cashier) · `POST /tables/:branchId` (manager) · `POST /kot` · `PATCH /kot/:kotOrderId/items/:itemId` · `GET /kot/session/:sessionId` (steward) · `GET /kot/session/:sessionId/bill` (cashier) | |
 
 Status codes: 400 validation · 401 no/invalid token or inactive user · 403 role/branch · 404 · 409 duplicate/state conflict · 422 business rule · 500 unexpected DB error (logged, message hidden).
-Non-API: `GET /health`, `GET /` (UI if `Accept: text/html`), `GET /preview`.
+Non-API: `GET /health`, `GET /` (the React app when it has been built, otherwise a small JSON note), and any other path falls through to the React app so its routes work on reload.
 
 ## 7. Running locally
 
@@ -163,6 +165,58 @@ Schema change: edit `schema.ts` → `npm run db:generate` (needs any `DATABASE_U
 - Closing selects bills by creation date; voiding a bill from an already-closed day is not reflected in that closing.
 - Windows PowerShell 5.1 `Get-Content` mis-displays UTF-8 (box-drawing comments look like `â”€`); the files are fine — use `-Encoding utf8`.
 - `.agents/` and `README.md` describe generic AI tooling, not this app; ignore them for project context.
+
+### Bank statement reconciliation (`src/modules/bank/`)
+
+Works with **any bank**: no per-bank templates. `bank.engine.ts` (pure, unit-tested on synthetic statements in several layouts) finds
+the header row, infers columns from heading words and, failing that, from cell contents; reads Indian amounts/dates; and decides
+debit vs credit from separate columns, Dr/Cr marks, signs, or the **running-balance delta**. The UI lets the user correct the mapping.
+Things that are easy to get wrong:
+- **Validation is the balance chain** (`verifyBalanceChain`): every running balance must follow from the previous one and opening + credits − debits = closing.
+  A `FAIL` blocks the import unless the user ticks "import anyway". `UNVERIFIABLE` (no balances) is allowed but warned.
+- **The book side is the BANK ledger**, not bills. It holds card/UPI sales (Dr when paid), supplier challans and bank-mode expenses (Cr), and khata
+  repayments by UPI/card. It does NOT hold cash deposits, charges, interest or most supplier payments: **accepting those lines posts a voucher**
+  (`sourceType 'BANK_LINE'`, one per line, idempotent) and matches it. Matching a line that is already in the books posts nothing (except a fee gap).
+- A card/UPI **settlement** is one statement line ↔ many sale entries; the gap is the gateway fee and is posted as `BANK_CHARGES` (sales are booked gross).
+- Nothing is applied automatically: matching only *suggests*. A line that posted a voucher cannot be un-matched (reverse the voucher with a journal).
+- **"Reconciled" means the books need no correction** (no statement line missing from them) *and* the figures tie out. Sales awaiting payout are just timing.
+  The arithmetic alone always ties out (open items are listed as reconciling items), so never use `difference == 0` by itself.
+- Re-uploading overlapping statements is safe: each line has a `hash`; the same file twice is refused. Lines are de-duplicated per account.
+- A row with a date but no readable amount is reported (`ROWS_WITHOUT_AMOUNT`), never dropped silently. The first line of a single-Amount-column statement with
+  no opening balance is genuinely ambiguous and is flagged `DIRECTION_GUESSED`.
+- Account `scope`: `BRANCH` (that branch's BANK ledger) or `SYNDICATE` (every outlet's BANK ledgers; owner only; postings go to the account's branch).
+- The statement file itself is **not stored** (privacy): only the hash, the parsed lines and the mapping.
+- **Non-store transactions (personal etc.) are IGNORED, never deleted**: no voucher, still on the statement, shown in the Ignored list and in the reconciliation card
+  ("left out of the books"). **A reason is required** (`PERSONAL | OTHER_BUSINESS | NOT_OURS | OTHER`) on every ignore, single or bulk
+  (`POST /bank/lines/:id/ignore`, `POST /bank/statements/:id/ignore`). Un-ignoring is allowed.
+- **Ignore rules** (`bank_ignore_rules`, per account): case-insensitive text in the narration/reference, optional side (IN/OUT) and amount range, min 3 characters.
+  `SUGGEST` rules only propose (`suggestion.kind = 'IGNORE'`; confirmed with "Ignore suggested"); `AUTO` rules ignore on import and are labelled (`ignoredByRuleId`).
+  Safety rules, all tested: a line that matches a book entry (1:1 or settlement) is **never** auto-ignored; "Accept all matches" never ignores; a line a person
+  un-ignored is `ruleExempt` and rules leave it alone from then on; deleting a rule keeps the decisions it already made; rules never cross accounts.
+
+### Dashboards & login (`src/modules/dashboard/`, `frontend/src/dashboard/`, `frontend/src/auth/Login.tsx`)
+
+- `GET /api/v1/dashboard/branch/:branchId` (cashier+; payload depends on role: cashier gets own shift, own recent bills, attention, stock; manager/owner get today/yesterday, hourly[24], payment mix, tables, closing steps, top sellers) and `GET /api/v1/dashboard/owner` (owner with a syndicate; platform owner gets 422). Everything is aggregated server-side (never sum a paged bill list in the browser).
+- Pure logic lives in `dashboard.engine.ts` (hourly buckets, same-time-yesterday, khata FIFO ageing, ranked attention items). A shift is flagged only if open ≥12h (staff) / ≥10h (cashier); yesterday not closed = bad.
+- Frontend CSS is scoped under `.lc` / `.dark .lc` with an `lc-` class prefix, because global `.card/.input/table` dark overrides would otherwise clash. Fonts are self-hosted via `@fontsource`. Sidebar and other pages keep the older purple theme.
+- Login: 401 body carries `attemptsLeft`; 429 carries `retryAfterSeconds` (+ `Retry-After`). Throttle is in-memory (per email+IP: 10, per account: 100); set `TRUST_PROXY` behind a proxy. `GET /api/v1/health` feeds the login status chip.
+- There is no second UI: the old single-file `preview.html` is no longer served and no test uses it. The e2e specs all drive the React app (`npm run build:frontend` first). Playwright runs 3 workers with a 10 s expect timeout because one server process hashes every worker's password logins.
+
+### Frontend look (app-wide)
+
+- The whole app shares one palette, defined in `frontend/src/index.css` under `@theme`. The screens are written with Tailwind's `purple` and `gray` classes, so those ramps were **redefined**: `purple-*` is the brand green (primary buttons, active states, links), `gray-*` and `slate-*` are green-tinted neutrals, `blue-*` is a calm card-blue, `green-*`/`emerald-*` is the "good" green, `indigo-*`/`violet-*` alias the brand green. Do not look for purple on screen: changing the look means editing those ramps, not the screens.
+- The dark-mode overrides lower in `index.css` use the matching dark hex values (surface `#111c18`, background `#0a1310`, line `#253630`). `th` has one base style for every table (it sits in `@layer base`, so a screen's own classes still win).
+- Fonts are self-hosted (`@fontsource`): Hanken Grotesk for text, Bricolage Grotesque (`font-display`) for headings and big figures, IBM Plex Mono for codes.
+- The sidebar is dark green in both themes. The sign-in, forgot and reset password screens share `auth/AuthShell.tsx`. The dashboards use the scoped `lc-` classes in `dashboard/lc.css`.
+- Screens redesigned beyond the palette: POS (stacks on phones, empty-cart state, payment-mode icons), Tables & KOT (grouped by section, how long a table has been open, grouped action dialog), Inventory (header, tabs, stepper), Platform and the dashboards. Decorative emoji were removed from headings and text; the product-category illustrations in `components/category-icons.tsx` are data and stay.
+
+### Super Admin console (`src/modules/platform/`, `frontend/src/platform/`)
+
+- `GET /api/v1/platform/dashboard` (platform owner only) feeds the top of the console: MRR, paying/trial counts, unpaid invoices, outlets/staff, 30-day sales vs the 30 days before, plan mix, 30-day sign-up funnel, money collected per month, and the **"needs action" queue** (`trialEnding`, `overdue`, `quiet`, `suspended`, each `{count, ids}`).
+- `GET /platform/tenants` now also returns `health` (0-100) and `flags` (queue keys) per tenant, and `lastBillAt` is the latest PAID bill ever (it used to be limited to the last 30 days).
+- Rules are pure and unit-tested in `insights.engine.ts`: MRR = active paid-plan tenants whose access is OK; trial ending = within 4 days or already ended; overdue = paid plan whose `paidUntil` has passed (it can still be inside the 7-day grace, so the tenant stays usable); quiet = no bill for 7+ days, or never billed after a week; health = recency 50 + volume 25 + staff 10 + good standing 15, capped at 40 when access is blocked. The health weights are a judgment call: change them in one place.
+- "Collected" revenue is grouped by the month the invoice was **paid** (`paidAt`), not by billing period, so a renewal paid early counts in the month the money arrived. It is cash collected, not accounting revenue.
+- No plan history is stored, so the funnel is "signed up in the last 30 days / have billed / are now on a paid plan", not a true trial-to-paid conversion rate.
 
 ## 9. Conventions
 

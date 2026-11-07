@@ -6,32 +6,39 @@ import * as schema from './schema.js';
 import dns from 'node:dns';
 
 // Fallback DNS resolver for ISPs/routers (like Airtel/Jio) that return RCODE_REFUSED for cloud DB domains like *.neon.tech
-if (!process.env.DATABASE_URL?.startsWith('pglite://')) {
+// The system resolver is tried first; public resolvers are only consulted when it fails, and only through a
+// dedicated Resolver (the process-wide dns.setServers() is left alone, so corporate/split DNS keeps working).
+// Set DB_DNS_FALLBACK=0 to turn this off entirely (e.g. on a locked-down network).
+if (!process.env.DATABASE_URL?.startsWith('pglite://') && process.env.DB_DNS_FALLBACK !== '0') {
   try {
-    dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+    const publicResolver = new dns.Resolver();
+    publicResolver.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
     const origLookup = dns.lookup;
-    // @ts-expect-error - wrapping node:dns lookup to provide public DNS fallback
-    dns.lookup = (hostname: string, options: any, callback: any) => {
+    const fallbackLookup = (hostname: string, options: unknown, callback: unknown) => {
+      let opts = options as dns.LookupOptions | number | undefined;
+      let cb = callback as (...args: unknown[]) => void;
       if (typeof options === 'function') {
-        callback = options;
-        options = {};
+        cb = options as (...args: unknown[]) => void;
+        opts = {};
       }
-      origLookup(hostname, options, (err: any, address: any, family: any) => {
-        if (err && (err.code === 'ENOTFOUND' || err.code === 'EREFUSED')) {
-          dns.resolve4(hostname, (err2, addresses) => {
+      const wantsAll = typeof opts === 'object' && opts !== null && opts.all === true;
+      (origLookup as (h: string, o: unknown, c: (...a: unknown[]) => void) => void)(hostname, opts, (err, address, family) => {
+        const code = (err as NodeJS.ErrnoException | null)?.code;
+        if (err && (code === 'ENOTFOUND' || code === 'EREFUSED')) {
+          publicResolver.resolve4(hostname, (err2, addresses) => {
             if (!err2 && addresses?.length) {
-              if (options?.all) {
-                return callback(null, addresses.map((a) => ({ address: a, family: 4 })));
-              }
-              return callback(null, addresses[0], 4);
+              return wantsAll
+                ? cb(null, addresses.map((a) => ({ address: a, family: 4 })))
+                : cb(null, addresses[0], 4);
             }
-            callback(err, address, family);
+            cb(err, address, family);
           });
         } else {
-          callback(err, address, family);
+          cb(err, address, family);
         }
       });
     };
+    dns.lookup = fallbackLookup as unknown as typeof dns.lookup;
   } catch {
     // Non-fatal if runtime restricts DNS configuration
   }

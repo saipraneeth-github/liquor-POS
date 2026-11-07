@@ -78,6 +78,13 @@
       "when": 1793527500000,
       "tag": "0010_depot_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794035841921,
+      "tag": "0011_bank_reconciliation",
+      "breakpoints": true
     }
   ]
 }

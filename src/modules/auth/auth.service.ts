@@ -10,6 +10,55 @@ import { sendMail } from '../notifications/mailer.js';
 import { ACCESS_MESSAGE, accessState } from '../platform/access.engine.js';
 
 export class SuspendedError extends Error {}
+/** `retryAfterSeconds` lets the sign-in screen show a countdown instead of a vague "try later". */
+export class TooManyAttemptsError extends Error {
+  constructor(message: string, public readonly retryAfterSeconds: number = 0) { super(message); }
+}
+/** Wrong e-mail or password. `attemptsLeft` is how many more tries this client has before it is locked out. */
+export class InvalidCredentialsError extends Error {
+  constructor(public readonly attemptsLeft: number) { super('Invalid credentials'); }
+}
+
+// ─── LOGIN THROTTLE ─────────────────────────────────────────────────────────
+// Two buckets, so a lockout cannot be turned into a way to lock a real user out:
+//   • e-mail + client IP — 10 failures lock only THAT client from that account. Someone typing a stranger's
+//     address wrong repeatedly only locks themselves out; the real user (different IP) is unaffected.
+//   • e-mail alone      — 100 failures from anywhere in the window. Only a distributed attack reaches this,
+//     and it is the backstop against brute-forcing one account from many addresses.
+// A successful sign-in clears both. In-memory: per process, resets on restart. Use a shared store (Redis) if
+// the API ever runs as several instances. Behind a reverse proxy set TRUST_PROXY so request.ip is the client.
+const MAX_FAILED_PER_CLIENT = 10;
+const MAX_FAILED_PER_ACCOUNT = 100;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const failedLogins = new Map<string, { count: number; first: number }>();
+
+function loginLocked(key: string, max: number, now = Date.now()): boolean {
+  const entry = failedLogins.get(key);
+  if (!entry) return false;
+  if (now - entry.first > LOGIN_LOCK_MS) { failedLogins.delete(key); return false; }
+  return entry.count >= max;
+}
+
+function secondsUntilUnlocked(key: string, now = Date.now()): number {
+  const entry = failedLogins.get(key);
+  return entry ? Math.max(1, Math.ceil((entry.first + LOGIN_LOCK_MS - now) / 1000)) : 0;
+}
+
+function failuresSoFar(key: string, now = Date.now()): number {
+  const entry = failedLogins.get(key);
+  return entry && now - entry.first <= LOGIN_LOCK_MS ? entry.count : 0;
+}
+
+function recordFailedLogin(key: string, now = Date.now()): void {
+  const entry = failedLogins.get(key);
+  if (!entry || now - entry.first > LOGIN_LOCK_MS) failedLogins.set(key, { count: 1, first: now });
+  else entry.count += 1;
+  if (failedLogins.size > 10_000) {   // bound memory: drop expired entries
+    for (const [k, v] of failedLogins) if (now - v.first > LOGIN_LOCK_MS) failedLogins.delete(k);
+  }
+}
+
+export function resetLoginThrottle(): void { failedLogins.clear(); }
 
 const SALT_ROUNDS = 12;
 
@@ -17,7 +66,8 @@ const SALT_ROUNDS = 12;
 
 export const LoginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  // No minimum here: legacy/imported accounts may have shorter passwords. Strength is enforced when set.
+  password: z.string().min(1).max(100),
 });
 
 // ─── TOKEN PAYLOAD ──────────────────────────────────────────────────────────
@@ -65,7 +115,22 @@ export async function loginUser(
   email: string,
   password: string,
   fastify: FastifyInstance,
+  clientIp = 'unknown',
 ): Promise<string> {
+  const accountKey = `acct:${email.toLowerCase()}`;
+  const clientKey = `client:${email.toLowerCase()}|${clientIp}`;
+  const clientLocked = loginLocked(clientKey, MAX_FAILED_PER_CLIENT);
+  if (clientLocked || loginLocked(accountKey, MAX_FAILED_PER_ACCOUNT)) {
+    throw new TooManyAttemptsError(
+      'Too many failed sign-in attempts. Try again in a few minutes or reset your password.',
+      secondsUntilUnlocked(clientLocked ? clientKey : accountKey),
+    );
+  }
+  const recordFailure = (): never => {
+    recordFailedLogin(clientKey);
+    recordFailedLogin(accountKey);
+    throw new InvalidCredentialsError(Math.max(0, MAX_FAILED_PER_CLIENT - failuresSoFar(clientKey)));
+  };
   const [row] = await db
     .select({ user: users, tenant: { isActive: syndicates.isActive, plan: syndicates.plan, trialEndsAt: syndicates.trialEndsAt, paidUntil: syndicates.paidUntil } })
     .from(users)
@@ -75,14 +140,12 @@ export async function loginUser(
     .limit(1);
   const user = row?.user;
 
-  if (!user || !user.isActive) {
-    throw new Error('Invalid credentials');
-  }
+  if (!user || !user.isActive) recordFailure();
 
   const valid = await verifyPassword(password, user.passwordHash);
-  if (!valid) {
-    throw new Error('Invalid credentials');
-  }
+  if (!valid) recordFailure();
+  failedLogins.delete(clientKey);
+  failedLogins.delete(accountKey);
   if (row.tenant && row.tenant.isActive !== null) {
     // Only a suspension blocks sign-in. An ended trial / overdue payment lets the user in so the Admin can pay.
     const state = accessState(row.tenant);
@@ -97,7 +160,6 @@ export async function loginUser(
     syndicateId: user.syndicateId ?? null,
   };
 
-  // @ts-ignore — fastify-jwt types
   return fastify.jwt.sign(payload);
 }
 

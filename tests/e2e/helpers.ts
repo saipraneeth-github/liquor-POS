@@ -10,7 +10,7 @@ export function uniq(): string {
 /** Logs in through the real login form and waits for the app shell. */
 export async function login(page: Page, email: string, password = PASSWORD): Promise<void> {
   page.on('pageerror', (err) => console.error(`Uncaught page exception: "${err.message}"`));
-  await page.goto('/');
+  await page.goto('/login');
   await page.fill('#loginEmail', email);
   await page.fill('#loginPass', password);
   await page.click('#loginBtn');

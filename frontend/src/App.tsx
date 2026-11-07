@@ -17,9 +17,10 @@ import { Inventory } from './inventory/Inventory';
 import { KitchenMenu } from './menu/KitchenMenu';
 import { BarMenu } from './menu/BarMenu';
 import { Closing } from './closing/Closing';
+import { BankReconciliation } from './bank/BankReconciliation';
 import { Schemes } from './schemes/Schemes';
 import { Compliance } from './compliance/Compliance';
-import { Dashboard } from './dashboard/Dashboard';
+import { Dashboard } from './dashboard/Dashboard';   // the new look: attention strip, role views
 import { Admin } from './admin/Admin';
 import { ForgotPassword } from './auth/ForgotPassword';
 import { ResetPassword } from './auth/ResetPassword';
@@ -56,6 +57,7 @@ export default function App() {
                     <Route path="/schemes" element={<Schemes />} />
                     <Route path="/compliance" element={<Compliance />} />
                     <Route path="/accounting" element={<Ledger />} />
+                    <Route path="/bank" element={<BankReconciliation />} />
                     <Route path="/closing" element={<Closing />} />
                     <Route path="/admin" element={<Admin />} />
                     <Route path="/pour" element={<PourControl />} />

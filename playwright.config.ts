@@ -5,7 +5,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // One server process (with CPU-heavy password hashing) serves every worker, so more workers only make each run slower.
+  workers: process.env.CI ? 1 : 3,
+  expect: { timeout: 10_000 },
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:3001',
@@ -23,7 +25,6 @@ export default defineConfig({
     env: {
       DATABASE_URL: process.env.E2E_DATABASE_URL ?? 'pglite://./.pglite-e2e',
       PORT: '3001',
-      LEGACY_PREVIEW: '1',   // the original journeys drive preview.html at "/"; React specs use /login
       NODE_ENV: 'development',
       SEED_DEMO_STOCK: 'true',
     },

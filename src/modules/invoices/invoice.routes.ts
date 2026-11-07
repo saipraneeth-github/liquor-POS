@@ -46,7 +46,11 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   fastify.addHook('onClose', async () => { await terminateOcr(); });
 
   // POST /invoices/:branchId/upload — CSV / XLSX / PDF / image → DRAFT invoice (cashier+)
-  fastify.post('/invoices/:branchId/upload', { preHandler: requireRole('cashier') }, async (request, reply) => {
+  // OCR / PDF parsing is CPU-heavy, so cap uploads per client in production (tests upload in bursts).
+  fastify.post('/invoices/:branchId/upload', {
+    config: process.env.NODE_ENV === 'production' ? { rateLimit: { max: 20, timeWindow: '1 minute' } } : {},
+    preHandler: requireRole('cashier'),
+  }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const user = getUser(request);

@@ -30,14 +30,19 @@ async function agentAuth(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function agentRoutes(app: FastifyInstance) {
-  app.get('/agent/jobs', async (req, reply) => {
+  // Agents poll every few seconds; the cap mainly blunts token guessing. Production only (tests fire many requests).
+  const agentLimit = process.env.NODE_ENV === 'production'
+    ? { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }
+    : {};
+
+  app.get('/agent/jobs', agentLimit, async (req, reply) => {
     const branch = await agentAuth(req, reply);
     if (!branch) return;
     const query = LimitQuery.safeParse(req.query);
     return { branch: { id: branch.id, name: branch.name, paperWidth: branch.paperWidth }, jobs: await claimAgentJobs(branch.id, query.success ? query.data.limit : 5) };
   });
 
-  app.post('/agent/jobs/:id/ack', async (req, reply) => {
+  app.post('/agent/jobs/:id/ack', agentLimit, async (req, reply) => {
     const branch = await agentAuth(req, reply);
     if (!branch) return;
     const params = IdParams.safeParse(req.params);

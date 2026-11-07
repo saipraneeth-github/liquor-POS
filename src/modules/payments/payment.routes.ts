@@ -118,7 +118,11 @@ export async function paymentRoutes(app: FastifyInstance) {
 export async function webhookRoutes(app: FastifyInstance) {
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => done(null, body));
 
-  app.post('/webhooks/razorpay', async (req, reply) => {
+  // Signature is verified in the handler; the cap just stops unauthenticated floods from burning CPU.
+  const webhookLimit = process.env.NODE_ENV === 'production'
+    ? { config: { rateLimit: { max: 300, timeWindow: '1 minute' } } }
+    : {};
+  app.post('/webhooks/razorpay', webhookLimit, async (req, reply) => {
     const raw = typeof req.body === 'string' ? req.body : '';
     const signature = String(req.headers['x-razorpay-signature'] ?? '');
     const gateway = currentGateway();

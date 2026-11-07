@@ -17,7 +17,7 @@ async function main() {
     await app.listen({ port: PORT, host: '0.0.0.0' });
     startPrintWorker();   // retries print jobs that could not reach the printer
     startBillingWorker(); // renewal invoices and payment reminders
-    console.log(`🍾 Liquor Counter API running on http://localhost:${PORT}`);
+    app.log.info(`Liquor Counter API running on http://localhost:${PORT}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);

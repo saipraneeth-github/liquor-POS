@@ -27,6 +27,7 @@ export const PAGE_KEYS = [
   'compliance',
   'reports',
   'accounting',
+  'bank',
   'closing',
   'admin',
   'settings',

@@ -3,6 +3,7 @@ import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package, Download,
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { businessDate } from '../lib/business-day';
 
 interface CounterLine {
   productId: string;
@@ -40,7 +41,7 @@ export function Counter() {
   const branchId = user?.branchId;
   const isManager = user?.role === 'manager' || user?.role === 'owner';
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = businessDate();
   const [sheetDate, setSheetDate] = useState(todayStr);
   const [recentSheets, setRecentSheets] = useState<RecentSheet[]>([]);
   const [sheet, setSheet] = useState<CounterSheet | null>(null);
@@ -456,7 +457,7 @@ export function Counter() {
   return (
     <section className="page active" id="page-counter" aria-labelledby="counterTitle">
       <div className="mb-4">
-        <h2 className="h1 text-xl font-bold" id="counterTitle">📋 Daily Counter Sheet</h2>
+        <h2 className="h1 text-2xl font-bold" id="counterTitle">Daily Counter Sheet</h2>
         <div className="muted small text-xs text-gray-500">
           Auto-updates with POS sales: sold = opening + inward − closing. Physical bottle counts can be adjusted and posted to reconcile stock.
         </div>
@@ -483,7 +484,7 @@ export function Counter() {
             Open
           </button>
           <button
-            className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium"
+            className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium"
             type="button"
             id="counterCreateBtn"
             onClick={handleCreateSheet}
@@ -647,7 +648,7 @@ export function Counter() {
                           className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200"
                           title={`${totalSurplusBottles} surplus bottles counted above available stock across ${surplusCount} product(s)`}
                         >
-                          ⚠️ +{totalSurplusBottles} Surplus
+                          +{totalSurplusBottles} Surplus
                         </span>
                       )}
                       {totalShortageBottles > 0 && (
@@ -655,7 +656,7 @@ export function Counter() {
                           className="text-xs font-semibold px-2 py-0.5 rounded bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-200"
                           title={`${totalShortageBottles} unbilled bottles missing from shelf across ${shortageCount} product(s)`}
                         >
-                          🔻 -{totalShortageBottles} Shortage
+                          -{totalShortageBottles} Shortage
                         </span>
                       )}
                       {totalExcessBottles > 0 && (
@@ -663,7 +664,7 @@ export function Counter() {
                           className="text-xs font-semibold px-2 py-0.5 rounded bg-sky-100 text-sky-900 dark:bg-sky-950/60 dark:text-sky-200"
                           title={`${totalExcessBottles} bottles found on shelf that POS billed across ${excessCount} product(s)`}
                         >
-                          📦 +{totalExcessBottles} Shelf Excess
+                          +{totalExcessBottles} Shelf Excess
                         </span>
                       )}
                       {totalDiscrepancyCount === 0 && totalVariance !== 0 && (
@@ -701,7 +702,7 @@ export function Counter() {
                   }`}
                   onClick={() => setFilterStatus('SURPLUS')}
                 >
-                  ⚠️ Surplus ({surplusCount})
+                  Surplus ({surplusCount})
                 </button>
                 <button
                   type="button"
@@ -712,7 +713,7 @@ export function Counter() {
                   }`}
                   onClick={() => setFilterStatus('SHORTAGE')}
                 >
-                  🔻 Below Stock ({shortageCount})
+                  Below Stock ({shortageCount})
                 </button>
                 <button
                   type="button"
@@ -723,7 +724,7 @@ export function Counter() {
                   }`}
                   onClick={() => setFilterStatus('EXCESS')}
                 >
-                  📦 Shelf Excess ({excessCount})
+                  Shelf Excess ({excessCount})
                 </button>
                 <button
                   type="button"
@@ -770,17 +771,17 @@ export function Counter() {
                         <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                           {l.diffType === 'SURPLUS' && (
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-900 bg-amber-100 dark:bg-amber-900/60 dark:text-amber-200 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700">
-                              ⚠️ Surplus (+{l.diffAmount} bottles)
+                              Surplus (+{l.diffAmount} bottles)
                             </span>
                           )}
                           {l.diffType === 'SHORTAGE' && (
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-900 bg-rose-100 dark:bg-rose-900/60 dark:text-rose-200 px-2 py-0.5 rounded border border-rose-300 dark:border-rose-700">
-                              🔻 Below Stock (-{l.diffAmount} unbilled)
+                              Below Stock (-{l.diffAmount} unbilled)
                             </span>
                           )}
                           {l.diffType === 'EXCESS' && (
                             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-900 bg-sky-100 dark:bg-sky-900/60 dark:text-sky-200 px-2 py-0.5 rounded border border-sky-300 dark:border-sky-700">
-                              📦 Shelf Excess (+{l.diffAmount} vs POS)
+                              Shelf Excess (+{l.diffAmount} vs POS)
                             </span>
                           )}
                           {l.diffType === 'MATCHED' && (
@@ -900,7 +901,7 @@ export function Counter() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium"
+                    className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium"
                     id="counterSaveBtn"
                     onClick={() => handleSaveSheet()}
                   >
@@ -998,7 +999,7 @@ export function Counter() {
       </div>
 
       {confirmModal && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
           <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
             <div className="flex justify-between items-start mb-2">
               <h3 className="text-lg font-bold" id="confirmTitle">{confirmModal.title}</h3>
@@ -1024,7 +1025,7 @@ export function Counter() {
               <button
                 type="button"
                 id="confirmOk"
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm"
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm"
                 onClick={confirmModal.onOk}
               >
                 {confirmModal.confirmButtonText || 'Post sheet'}

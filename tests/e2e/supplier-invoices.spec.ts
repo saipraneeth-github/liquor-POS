@@ -13,14 +13,19 @@ test('supplier invoice upload: CSV extract -> review & map unmatched line -> app
   ].join('\n');
 
   await login(page, 'manager@liquor.com');
-  await page.click('#nav-stock');
-  await expect(page.locator('#stockTable table')).toBeVisible();
+  await page.click('#nav-inventory');
 
-  // Read initial Royal Challenge stock
-  const rcRow = page.locator('#stockTable tbody tr', { hasText: 'Royal Challenge Premium Whisky 750ml' });
-  const beforeRc = Number((await rcRow.locator('td').nth(1).innerText()).trim());
+  // Read the initial Royal Challenge stock from the Current Store Stock tab
+  const openStock = async () => {
+    await page.getByRole('button', { name: 'Current Store Stock' }).click();
+    await expect(page.locator('#stockTable table')).toBeVisible();
+    return page.locator('#stockTable tbody tr', { hasText: 'Royal Challenge Premium Whisky 750ml' });
+  };
+  const qtyOf = async (row: ReturnType<typeof page.locator>) => Number((await row.locator('td').nth(1).innerText()).match(/\d+/)?.[0] ?? 'NaN');
+  const beforeRc = await qtyOf(await openStock());
 
-  // Upload CSV invoice
+  // Upload the CSV invoice from the Add Supplier Bill tab
+  await page.getByRole('button', { name: 'Add Supplier Bill' }).click();
   await page.locator('#invUploadFile').setInputFiles({
     name: 'united-spirits.csv',
     mimeType: 'text/csv',
@@ -28,30 +33,34 @@ test('supplier invoice upload: CSV extract -> review & map unmatched line -> app
   });
   await page.click('#invUploadBtn');
 
-  // Review detail box opens with DRAFT status, line 1 MATCHED, line 2 UNMATCHED
-  await expect(page.locator('#invDetailBox')).toBeVisible();
+  // The review screen opens as a draft: line 1 matched to a product, line 2 needs one
+  await expect(page.locator('#invDetailBox')).toBeVisible({ timeout: 20000 });
   await expect(page.locator('#invEditNumber')).toHaveValue(invNo);
   const rows = page.locator('#invEditLines .inv-edit-row');
   await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0).locator('.ie-match-badge')).toContainText('MATCHED');
-  await expect(rows.nth(1).locator('.ie-match-badge')).toContainText('UNMATCHED');
+  await expect(rows.nth(0).locator('.ie-match-badge')).toHaveAttribute('title', 'Matched');
+  await expect(rows.nth(1).locator('.ie-match-badge')).toHaveAttribute('title', 'Needs selection');
 
   // Map line 2 to Kingfisher Premium Lager Beer 650ml
   const kfOption = rows.nth(1).locator('.ie-prod option', { hasText: 'Kingfisher Premium Lager Beer 650ml' }).first();
   const kfVal = await kfOption.getAttribute('value');
   await rows.nth(1).locator('.ie-prod').selectOption(kfVal!);
-  await expect(rows.nth(1).locator('.ie-match-badge')).toContainText('MANUAL');
+  await expect(rows.nth(1).locator('.ie-match-badge')).toHaveAttribute('title', 'Matched');
 
-  // Mark reviewed, then approve
+  // Mark reviewed
   await page.click('#invReviewBtn');
-  await expect(page.locator('#invDetailBox')).toContainText('REVIEWED');
+  await expect(page.locator('#invDetailBox')).toContainText(/reviewed/i);
 
+  // Confirm the inward and approve it
+  await page.getByRole('button', { name: /Proceed to Inward Confirmation/ }).click();
   await page.click('#invApproveBtn');
   await page.click('#confirmOk');
 
-  await expect(page.locator('#invDetailBox')).toContainText('APPROVED');
-  await expect(page.locator('#invHistoryBox tr', { hasText: invNo })).toContainText('APPROVED');
+  // It lands on the stock tab: Royal Challenge went up by 12
+  await expect(page.locator('#stockTable')).toBeVisible({ timeout: 20000 });
+  await expect.poll(async () => qtyOf(page.locator('#stockTable tbody tr', { hasText: 'Royal Challenge Premium Whisky 750ml' })), { timeout: 15000 }).toBe(beforeRc + 12);
 
-  // Verify stock of Royal Challenge increased by 12
-  await expect(rcRow.locator('td').nth(1)).toHaveText(String(beforeRc + 12));
+  // And the bill is in history as approved
+  await page.getByRole('button', { name: /Bill History/ }).click();
+  await expect(page.locator('#invHistoryBox tr', { hasText: invNo })).toContainText('Added to Stock');
 });

@@ -13,6 +13,9 @@ export const SEED_PASSWORD = 'Password@123';
  * products with opening stock, tables, a POS terminal and two khata customers.
  */
 export async function seedDatabase(): Promise<void> {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== '1') {
+    throw new Error('Refusing to seed demo data (known passwords) in production. Set ALLOW_PROD_SEED=1 to override.');
+  }
   console.log('🌱 Starting database seeding...');
 
   // 1. Syndicate & branch

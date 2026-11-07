@@ -213,7 +213,7 @@ export function Customers() {
 
   return (
     <section className="page active" id="page-customers" aria-labelledby="custTitle">
-      <h2 className="h1 text-xl font-bold mb-4" id="custTitle">📒 Customers &amp; Khata</h2>
+      <h2 className="h1 text-2xl font-bold mb-4" id="custTitle">Customers &amp; Khata</h2>
       <div className="two-col grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="stack flex flex-col gap-4">
           <div className="card pad p-4 bg-white rounded shadow flex flex-col gap-4">
@@ -234,7 +234,7 @@ export function Customers() {
                 }}
               />
               <button
-                className="btn-primary px-4 py-2 bg-blue-600 text-white rounded font-medium"
+                className="btn-primary px-4 py-2 bg-purple-600 text-white rounded font-medium"
                 type="button"
                 id="custSearchBtn"
                 onClick={loadCustomers}
@@ -375,7 +375,7 @@ export function Customers() {
                   </>
                 )}
                 <button
-                  className="btn-primary mt-2 px-4 py-2 bg-blue-600 text-white rounded font-medium disabled:opacity-50"
+                  className="btn-primary mt-2 px-4 py-2 bg-purple-600 text-white rounded font-medium disabled:opacity-50"
                   type="submit"
                   id="custCreateBtn"
                   disabled={creating}

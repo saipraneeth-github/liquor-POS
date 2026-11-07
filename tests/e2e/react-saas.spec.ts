@@ -229,7 +229,8 @@ test('Super Admin: sees the platform console, adds a tenant, suspends it, and th
   await reactLogin(page, 'superadmin@liquor.com');
   await expect(page.locator('#page-platform')).toBeVisible();          // lands on the console
   await expect(page.locator('#nav-pos')).toBeVisible();                // super admin has access to all menus
-  await expect(page.locator('#platformStats')).toContainText('Tenants');
+  await expect(page.locator('#platformKpis')).toContainText('Monthly recurring revenue');
+  await expect(page.locator('#platformQueue')).toContainText('Payments overdue');
 
   await page.click('#tenantAddBtn');
   await page.fill('#tenantName', tenant);

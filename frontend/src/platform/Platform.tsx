@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { errorMessage, showToast } from '../lib/print';
-import { Badge, Field, Modal, Stat, inr } from '../components/ui';
+import { Badge, Field, Modal, inr } from '../components/ui';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { PlatformInsights, healthTone, type PlatformDash, type QueueKey } from './PlatformInsights';
 
 type Plan = 'TRIAL' | 'STANDARD' | 'PRO';
 
@@ -22,6 +23,8 @@ interface Tenant {
   access: 'OK' | 'SUSPENDED' | 'TRIAL_EXPIRED' | 'OVERDUE';
   trialEndsAt: string | null;
   paidUntil: string | null;
+  health: number;
+  flags: QueueKey[];
 }
 
 interface Invoice {
@@ -54,16 +57,9 @@ function billingLine(t: Tenant): string {
   return t.paidUntil ? `Paid to ${fmtDate(t.paidUntil)}` : 'Manually managed';
 }
 
-interface Overview {
-  tenants: number;
-  activeTenants: number;
-  suspendedTenants: number;
-  trialTenants: number;
-  branches: number;
-  staff: number;
-  bills30d: number;
-  sales30d: string;
-}
+const QUEUE_NAME: Record<QueueKey, string> = {
+  trialEnding: 'trials ending soon', overdue: 'payments overdue', quiet: 'no bills in 7+ days', suspended: 'suspended',
+};
 
 const PLAN_TONE = { TRIAL: 'warn', STANDARD: 'info', PRO: 'good' } as const;
 const PLAN_DEFAULT_LIMIT: Record<Plan, number> = { TRIAL: 1, STANDARD: 3, PRO: 25 };
@@ -74,10 +70,11 @@ const blankForm = {
 
 /** Super Admin console: every bar business (tenant) on the platform. */
 export function Platform() {
-  const [overview, setOverview] = useState<Overview | null>(null);
+  const [dash, setDash] = useState<PlatformDash | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [queue, setQueue] = useState<QueueKey | ''>('');
   const [form, setForm] = useState<typeof blankForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -178,11 +175,11 @@ export function Platform() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [o, t] = await Promise.all([
-        api.get<Overview>('/platform/overview'),
+      const [d, t] = await Promise.all([
+        api.get<PlatformDash>('/platform/dashboard'),
         api.get<{ tenants: Tenant[] }>('/platform/tenants'),
       ]);
-      setOverview(o);
+      setDash(d);
       setTenants(t.tenants);
       loadAudit();
       loadIntegrations();
@@ -197,7 +194,10 @@ export function Platform() {
     load();
   }, [load]);
 
-  const visible = tenants.filter((t) => !search.trim() || t.name.toLowerCase().includes(search.trim().toLowerCase()));
+  const needle = search.trim().toLowerCase();
+  const visible = tenants.filter((t) =>
+    (!queue || t.flags.includes(queue)) &&
+    (!needle || t.name.toLowerCase().includes(needle) || t.admins.some((a) => a.email.toLowerCase().includes(needle) || a.name.toLowerCase().includes(needle))));
 
   const createTenant = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,31 +252,26 @@ export function Platform() {
   };
 
   return (
-    <section className="max-w-7xl mx-auto space-y-5" id="page-platform">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="page active lc lc-bleed" id="page-platform">
+     <div className="lc-page">
+      <div className="lc-greet">
         <div>
-          <h1 className="text-2xl font-bold">Platform Console</h1>
-          <p className="text-sm text-gray-500 mt-1">Every bar business on the platform — plans, branch limits, usage and access.</p>
+          <h2 id="platformTitle">Platform Console</h2>
+          <p>Every bar business on the platform: money, who needs a call, plans, limits and access.</p>
         </div>
         <button
           type="button"
           id="tenantAddBtn"
           onClick={() => { setFormError(null); setForm({ ...blankForm }); }}
-          className="px-4 py-2 text-sm font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg cursor-pointer"
+          className="lc-btn lc-btn-primary"
         >
           + Add tenant
         </button>
       </div>
 
-      {overview && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3" id="platformStats">
-          <Stat label="Tenants" value={overview.tenants} />
-          <Stat label="Active / suspended" value={`${overview.activeTenants} / ${overview.suspendedTenants}`} tone={overview.suspendedTenants ? 'warn' : undefined} />
-          <Stat label="Branches" value={overview.branches} />
-          <Stat label="Staff accounts" value={overview.staff} />
-          <Stat label="On trial" value={overview.trialTenants} tone={overview.trialTenants ? 'warn' : undefined} />
-          <Stat label="Bills (30 days)" value={overview.bills30d.toLocaleString('en-IN')} />
-          <Stat label="Sales (30 days)" value={inr(overview.sales30d)} tone="good" />
+      {dash ? <PlatformInsights data={dash} active={queue} onPick={setQueue} /> : (
+        <div id="platformStats" aria-busy="true" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="lc-grid lc-g-kpi">{[0, 1, 2, 3].map((i) => <div key={i} className="lc-skel" style={{ height: 96 }} />)}</div>
         </div>
       )}
 
@@ -322,12 +317,23 @@ export function Platform() {
         </Modal>
       )}
 
-      <input
-        className="w-full max-w-sm p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-600"
-        placeholder="Search tenants…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
+      <div className="lc-filterbar">
+        <input
+          id="tenantSearch"
+          className="w-full max-w-sm p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-600"
+          style={{ color: 'var(--text)' }}
+          placeholder="Search by business, owner name or e-mail"
+          aria-label="Search businesses"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {queue && (
+          <span id="queueFilterNote">
+            Showing {visible.length} of {tenants.length}: {QUEUE_NAME[queue]}{' '}
+            <button type="button" className="lc-link" id="queueFilterClear" onClick={() => setQueue('')}>Show all</button>
+          </span>
+        )}
+      </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-x-auto">
         {loading ? (
@@ -343,7 +349,7 @@ export function Platform() {
                 <th className="py-2.5 px-4">Branches</th>
                 <th className="py-2.5 px-4">Staff</th>
                 <th className="py-2.5 px-4 text-right">30-day sales</th>
-                <th className="py-2.5 px-4">Status</th>
+                <th className="py-2.5 px-4" title="Health is 0 to 100: recent billing, volume, staff and payment standing">Status &amp; health</th>
                 <th className="py-2.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
@@ -371,6 +377,13 @@ export function Platform() {
                       : t.access === 'TRIAL_EXPIRED' ? <Badge tone="bad">Trial ended</Badge>
                       : t.access === 'OVERDUE' ? <Badge tone="bad">Payment overdue</Badge>
                       : <Badge tone="good">Active</Badge>}
+                    <div className="mt-1.5 flex items-center gap-1.5 whitespace-nowrap">
+                      <span className={`lc-pill ${healthTone(t.health)} tenant-health`} title={t.flags.length ? t.flags.map((f) => QUEUE_NAME[f]).join(', ') : 'Nothing flagged'}>Health {t.health}</span>
+                    </div>
+                    <div className="text-[11px] text-gray-500 mt-1">
+                      {t.flags.includes('overdue') && t.isActive ? <b className="text-red-500">Payment overdue · </b> : null}
+                      {t.lastBillAt ? `Last bill ${fmtDate(t.lastBillAt)}` : 'Never billed'}
+                    </div>
                   </td>
                   <td className="py-3 px-4 text-right whitespace-nowrap">
                     <button type="button" className="text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => setEditing({ tenant: t, plan: t.plan, maxBranches: String(t.maxBranches), accessUntil: '' })}>Plan &amp; limits</button>
@@ -548,6 +561,7 @@ export function Platform() {
           </div>
         </Modal>
       )}
+     </div>
     </section>
   );
 }

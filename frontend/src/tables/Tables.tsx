@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, Search, Plus, Minus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
+import { autoPrint } from '../lib/auto-print';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter, errorMessage } from '../lib/print';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
@@ -104,6 +105,12 @@ export function Tables() {
   const [tables, setTables] = useState<Table[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
+  // How long each table has been open, refreshed once a minute
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Modals
   const [activeModal, setActiveModal] = useState<'actions' | 'newKot' | 'viewKots' | 'closeConfirm' | 'checkout' | null>(null);
@@ -327,7 +334,7 @@ export function Tables() {
       });
       showToast(`KOT sent to ${kotDest.toLowerCase()} for ${selectedTable.name}`, 'success');
       // Best effort: print the ticket on the branch's network printer when one is configured
-      api.post(`/print/kot/${created.kotOrder.id}/send?queue=true`).catch(() => { /* no printer — use the Print button */ });
+      void autoPrint(branchId, 'kot', created.kotOrder.id);
       setActiveModal(null);
       loadProducts();
       window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
@@ -569,7 +576,7 @@ export function Tables() {
       setCheckoutDone({ billId: res.bill.id, billNumber: res.bill.billNumber, total: res.bill.total });
       showToast(`${selectedTable.name} billed: ${res.bill.billNumber}`, 'success');
       // Best effort: print on the branch's network printer when one is configured
-      api.post(`/print/bills/${res.bill.id}/send?queue=true`).catch(() => { /* use the Print button */ });
+      void autoPrint(branchId, 'bills', res.bill.id);
       await loadTables();
       loadProducts();
       window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
@@ -618,84 +625,99 @@ export function Tables() {
   };
 
   return (
-    <div id="page-tables" className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div id="page-tables" className="space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold" id="tablesTitle">🪑 Tables &amp; KOT</h2>
-          <div className="text-xs text-gray-500" id="tablesHelp">
+          <h2 className="text-2xl font-bold" id="tablesTitle">Tables &amp; KOT</h2>
+          <div className="text-sm text-gray-500 mt-0.5" id="tablesHelp">
             {canCashier
               ? 'Click a free table to open it, or an occupied one for KOT / bill actions.'
               : 'Click an occupied table to raise a KOT or update item status. A cashier opens and bills tables.'}
           </div>
         </div>
-        <div className="flex items-center gap-3 text-xs">
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> Free
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> Occupied
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Reserved
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 font-medium" id="tablesSummary">
+            <span className="size-2 rounded-full bg-green-500" aria-hidden="true" /> {tables.filter((t) => t.status === 'FREE').length} free
+            <span className="size-2 rounded-full bg-red-500 ml-1.5" aria-hidden="true" /> {tables.filter((t) => t.status === 'OCCUPIED').length} occupied
+            {tables.some((t) => t.status === 'RESERVED') && (
+              <><span className="size-2 rounded-full bg-amber-500 ml-1.5" aria-hidden="true" /> {tables.filter((t) => t.status === 'RESERVED').length} reserved</>
+            )}
           </span>
           <button
             type="button"
             onClick={loadTables}
-            className="px-3 py-1 border rounded hover:bg-gray-100 dark:hover:bg-gray-700 font-medium"
+            className="px-3 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 font-medium cursor-pointer"
           >
             ↻ Refresh
           </button>
         </div>
       </div>
 
-      {/* Grid of Tables */}
-      <div id="tableGrid" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+      {/* Tables, grouped by section */}
+      <div id="tableGrid" className="space-y-5">
         {loading ? (
-          <div className="col-span-full">
+          <div>
             <BeerBottleLoader inline size="sm" title="Loading Tables & Bar Seats…" subtitle="Checking open sessions and running orders…" />
           </div>
         ) : tables.length === 0 ? (
-          <div className="col-span-full p-8 text-center text-gray-500">No tables found.</div>
+          <div className="p-8 text-center text-gray-500">No tables found.</div>
         ) : (
-          tables.map((t) => {
-            const isOccupied = t.status === 'OCCUPIED';
-            const isFree = t.status === 'FREE';
-            return (
-              <div
-                key={t.id}
-                role="button"
-                tabIndex={0}
-                data-table={t.name}
-                onClick={() => handleTileClick(t)}
-                className={`table-tile table-${t.status} p-4 rounded-lg border shadow-sm cursor-pointer transition hover:shadow-md flex flex-col justify-between h-32 ${
-                  isOccupied
-                    ? 'border-red-300 bg-red-50 dark:bg-red-950/20 dark:border-red-900/50'
-                    : isFree
-                    ? 'border-green-300 bg-green-50 dark:bg-green-950/20 dark:border-green-900/50'
-                    : 'border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900/50'
-                }`}
-              >
-                <div className="flex justify-between items-start">
-                  <span
-                    className={`px-2 py-0.5 text-xs font-bold rounded ${
-                      isOccupied
-                        ? 'bg-red-600 text-white'
-                        : isFree
-                        ? 'bg-green-600 text-white'
-                        : 'bg-amber-600 text-white'
-                    }`}
-                  >
-                    {t.status}
-                  </span>
-                  <span className="text-xs text-gray-500">{t.capacity || 4} seats</span>
-                </div>
-                <div>
-                  <div className="font-bold text-base truncate">{t.name}</div>
-                  <div className="text-xs text-gray-500">{t.section || 'General'}</div>
-                </div>
+          [...new Set(tables.map((t) => t.section?.trim() || 'General'))].map((section) => (
+            <section key={section} aria-label={`${section} tables`}>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2.5 flex items-center gap-2">
+                {section}
+                <span className="font-normal normal-case tracking-normal text-gray-400">
+                  {tables.filter((t) => (t.section?.trim() || 'General') === section && t.status === 'OCCUPIED').length} of {tables.filter((t) => (t.section?.trim() || 'General') === section).length} in use
+                </span>
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+                {tables.filter((t) => (t.section?.trim() || 'General') === section).map((t) => {
+                  const isOccupied = t.status === 'OCCUPIED';
+                  const isFree = t.status === 'FREE';
+                  const mins = isOccupied && t.sessionOpenedAt ? Math.max(0, Math.floor((now - new Date(t.sessionOpenedAt).getTime()) / 60000)) : null;
+                  const long = mins !== null && mins >= 180;
+                  return (
+                    <div
+                      key={t.id}
+                      role="button"
+                      tabIndex={0}
+                      data-table={t.name}
+                      onClick={() => handleTileClick(t)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTileClick(t); } }}
+                      className={`table-tile table-${t.status} relative p-3.5 rounded-xl border cursor-pointer transition hover:shadow-md hover:-translate-y-px flex flex-col justify-between h-32 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 ${
+                        isOccupied
+                          ? 'border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900/50'
+                          : isFree
+                          ? 'border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-700 hover:border-purple-300'
+                          : 'border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900/50'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-semibold rounded-full ${
+                            isOccupied
+                              ? 'bg-red-700 text-white'
+                              : isFree
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+                              : 'bg-amber-600 text-white'
+                          }`}
+                        >
+                          {t.status}
+                        </span>
+                        <span className="text-xs text-gray-500 tabular-nums">{t.capacity || 4} seats</span>
+                      </div>
+                      <div>
+                        <div className="font-display font-bold text-lg leading-tight truncate">{t.name}</div>
+                        <div className={`text-xs tabular-nums ${long ? 'text-red-700 dark:text-red-300 font-semibold' : 'text-gray-500'}`}>
+                          {mins !== null ? `Open ${mins >= 60 ? `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m` : `${mins} min`}${long ? ' · long sitting' : ''}` : isFree ? 'Ready to seat' : (t.section || 'General')}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })
+            </section>
+          ))
         )}
       </div>
 
@@ -751,8 +773,8 @@ export function Tables() {
 
       {/* Global Modals for Table & KOT Actions */}
       {activeModal && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-          <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full overflow-hidden border dark:border-gray-700 ${activeModal === 'newKot' ? 'max-w-3xl' : 'max-w-lg'}`}>
+        <div id="modal" className="fixed inset-0 bg-black/55 backdrop-blur-sm flex justify-center overflow-y-auto [&>*]:my-auto z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+          <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full overflow-hidden border border-gray-200 dark:border-gray-700 ${activeModal === 'newKot' ? 'max-w-3xl' : 'max-w-lg'}`}>
             <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
               <h2 className="text-lg font-bold" id="modalTitle">
                 {activeModal === 'actions' && `${selectedTable?.name} - occupied`}
@@ -778,62 +800,68 @@ export function Tables() {
                   <div className="text-sm text-gray-600 dark:text-gray-300">
                     Session active. Select an action below:
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      id="tblActKot"
-                      onClick={() => handleOpenKotModal('BAR')}
-                      className="px-4 py-2 bg-purple-600 text-white rounded font-medium hover:bg-purple-700 text-sm flex items-center gap-1.5"
-                    >
-                      <span>🍸</span> + Bar KOT
-                    </button>
-                    <button
-                      type="button"
-                      id="tblActKitchenKot"
-                      onClick={() => handleOpenKotModal('KITCHEN')}
-                      className="px-4 py-2 bg-amber-600 text-white rounded font-medium hover:bg-amber-700 text-sm flex items-center gap-1.5"
-                    >
-                      <span>🍳</span> + Kitchen KOT
-                    </button>
-                    <button
-                      type="button"
-                      id="tblActKots"
-                      onClick={() => {
-                        setKotFilter('ALL');
-                        handleViewKots();
-                      }}
-                      className="px-4 py-2 border rounded font-medium hover:bg-gray-100 dark:hover:bg-gray-700 text-sm flex items-center gap-1.5"
-                    >
-                      <span>📋</span> KOTs
-                    </button>
-                    <button
-                      type="button"
-                      id="tblActServeAll"
-                      disabled={serveAllBusy}
-                      onClick={() => handleServeAllSession(selectedTable?.currentSessionId)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 text-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-sm"
-                      title="Mark all pending and preparing items as SERVED with one click"
-                    >
-                      <span>✅</span> Serve All Items
-                    </button>
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Orders</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        id="tblActKot"
+                        onClick={() => handleOpenKotModal('BAR')}
+                        className="px-4 py-2.5 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 text-sm cursor-pointer"
+                      >
+                        + Bar KOT
+                      </button>
+                      <button
+                        type="button"
+                        id="tblActKitchenKot"
+                        onClick={() => handleOpenKotModal('KITCHEN')}
+                        className="px-4 py-2.5 bg-amber-700 text-white rounded-lg font-semibold hover:bg-amber-800 text-sm cursor-pointer"
+                      >
+                        + Kitchen KOT
+                      </button>
+                      <button
+                        type="button"
+                        id="tblActKots"
+                        onClick={() => {
+                          setKotFilter('ALL');
+                          handleViewKots();
+                        }}
+                        className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg font-semibold hover:bg-gray-100 dark:hover:bg-gray-700 text-sm cursor-pointer"
+                      >
+                        View KOTs
+                      </button>
+                      <button
+                        type="button"
+                        id="tblActServeAll"
+                        disabled={serveAllBusy}
+                        onClick={() => handleServeAllSession(selectedTable?.currentSessionId)}
+                        className="px-4 py-2.5 border border-purple-300 dark:border-purple-700 text-purple-800 dark:text-purple-200 bg-purple-50 dark:bg-purple-900/20 rounded-lg font-semibold hover:bg-purple-100 dark:hover:bg-purple-900/40 text-sm disabled:opacity-50 cursor-pointer"
+                        title="Mark all pending and preparing items as SERVED with one click"
+                      >
+                        Serve All Items
+                      </button>
+                    </div>
                     {canCashier && (
                       <>
-                        <button
-                          type="button"
-                          id="tblActBill"
-                          onClick={openCheckout}
-                          className="px-4 py-2 bg-emerald-600 text-white rounded font-medium hover:bg-emerald-700 text-sm"
-                        >
-                          Checkout &amp; bill
-                        </button>
-                        <button
-                          type="button"
-                          id="tblActClose"
-                          onClick={() => setActiveModal('closeConfirm')}
-                          className="px-4 py-2 bg-red-600 text-white rounded font-medium hover:bg-red-700 text-sm"
-                        >
-                          Close without billing
-                        </button>
+                        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 pt-3 border-t border-gray-200 dark:border-gray-700 mt-3">Bill</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            id="tblActBill"
+                            onClick={openCheckout}
+                            className="px-4 py-2.5 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-lg font-semibold hover:opacity-90 text-sm cursor-pointer"
+                          >
+                            Checkout &amp; bill
+                          </button>
+                          <button
+                            type="button"
+                            id="tblActClose"
+                            onClick={() => setActiveModal('closeConfirm')}
+                            className="px-4 py-2.5 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 rounded-lg font-semibold hover:bg-red-50 dark:hover:bg-red-950/30 text-sm cursor-pointer"
+                          >
+                            Close without billing
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>
@@ -928,7 +956,7 @@ export function Tables() {
                       <div id="tableCreditBox" className="space-y-2 text-xs bg-amber-50/50 dark:bg-amber-950/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
                         <div className="flex justify-between items-center">
                           <span className="font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-1">
-                            <span>📖</span> Khata / Customer Credit
+                            Khata / Customer Credit
                           </span>
                           {!showAddCustomer && (
                             <button
@@ -1006,7 +1034,7 @@ export function Tables() {
                               </div>
                             ) : (
                               <div className="text-[10px] text-gray-500 bg-gray-50 dark:bg-gray-700 p-1.5 rounded">
-                                ℹ️ Profile registered by cashier. Setting credit limit requires Manager authorization.
+                                Profile registered by cashier. Setting credit limit requires Manager authorization.
                               </div>
                             )}
                             <div className="flex justify-end gap-1.5 pt-1">
@@ -1136,12 +1164,12 @@ export function Tables() {
 
                                   {exceeds && (
                                     <div className="p-1.5 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-[11px] font-semibold flex items-center gap-1">
-                                      <span>⚠️</span> Exceeds credit limit by ₹{(projected - limit).toFixed(2)}
+                                      Exceeds credit limit by ₹{(projected - limit).toFixed(2)}
                                     </div>
                                   )}
                                   {!creditCustomer.creditAllowed && (
                                     <div className="p-1.5 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-[11px] font-semibold flex items-center gap-1">
-                                      <span>⚠️</span> Credit is disabled for this customer!
+                                      Credit is disabled for this customer!
                                     </div>
                                   )}
                                 </div>
@@ -1282,7 +1310,7 @@ export function Tables() {
                               : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 hover:bg-gray-100'
                           }`}
                         >
-                          <span>🍸</span> Bar (Drinks &amp; Liquor)
+                          Bar (Drinks &amp; Liquor)
                         </button>
                         <button
                           type="button"
@@ -1297,7 +1325,7 @@ export function Tables() {
                               : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 hover:bg-gray-100'
                           }`}
                         >
-                          <span>🍳</span> Kitchen (Food &amp; Snacks)
+                          Kitchen (Food &amp; Snacks)
                         </button>
                       </div>
                       <select
@@ -1509,7 +1537,7 @@ export function Tables() {
                                     const isTrk = p.trackStock !== false;
                                     const sLabel = isTrk
                                       ? sQty <= 0
-                                        ? ' [⚠️ Out of Stock]'
+                                        ? ' [Out of Stock]'
                                         : ` [Stock: ${sQty} btl${p.openMl ? `, ${p.openMl}ml open` : ''}]`
                                       : ' [Kitchen]';
                                     return (
@@ -1667,7 +1695,7 @@ export function Tables() {
                               : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                           }`}
                         >
-                          🍳 Kitchen ({kitchenCount})
+                          Kitchen ({kitchenCount})
                         </button>
                         <button
                           type="button"
@@ -1678,7 +1706,7 @@ export function Tables() {
                               : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                           }`}
                         >
-                          🍸 Bar ({barCount})
+                          Bar ({barCount})
                         </button>
                       </div>
                       {tableKots.some((o) => o.items.some((i) => i.status === 'PENDING' || i.status === 'PREPARING')) && (
@@ -1687,10 +1715,10 @@ export function Tables() {
                           id="tblServeAllModalBtn"
                           disabled={serveAllBusy}
                           onClick={() => handleServeAllSession(selectedTable?.currentSessionId)}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-semibold disabled:opacity-50 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                          className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded-lg font-semibold disabled:opacity-50 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                           title="Mark all pending and preparing items across all KOTs as SERVED"
                         >
-                          <span>✅</span> Serve All Items
+                          Serve All Items
                         </button>
                       )}
                     </div>
@@ -1715,7 +1743,7 @@ export function Tables() {
                                       : 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border border-purple-300 dark:border-purple-700'
                                   }`}
                                 >
-                                  {isKitchen ? '🍳 Kitchen Order' : '🍸 Bar Order'}
+                                  {isKitchen ? 'Kitchen Order' : 'Bar Order'}
                                 </span>
                                 <span>KOT #{idx + 1}</span>
                               </span>
@@ -1813,7 +1841,7 @@ export function Tables() {
                             }}
                             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                           >
-                            <span>✅</span> Submit All Served
+                            Submit All Served
                           </button>
                         )}
                         <button

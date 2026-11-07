@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { businessDate } from '../lib/business-day';
 
 interface Category {
   id: string;
@@ -34,7 +35,7 @@ export function Compliance() {
   const { user } = useAuth();
   const branchId = user?.branchId;
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = businessDate();
   const monthStartStr = todayStr.slice(0, 8) + '01';
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -116,7 +117,7 @@ export function Compliance() {
     <section className="page active" id="page-compliance" aria-labelledby="complianceTitle">
       <div className="row between flex justify-between items-center mb-4">
         <div>
-          <h2 className="h1 text-xl font-bold" id="complianceTitle">⚖ Excise Compliance &amp; Lifting</h2>
+          <h2 className="h1 text-2xl font-bold" id="complianceTitle">Excise Compliance &amp; Lifting</h2>
           <div className="muted small text-xs text-gray-500">
             Excise quotas, lifting progress, breakage and stock audit ledger.
           </div>
@@ -155,7 +156,7 @@ export function Compliance() {
               />
             </label>
             <button
-              className="btn-primary px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-xs"
+              className="btn-primary px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-xs"
               type="button"
               onClick={loadData}
             >
@@ -328,7 +329,7 @@ export function Compliance() {
               </label>
 
               <button
-                className="btn-primary mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm disabled:opacity-50"
+                className="btn-primary mt-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm disabled:opacity-50"
                 type="submit"
                 disabled={creating}
               >

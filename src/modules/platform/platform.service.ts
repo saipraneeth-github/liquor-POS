@@ -10,6 +10,7 @@ import { db } from '../../db/client.js';
 import { auditLog, bills, branches, subscriptionInvoices, syndicates, users } from '../../db/schema.js';
 import { randomInt } from 'node:crypto';
 import { accessState } from './access.engine.js';
+import { healthScore, percentChange, queueFlags, recurringRevenue, revenueByMonth, type InsightTenant } from './insights.engine.js';
 import { logAudit } from '../../lib/audit.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import { hashPassword } from '../auth/auth.service.js';
@@ -109,19 +110,91 @@ export async function listTenants() {
     .select({ id: users.id, syndicateId: users.syndicateId, name: users.name, email: users.email, isActive: users.isActive })
     .from(users).where(and(inArray(users.syndicateId, ids), eq(users.role, 'owner')));
 
-  const by = <T extends { syndicateId: string | null }>(rows: T[]) => new Map(rows.map((r) => [r.syndicateId, r]));
-  const bc = by(branchCounts); const sc = by(staffCounts); const sl = by(sales);
+  const lastBills = await db
+    .select({ syndicateId: branches.syndicateId, at: sql<string | null>`max(${bills.createdAt})` })
+    .from(bills).innerJoin(branches, eq(bills.branchId, branches.id))
+    .where(and(inArray(branches.syndicateId, ids), eq(bills.status, 'PAID'))).groupBy(branches.syndicateId);
 
-  return tenants.map((t) => ({
-    ...t,
-    access: accessState(t),
-    branchCount: Number(bc.get(t.id)?.n ?? 0),
-    staffCount: Number(sc.get(t.id)?.n ?? 0),
-    bills30d: sl.get(t.id)?.bills ?? 0,
-    sales30d: sl.get(t.id)?.total ?? '0.00',
-    lastBillAt: sl.get(t.id)?.lastBillAt ?? null,
-    admins: admins.filter((a) => a.syndicateId === t.id).map(({ id, name, email, isActive }) => ({ id, name, email, isActive })),
+  const by = <T extends { syndicateId: string | null }>(rows: T[]) => new Map(rows.map((r) => [r.syndicateId, r]));
+  const bc = by(branchCounts); const sc = by(staffCounts); const sl = by(sales); const lb = by(lastBills);
+  const now = new Date();
+
+  return tenants.map((t) => {
+    const access = accessState(t, now);
+    const staffCount = Number(sc.get(t.id)?.n ?? 0);
+    const bills30d = sl.get(t.id)?.bills ?? 0;
+    const lastBillRaw = lb.get(t.id)?.at ?? null;
+    const insight = {
+      id: t.id, plan: t.plan, isActive: t.isActive, access, trialEndsAt: t.trialEndsAt, paidUntil: t.paidUntil,
+      createdAt: t.createdAt, staffCount, bills30d, lastBillAt: lastBillRaw ? new Date(lastBillRaw) : null,
+    };
+    return {
+      ...t,
+      access,
+      branchCount: Number(bc.get(t.id)?.n ?? 0),
+      staffCount,
+      bills30d,
+      sales30d: sl.get(t.id)?.total ?? '0.00',
+      lastBillAt: lastBillRaw,
+      health: healthScore(insight, now),
+      flags: queueFlags(insight, now),
+      admins: admins.filter((a) => a.syndicateId === t.id).map(({ id, name, email, isActive }) => ({ id, name, email, isActive })),
+    };
+  });
+}
+
+/** Everything the Super Admin dashboard shows above the tenant table. */
+export async function platformDashboard(now: Date = new Date()) {
+  const tenants = await listTenants();
+  const insights: InsightTenant[] = tenants.map((t) => ({
+    id: t.id, plan: t.plan, isActive: t.isActive, access: t.access, trialEndsAt: t.trialEndsAt, paidUntil: t.paidUntil,
+    createdAt: t.createdAt, staffCount: t.staffCount, bills30d: t.bills30d, lastBillAt: t.lastBillAt ? new Date(t.lastBillAt) : null,
   }));
+
+  const since60 = new Date(now.getTime() - 60 * DAY);
+  const since30 = new Date(now.getTime() - 30 * DAY);
+  const [prev] = await db
+    .select({ total: sql<string>`coalesce(sum(${bills.total}), 0)::numeric(14,2)::text` })
+    .from(bills).innerJoin(branches, eq(bills.branchId, branches.id))
+    .where(and(sql`${branches.syndicateId} is not null`, eq(bills.status, 'PAID'), gte(bills.createdAt, since60), sql`${bills.createdAt} < ${since30}`));
+
+  const pending = await db.select({ amount: subscriptionInvoices.amount }).from(subscriptionInvoices).where(eq(subscriptionInvoices.status, 'PENDING'));
+  const paid = await db
+    .select({ plan: subscriptionInvoices.plan, amount: subscriptionInvoices.amount, paidAt: subscriptionInvoices.paidAt })
+    .from(subscriptionInvoices).where(eq(subscriptionInvoices.status, 'PAID'));
+
+  const sales30d = tenants.reduce((s, t) => s + Number(t.sales30d), 0);
+  const signedUp = tenants.filter((t) => t.createdAt && t.createdAt.getTime() >= since30.getTime());
+  const queue = { trialEnding: [] as string[], overdue: [] as string[], quiet: [] as string[], suspended: [] as string[] };
+  for (const t of tenants) for (const f of t.flags) queue[f].push(t.id);
+
+  return {
+    asOf: now.toISOString(),
+    kpis: {
+      mrr: recurringRevenue(insights, PLAN_PRICES),
+      payingTenants: tenants.filter((t) => t.plan !== 'TRIAL' && t.isActive && t.access === 'OK').length,
+      trialTenants: tenants.filter((t) => t.plan === 'TRIAL').length,
+      outstanding: pending.reduce((s, r) => s + Number(r.amount), 0).toFixed(2),
+      outstandingCount: pending.length,
+      branches: tenants.reduce((s, t) => s + t.branchCount, 0),
+      staff: tenants.reduce((s, t) => s + t.staffCount, 0),
+      sales30d: sales30d.toFixed(2),
+      salesChangePercent: percentChange(sales30d, Number(prev?.total ?? 0)),
+    },
+    plans: PLANS.map((plan) => ({ plan, price: PLAN_PRICES[plan], count: tenants.filter((t) => t.plan === plan).length })),
+    revenueByMonth: revenueByMonth(paid, now),
+    funnel: {
+      signedUp: signedUp.length,
+      billed: signedUp.filter((t) => t.lastBillAt).length,
+      paying: signedUp.filter((t) => t.plan !== 'TRIAL').length,
+    },
+    queue: {
+      trialEnding: { count: queue.trialEnding.length, ids: queue.trialEnding },
+      overdue: { count: queue.overdue.length, ids: queue.overdue },
+      quiet: { count: queue.quiet.length, ids: queue.quiet },
+      suspended: { count: queue.suspended.length, ids: queue.suspended },
+    },
+  };
 }
 
 export async function platformOverview() {

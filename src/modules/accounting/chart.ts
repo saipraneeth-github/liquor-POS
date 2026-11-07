@@ -33,6 +33,8 @@ export const SYSTEM_LEDGERS = [
   { code: 'TCS_RECEIVABLE',            name: 'TCS Receivable (Sec 206C)', group: 'ASSET' },
   { code: 'DISCOUNT_ALLOWED', name: 'Discount Allowed',    group: 'EXPENSE' },
   { code: 'ROUND_OFF',        name: 'Round Off',           group: 'EXPENSE' },
+  { code: 'BANK_CHARGES',     name: 'Bank Charges & Fees', group: 'EXPENSE' },    // posted from bank statement reconciliation
+  { code: 'INTEREST_INCOME',  name: 'Interest Income',     group: 'INCOME' },
 ] as const satisfies readonly LedgerDefinition[];
 
 export type SystemLedgerCode = (typeof SYSTEM_LEDGERS)[number]['code'];

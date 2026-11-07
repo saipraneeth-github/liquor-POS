@@ -1,6 +1,6 @@
 ﻿import type { FastifyInstance } from 'fastify';
 import {
-  loginUser, SuspendedError, changeOwnPassword, ChangePasswordSchema,
+  loginUser, SuspendedError, TooManyAttemptsError, InvalidCredentialsError, changeOwnPassword, ChangePasswordSchema,
   ForgotPasswordSchema, ResetPasswordSchema, requestPasswordReset, resetPasswordWithToken,
 } from '../../modules/auth/auth.service.js';
 import { requireRole, getUser } from '../../middleware/auth.guard.js';
@@ -20,22 +20,25 @@ export async function authRoutes(fastify: FastifyInstance) {
         required: ['email', 'password'],
         properties: {
           email:    { type: 'string', format: 'email' },
-          password: { type: 'string', minLength: 8 },
+          password: { type: 'string', minLength: 1, maxLength: 100 },
         },
       },
     },
   }, async (request, reply) => {
     const { email, password } = request.body as { email: string; password: string };
     try {
-      const token = await loginUser(email, password, fastify);
+      const token = await loginUser(email, password, fastify, request.ip);
       return { token };
     } catch (err: unknown) {
       if (err instanceof SuspendedError) return reply.code(403).send({ error: err.message });
-      if (err instanceof Error && err.message === 'Invalid credentials') {
-        return reply.code(401).send({ error: 'Invalid email or password' });
+      if (err instanceof TooManyAttemptsError) {
+        return reply.code(429).header('Retry-After', String(err.retryAfterSeconds)).send({ error: err.message, retryAfterSeconds: err.retryAfterSeconds });
+      }
+      if (err instanceof InvalidCredentialsError) {
+        return reply.code(401).send({ error: 'Invalid email or password', attemptsLeft: err.attemptsLeft });
       }
       request.log.error(err, 'Database or unexpected error during login');
-      return reply.code(500).send({ error: 'Authentication service temporarily unavailable. Check database connection.' });
+      return reply.code(500).send({ error: 'Authentication service temporarily unavailable. Please try again.' });
     }
   });
 
@@ -60,7 +63,10 @@ export async function authRoutes(fastify: FastifyInstance) {
   });
 
   // Any signed-in user changes their own password
-  fastify.post('/auth/change-password', { preHandler: requireRole('steward') }, async (request, reply) => {
+  fastify.post('/auth/change-password', {
+    config: isProduction ? { rateLimit: { max: 10, timeWindow: '1 minute' } } : {},
+    preHandler: requireRole('steward'),
+  }, async (request, reply) => {
     const parsed = ChangePasswordSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Validation failed', details: parsed.error.flatten() });
     const ok = await changeOwnPassword(getUser(request).sub, parsed.data.currentPassword, parsed.data.newPassword);

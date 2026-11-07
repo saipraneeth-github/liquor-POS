@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { api } from '../api/client';
+import { resetAutoPrinterCache } from '../lib/auto-print';
 import { errorMessage, parseFieldErrors, showToast } from '../lib/print';
 import { useAuth } from '../auth/AuthProvider';
 import { Badge, Field, Modal, Stat } from '../components/ui';
@@ -127,6 +129,7 @@ export function BusinessSettings() {
   };
 
   const load = useCallback(async () => {
+    resetAutoPrinterCache();   // printer settings may have just changed
     setLoading(true);
     try {
       const [t, b] = await Promise.all([hasTenant ? api.get<TenantSummary>('/tenant/me') : Promise.resolve(null), api.get<Branch[]>('/branches')]);
@@ -330,7 +333,7 @@ export function BusinessSettings() {
           <form onSubmit={save} className="space-y-4">
             {formError && (
               <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-800 dark:text-red-200 text-xs rounded-lg flex items-start gap-2">
-                <span className="text-base leading-none">⚠️</span>
+                <AlertTriangle size={16} className="shrink-0" aria-hidden="true" />
                 <div className="font-medium flex-1">{formError}</div>
               </div>
             )}

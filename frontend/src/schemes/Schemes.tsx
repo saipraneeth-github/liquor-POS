@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { businessDate } from '../lib/business-day';
 
 interface Scheme {
   id: string;
@@ -41,8 +42,8 @@ export function Schemes() {
   const [schemeName, setSchemeName] = useState('');
   const [targetType, setTargetType] = useState<'QTY' | 'VALUE'>('QTY');
   const [targetValue, setTargetValue] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(businessDate());
+  const [endDate, setEndDate] = useState(businessDate(30));
   const [alertThreshold, setAlertThreshold] = useState('80');
   const [reward, setReward] = useState('');
   const [creating, setCreating] = useState(false);
@@ -226,7 +227,7 @@ export function Schemes() {
     <section className="page active" id="page-schemes" aria-labelledby="schemesTitle">
       <div className="row between flex justify-between items-center mb-4">
         <div>
-          <h2 className="h1 text-xl font-bold" id="schemesTitle">🎯 Supplier Schemes</h2>
+          <h2 className="h1 text-2xl font-bold" id="schemesTitle">Supplier Schemes</h2>
           <div className="muted small text-xs text-gray-500">Targets, case slabs and payouts.</div>
         </div>
         <button
@@ -241,7 +242,7 @@ export function Schemes() {
       <div id="schemeAlerts" className="mb-4">
         {alerts.length > 0 && (
           <div className="card pad p-4 bg-emerald-50 text-emerald-900 rounded border border-emerald-300">
-            <b className="pos font-bold">🔔 {alerts.length} {alerts.length === 1 ? 'scheme' : 'schemes'} near target</b>
+            <b className="pos font-bold">{alerts.length} {alerts.length === 1 ? 'scheme' : 'schemes'} near target</b>
             <div className="small text-xs mt-1">
               {alerts.map((a) => `${a.schemeName} (${a.supplierName}) — ${parseFloat(a.progressPct).toFixed(1)}%`).join(' · ')}
             </div>
@@ -303,7 +304,7 @@ export function Schemes() {
                 </div>
 
                 <div className="small text-xs bg-amber-50 text-amber-900 rounded p-2 border border-amber-200">
-                  🏆 {s.rewardDescription}
+                  {s.rewardDescription}
                 </div>
 
                 <div className="row flex items-center gap-2 pt-1">
@@ -325,7 +326,7 @@ export function Schemes() {
                     className="btn-sec btn-sm px-2.5 py-1 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 rounded border border-purple-200 dark:border-purple-800 text-xs font-medium flex items-center gap-1"
                     onClick={() => openEditModal(s)}
                   >
-                    ✏️ Edit Scheme
+                    Edit Scheme
                   </button>
                 </div>
               </div>
@@ -434,7 +435,7 @@ export function Schemes() {
 
             <div className="sm:col-span-2">
               <button
-                className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm disabled:opacity-50"
+                className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm disabled:opacity-50"
                 type="submit"
                 disabled={creating}
               >
@@ -446,7 +447,7 @@ export function Schemes() {
       </details>
 
       {purchaseScheme && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
           <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
             <div className="flex justify-between items-start mb-4">
               <h3 className="text-lg font-bold" id="modalTitle">Record purchase — {purchaseScheme.schemeName}</h3>
@@ -501,7 +502,7 @@ export function Schemes() {
                 <button
                   type="submit"
                   id="spSave"
-                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium"
+                  className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium"
                 >
                   Save
                 </button>
@@ -512,7 +513,7 @@ export function Schemes() {
       )}
 
       {editScheme && (
-        <div id="modal" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div id="modal" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
           <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-2xl shadow-2xl max-w-xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start border-b dark:border-gray-700 pb-3">
               <div>

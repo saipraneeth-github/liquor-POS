@@ -221,7 +221,7 @@ export function Products() {
     <section className="page active" id="page-products" aria-labelledby="prodTitle">
       <div className="row between flex justify-between items-center mb-4">
         <div>
-          <h2 className="h1 text-xl font-bold text-gray-900 dark:text-gray-100" id="prodTitle">🍷 Product Catalog</h2>
+          <h2 className="h1 text-2xl font-bold text-gray-900 dark:text-gray-100" id="prodTitle">Product Catalog</h2>
           <div className="muted small text-xs text-gray-500 dark:text-gray-400">
             MRP is set here (manager+) and every change is audited. Prices cannot be changed at the counter.
           </div>
@@ -537,7 +537,7 @@ export function Products() {
 
               <div className="col-span-full pt-2">
                 <button
-                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium text-sm disabled:opacity-50 transition-colors"
+                  className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm disabled:opacity-50 transition-colors"
                   type="submit"
                   disabled={creating}
                 >
@@ -550,7 +550,7 @@ export function Products() {
       )}
 
       {editProduct && (
-        <div id="modal" className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
           <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-start mb-1">
               <h3 className="text-lg font-bold" id="modalTitle">Update MRP — {editProduct.name}</h3>
@@ -589,7 +589,7 @@ export function Products() {
                 <button
                   type="submit"
                   id="mrpSaveBtn"
-                  className="btn-primary px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                  className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
                   disabled={savingMrp}
                 >
                   {savingMrp ? 'Saving…' : 'Save & audit'}

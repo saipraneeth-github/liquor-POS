@@ -20,7 +20,7 @@ import { Decimal } from 'decimal.js';
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
 export type VoucherType = 'SALES' | 'PURCHASE' | 'PAYMENT' | 'RECEIPT' | 'JOURNAL' | 'CONTRA';
-export type SourceType = 'BILL' | 'BILL_VOID' | 'SUPPLIER_INVOICE' | 'SUPPLIER_CHALLAN' | 'EXPENSE' | 'CREDIT_REPAYMENT' | 'MANUAL';
+export type SourceType = 'BILL' | 'BILL_VOID' | 'SUPPLIER_INVOICE' | 'SUPPLIER_CHALLAN' | 'EXPENSE' | 'CREDIT_REPAYMENT' | 'BANK_LINE' | 'MANUAL';
 
 export interface VoucherHeader {
   branchId: string;

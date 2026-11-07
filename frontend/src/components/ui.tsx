@@ -9,7 +9,7 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
     <label className="block">
       <span className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">{label}</span>
       {children}
-      {error && <span className="block text-xs text-red-600 dark:text-red-400 font-medium mt-1">⚠️ {error}</span>}
+      {error && <span className="block text-xs text-red-600 dark:text-red-400 font-medium mt-1">{error}</span>}
       {hint && !error && <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-1">{hint}</span>}
     </label>
   );
@@ -18,12 +18,12 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center p-4 z-50 overflow-y-auto"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center p-4 z-50 overflow-y-auto [&>*]:my-auto"
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} p-6 my-8 border border-gray-200 dark:border-gray-700`}>
+      <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} p-6 border border-gray-200 dark:border-gray-700`}>
         <div className="flex items-start justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
           <button
@@ -46,7 +46,7 @@ export function Stat({ label, value, tone }: { label: string; value: ReactNode; 
   return (
     <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
       <div className="text-xs text-gray-500 dark:text-gray-400">{label}</div>
-      <div className={`text-2xl font-semibold font-mono mt-1 ${color}`}>{value}</div>
+      <div className={`text-2xl font-bold font-display tabular-nums mt-1 ${color}`}>{value}</div>
     </div>
   );
 }
