@@ -229,7 +229,7 @@ export function Inventory() {
 
   const [onlyIssues, setOnlyIssues] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
-  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
+  const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [showBreakage, setShowBreakage] = useState(false);
 
   // Add Missing Product Modal State
@@ -941,12 +941,14 @@ export function Inventory() {
   };
 
   // Stock Metrics
+  const inStockCount = stockRows.filter((r) => r.quantity > 0).length;
   const lowCount = stockRows.filter((r) => r.quantity > 0 && r.quantity <= r.reorderLevel).length;
   const outCount = stockRows.filter((r) => r.quantity <= 0).length;
   const totalBottlesStock = stockRows.reduce((sum, r) => sum + r.quantity, 0);
 
   const q = stockSearch.trim().toLowerCase();
   const visibleStock = stockRows.filter((r) => {
+    if (stockFilter === 'in' && r.quantity <= 0) return false;
     if (stockFilter === 'out' && r.quantity > 0) return false;
     if (stockFilter === 'low' && !(r.quantity > 0 && r.quantity <= r.reorderLevel)) return false;
     const prod = productMap.get(r.productId);
@@ -2030,23 +2032,24 @@ export function Inventory() {
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'stock' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3" id="stockStats">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" id="stockStats">
             {[
-              { k: 'all', label: 'Products', val: stockRows.length, cls: 'text-gray-900' },
-              { k: 'bottles', label: 'Bottles on hand', val: totalBottlesStock.toLocaleString('en-IN'), cls: 'text-gray-900' },
-              { k: 'low', label: 'Low stock', val: lowCount, cls: 'text-amber-600' },
-              { k: 'out', label: 'Out of stock', val: outCount, cls: 'text-red-600' },
+              { k: 'all', label: 'All Products', val: stockRows.length, cls: 'text-gray-900 dark:text-gray-100' },
+              { k: 'in', label: 'In stock', val: inStockCount, cls: 'text-emerald-600 dark:text-emerald-400' },
+              { k: 'low', label: 'Low stock', val: lowCount, cls: 'text-amber-600 dark:text-amber-400' },
+              { k: 'out', label: 'Out of stock', val: outCount, cls: 'text-red-600 dark:text-red-400' },
+              { k: 'bottles', label: 'Bottles on hand', val: totalBottlesStock.toLocaleString('en-IN'), cls: 'text-gray-700 dark:text-gray-300' },
             ].map((s) => (
               <button
                 key={s.k}
                 type="button"
                 disabled={s.k === 'bottles'}
-                onClick={() => setStockFilter(s.k === 'low' || s.k === 'out' ? (stockFilter === s.k ? 'all' : s.k) : 'all')}
-                className={`text-left p-4 bg-white rounded-xl border transition-colors ${
-                  stockFilter === s.k ? 'ring-2 ring-purple-500' : s.k !== 'bottles' ? 'hover:border-gray-400 cursor-pointer' : ''
+                onClick={() => setStockFilter(s.k === 'bottles' ? 'all' : (stockFilter === s.k ? 'all' : s.k as any))}
+                className={`text-left p-4 bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 transition-colors ${
+                  stockFilter === s.k ? 'ring-2 ring-purple-500 border-purple-500' : s.k !== 'bottles' ? 'hover:border-gray-400 dark:hover:border-slate-700 cursor-pointer' : ''
                 }`}
               >
-                <div className="text-xs text-gray-500">{s.label}</div>
+                <div className="text-xs text-gray-500 dark:text-slate-400">{s.label}</div>
                 <div className={`text-2xl font-bold font-display tabular-nums mt-1 ${s.cls}`}>{s.val}</div>
               </button>
             ))}
@@ -2080,10 +2083,11 @@ export function Inventory() {
 
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="inline-flex rounded-lg border dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5 text-xs">
-                  {(['all', 'low', 'out'] as const).map((f) => (
+                  {(['all', 'in', 'low', 'out'] as const).map((f) => (
                     <button
                       key={f}
                       type="button"
+                      id={`invStockFilter-${f}`}
                       onClick={() => setStockFilter(f)}
                       className={`px-3 py-1.5 rounded-md cursor-pointer font-medium transition-colors ${
                         stockFilter === f
@@ -2091,7 +2095,7 @@ export function Inventory() {
                           : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-100'
                       }`}
                     >
-                      {f === 'all' ? 'All' : f === 'low' ? 'Low Stock' : 'Out of Stock'}
+                      {f === 'all' ? 'All' : f === 'in' ? 'In Stock' : f === 'low' ? 'Low Stock' : 'Out of Stock'}
                     </button>
                   ))}
                 </div>
@@ -2131,20 +2135,38 @@ export function Inventory() {
               ) : visibleStock.length === 0 ? (
                 <div className="p-8 text-center text-gray-500 text-sm space-y-2">
                   <PackageOpen size={32} className="mx-auto text-gray-400" aria-hidden="true" />
-                  <div className="font-semibold text-gray-700 dark:text-gray-300">No products in store stock</div>
-                  <div className="text-xs text-gray-400">
-                    Upload and confirm a supplier invoice in the "Add Supplier Bill" tab to inward bottles into stock.
+                  <div className="font-semibold text-gray-700 dark:text-gray-300">
+                    {stockRows.length === 0 ? 'No products in store stock' : 'No products match the selected filters'}
                   </div>
-                  <button
-                    type="button"
-                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg cursor-pointer"
-                    onClick={() => {
-                      setActiveTab('upload');
-                      setWizardStep(1);
-                    }}
-                  >
-                    <span>＋</span> Upload Bill Now
-                  </button>
+                  <div className="text-xs text-gray-400">
+                    {stockRows.length === 0
+                      ? 'Upload and confirm a supplier invoice in the "Add Supplier Bill" tab to inward bottles into stock.'
+                      : `No items found ${stockFilter !== 'all' ? `with ${stockFilter === 'in' ? 'In Stock' : stockFilter === 'low' ? 'Low Stock' : 'Out of Stock'} status` : ''}${stockCategoryFilter !== 'all' ? ` in ${stockCategoryFilter}` : ''}.`}
+                  </div>
+                  {stockRows.length === 0 ? (
+                    <button
+                      type="button"
+                      className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg cursor-pointer"
+                      onClick={() => {
+                        setActiveTab('upload');
+                        setWizardStep(1);
+                      }}
+                    >
+                      <span>＋</span> Upload Bill Now
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 rounded-lg cursor-pointer"
+                      onClick={() => {
+                        setStockSearch('');
+                        setStockCategoryFilter('all');
+                        setStockFilter('all');
+                      }}
+                    >
+                      Reset filters
+                    </button>
+                  )}
                 </div>
               ) : (
                 <table className="w-full text-left text-sm">

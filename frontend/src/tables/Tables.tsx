@@ -148,12 +148,18 @@ export function Tables() {
   // New KOT Form State
   const [kotDest, setKotDest] = useState<'BAR' | 'KITCHEN'>('BAR');
   const [kotCategoryFilter, setKotCategoryFilter] = useState<LiquorCategoryKey>('ALL');
+  const [kotStockFilter, setKotStockFilter] = useState<'ALL' | 'IN_STOCK' | 'OUT_OF_STOCK'>('ALL');
   const [kotSearch, setKotSearch] = useState('');
   const [kotItems, setKotItems] = useState<{ productId: string; servingId?: string; quantity: number }[]>([]);
   const [kotNotes, setKotNotes] = useState('');
   const [kotSubmitting, setKotSubmitting] = useState(false);
 
   const addItemToKot = (product: Product, servingId?: string) => {
+    const stockQty = product.currentStock ?? product.stockQuantity ?? 0;
+    const isTracked = product.trackStock !== false;
+    if (isTracked && stockQty <= 0) {
+      showToast(`Note: ${product.name} is currently out of stock.`, 'info');
+    }
     setKotItems((prev) => {
       const idx = prev.findIndex((it) => it.productId === product.id && (it.servingId ?? '') === (servingId ?? ''));
       if (idx >= 0) {
@@ -169,6 +175,24 @@ export function Tables() {
     );
   };
 
+  const kotStockCounts = useMemo(() => {
+    const destProds = products.filter(
+      (p) => p.isAvailable !== false && (kotDest === 'KITCHEN' ? isKitchenProduct(p) : isBarProduct(p))
+    );
+    let inStock = 0;
+    let outOfStock = 0;
+    for (const p of destProds) {
+      const stockQty = p.currentStock ?? p.stockQuantity ?? 0;
+      const isTracked = p.trackStock !== false;
+      if (!isTracked || stockQty > 0) {
+        inStock++;
+      } else {
+        outOfStock++;
+      }
+    }
+    return { all: destProds.length, inStock, outOfStock };
+  }, [products, kotDest]);
+
   const availableKotProducts = useMemo(() => {
     const q = kotSearch.trim().toLowerCase();
     return products.filter((p) => {
@@ -182,6 +206,16 @@ export function Tables() {
         if (catKey !== kotCategoryFilter) return false;
       }
 
+      if (kotStockFilter !== 'ALL') {
+        const stockQty = p.currentStock ?? p.stockQuantity ?? 0;
+        const isTracked = p.trackStock !== false;
+        if (kotStockFilter === 'IN_STOCK') {
+          if (isTracked && stockQty <= 0) return false;
+        } else if (kotStockFilter === 'OUT_OF_STOCK') {
+          if (!isTracked || stockQty > 0) return false;
+        }
+      }
+
       if (q) {
         const matchesQuery =
           p.name.toLowerCase().includes(q) ||
@@ -192,7 +226,7 @@ export function Tables() {
 
       return true;
     });
-  }, [products, kotDest, kotCategoryFilter, kotSearch]);
+  }, [products, kotDest, kotCategoryFilter, kotStockFilter, kotSearch]);
 
   const kotCategoryTabs = useMemo(() => {
     const destProds = products.filter(
@@ -307,6 +341,7 @@ export function Tables() {
   const handleOpenKotModal = (dest: 'BAR' | 'KITCHEN' = 'BAR') => {
     setKotDest(dest);
     setKotCategoryFilter('ALL');
+    setKotStockFilter('ALL');
     setKotSearch('');
     setKotItems([]);
     setKotNotes('');
@@ -1412,14 +1447,57 @@ export function Tables() {
 
                     {/* Quick-Add Drink Catalog Grid */}
                     <div>
-                      <div className="text-xs font-semibold text-gray-500 mb-1.5 flex items-center justify-between">
-                        <span>Available {kotDest === 'BAR' ? 'Drinks' : 'Kitchen Items'} ({availableKotProducts.length})</span>
+                      <div className="text-xs font-semibold text-gray-500 mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span>{kotDest === 'BAR' ? 'Drinks' : 'Kitchen Items'} ({availableKotProducts.length})</span>
+                          {/* Stock Availability Filter for Bar KOT */}
+                          {kotDest === 'BAR' && (
+                            <div className="inline-flex rounded-lg border dark:border-gray-700 bg-gray-100 dark:bg-gray-750 p-0.5 text-[11px]" id="kotStockFilters">
+                              {[
+                                { id: 'ALL' as const, label: 'All', count: kotStockCounts.all },
+                                { id: 'IN_STOCK' as const, label: 'In Stock', count: kotStockCounts.inStock, dot: 'bg-emerald-500' },
+                                { id: 'OUT_OF_STOCK' as const, label: 'Out of Stock', count: kotStockCounts.outOfStock, dot: 'bg-red-500' },
+                              ].map((sf) => (
+                                <button
+                                  key={sf.id}
+                                  type="button"
+                                  id={`kotStockFilter-${sf.id.toLowerCase()}`}
+                                  onClick={() => setKotStockFilter(sf.id)}
+                                  className={`px-2 py-0.5 rounded-md font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                                    kotStockFilter === sf.id
+                                      ? 'bg-white dark:bg-gray-800 text-purple-700 dark:text-purple-300 font-semibold shadow-xs'
+                                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                                  }`}
+                                >
+                                  {sf.dot && <span className={`size-1.5 rounded-full ${sf.dot}`} />}
+                                  <span>{sf.label}</span>
+                                  <span className="text-[10px] tabular-nums opacity-75 font-normal">({sf.count})</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         <span className="text-[11px] text-gray-400">Click + Add to select</span>
                       </div>
                       {availableKotProducts.length === 0 ? (
                         <div className="p-4 text-center text-xs text-gray-500 bg-gray-50 dark:bg-gray-750 rounded-lg border border-dashed dark:border-gray-700">
-                          No items match "{kotSearch}"
-                          {kotCategoryFilter !== 'ALL' ? ` in ${kotCategoryFilter.toLowerCase()}` : ''}.
+                          No items match
+                          {kotSearch ? ` "${kotSearch}"` : ''}
+                          {kotCategoryFilter !== 'ALL' ? ` in ${kotCategoryFilter.toLowerCase()}` : ''}
+                          {kotStockFilter !== 'ALL' ? ` (${kotStockFilter === 'IN_STOCK' ? 'in stock' : 'out of stock'})` : ''}.
+                          {(kotSearch || kotCategoryFilter !== 'ALL' || kotStockFilter !== 'ALL') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setKotSearch('');
+                                setKotCategoryFilter('ALL');
+                                setKotStockFilter('ALL');
+                              }}
+                              className="ml-2 text-purple-600 dark:text-purple-400 hover:underline font-semibold cursor-pointer"
+                            >
+                              Reset filters
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1.5 border rounded-lg dark:border-gray-700 bg-gray-50/50 dark:bg-gray-750/30">

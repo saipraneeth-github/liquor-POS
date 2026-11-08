@@ -77,11 +77,14 @@ function genUUID(): string {
   });
 }
 
+export type PosStockFilter = 'ALL' | 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+
 export function POS() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<LiquorCategoryKey>('ALL');
+  const [stockFilter, setStockFilter] = useState<PosStockFilter>('ALL');
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -253,6 +256,27 @@ export function POS() {
     })).filter((def) => def.id === 'ALL' || def.count > 0);
   }, [products]);
 
+  const stockCounts = useMemo(() => {
+    let inStock = 0;
+    let lowStock = 0;
+    let outOfStock = 0;
+    for (const p of products) {
+      const qty = p.currentStock ?? p.stockQuantity ?? 0;
+      const tracked = p.trackStock !== false;
+      if (!tracked) {
+        inStock++;
+      } else if (qty <= 0) {
+        outOfStock++;
+      } else {
+        inStock++;
+        if (qty <= (p.reorderLevel ?? 5)) {
+          lowStock++;
+        }
+      }
+    }
+    return { all: products.length, inStock, lowStock, outOfStock };
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
@@ -265,11 +289,26 @@ export function POS() {
 
       if (!matchesSearch) return false;
 
-      if (selectedCategory === 'ALL') return true;
-      const catKey = classifyProductCategory(p);
-      return catKey === selectedCategory;
+      if (selectedCategory !== 'ALL') {
+        const catKey = classifyProductCategory(p);
+        if (catKey !== selectedCategory) return false;
+      }
+
+      if (stockFilter !== 'ALL') {
+        const qty = p.currentStock ?? p.stockQuantity ?? 0;
+        const tracked = p.trackStock !== false;
+        if (stockFilter === 'IN_STOCK') {
+          if (tracked && qty <= 0) return false;
+        } else if (stockFilter === 'LOW_STOCK') {
+          if (!tracked || qty <= 0 || qty > (p.reorderLevel ?? 5)) return false;
+        } else if (stockFilter === 'OUT_OF_STOCK') {
+          if (!tracked || qty > 0) return false;
+        }
+      }
+
+      return true;
     });
-  }, [products, search, selectedCategory]);
+  }, [products, search, selectedCategory, stockFilter]);
 
   const addToCart = (product: Product, serving?: Serving) => {
     const line: CartItem = {
@@ -566,6 +605,51 @@ export function POS() {
           )}
         </div>
 
+        {/* Stock Availability Filter (All, In Stock, Low Stock, Out of Stock) */}
+        <div className="flex items-center justify-between gap-2 pb-2 mb-2 shrink-0 overflow-x-auto text-xs" id="posStockFilters">
+          <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mr-1 shrink-0">Stock:</span>
+            {[
+              { id: 'ALL' as const, label: 'All Items', count: stockCounts.all },
+              { id: 'IN_STOCK' as const, label: 'In Stock', count: stockCounts.inStock, dotColor: 'bg-emerald-500' },
+              { id: 'LOW_STOCK' as const, label: 'Low Stock', count: stockCounts.lowStock, dotColor: 'bg-amber-500' },
+              { id: 'OUT_OF_STOCK' as const, label: 'Out of Stock', count: stockCounts.outOfStock, dotColor: 'bg-red-500' },
+            ].map((sf) => (
+              <button
+                key={sf.id}
+                type="button"
+                id={`stockFilter-${sf.id.toLowerCase()}`}
+                onClick={() => setStockFilter(sf.id)}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer ${
+                  stockFilter === sf.id
+                    ? 'bg-gray-900 text-white border-gray-900 dark:bg-white dark:text-gray-900 dark:border-white shadow-xs'
+                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
+                }`}
+              >
+                {sf.dotColor && <span className={`size-1.5 rounded-full ${sf.dotColor}`} />}
+                <span>{sf.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold tabular-nums ${
+                  stockFilter === sf.id
+                    ? 'bg-white/20 dark:bg-black/20'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+                }`}>
+                  {sf.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {stockFilter !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => setStockFilter('ALL')}
+              className="text-xs text-purple-600 dark:text-purple-400 hover:underline px-1 py-0.5 whitespace-nowrap font-medium cursor-pointer shrink-0"
+            >
+              Reset stock filter
+            </button>
+          )}
+        </div>
+
         {loadingProducts ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700">
             <BeerBottleLoader inline size="sm" title="Pouring POS Catalog…" subtitle="Fetching live counter stock & prices…" />
@@ -577,13 +661,15 @@ export function POS() {
             <p className="text-xs mt-1">
               {search ? `No items matching "${search}"` : ''}
               {selectedCategory !== 'ALL' ? ` in ${selectedCategory.toLowerCase()}` : ''}
+              {stockFilter !== 'ALL' ? ` (${stockFilter.replace('_', ' ').toLowerCase()})` : ''}
             </p>
-            {(search || selectedCategory !== 'ALL') && (
+            {(search || selectedCategory !== 'ALL' || stockFilter !== 'ALL') && (
               <button
                 type="button"
                 onClick={() => {
                   setSearch('');
                   setSelectedCategory('ALL');
+                  setStockFilter('ALL');
                 }}
                 className="mt-3 px-3 py-1.5 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 rounded font-medium hover:bg-purple-200 cursor-pointer"
               >
