@@ -61,26 +61,45 @@ export { showToast };
 
 export type PrintKind = 'bills' | 'kot';
 
-/** Browser print: fetches the HTML receipt / ticket and prints it from a popup (works with any OS printer). */
+/** Browser print: fetches the HTML receipt / ticket and prints it instantly via a hidden iframe (with popup fallback). */
 export async function printInBrowser(kind: PrintKind, id: string): Promise<void> {
-  // Open synchronously from the click so popup blockers allow it
-  const win = window.open('', '_blank', 'width=420,height=640');
-  if (!win) {
-    showToast('Allow pop-ups to print.', 'error');
-    return;
-  }
   try {
     const res = await fetch(`/api/v1/print/${kind}/${id}?format=html`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
     });
     if (!res.ok) throw new Error(await res.text());
-    win.document.open();
-    win.document.write(await res.text());
-    win.document.close();
-    win.focus();
-    win.print();
+    const html = await res.text();
+
+    let frame = document.getElementById('lc_print_frame') as HTMLIFrameElement | null;
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.id = 'lc_print_frame';
+      frame.style.position = 'fixed';
+      frame.style.right = '0';
+      frame.style.bottom = '0';
+      frame.style.width = '0';
+      frame.style.height = '0';
+      frame.style.border = '0';
+      document.body.appendChild(frame);
+    }
+
+    const doc = frame.contentWindow?.document || frame.contentDocument;
+    if (doc && frame.contentWindow) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+    } else {
+      const win = window.open('', '_blank', 'width=420,height=640');
+      if (!win) throw new Error('Allow pop-ups to print.');
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      win.print();
+    }
   } catch (err) {
-    win.close();
     showToast('Could not print: ' + errorMessage(err), 'error');
   }
 }

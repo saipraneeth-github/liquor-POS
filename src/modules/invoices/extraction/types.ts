@@ -63,6 +63,7 @@ export interface ExtractedLine {
 
 export interface ExtractedHeader {
   supplierName: string | null;
+  shopName?: string | null;
   invoiceNumber: string | null;
   /** ISO yyyy-mm-dd */
   invoiceDate: string | null;

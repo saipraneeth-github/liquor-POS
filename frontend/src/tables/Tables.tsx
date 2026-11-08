@@ -161,13 +161,14 @@ export function Tables() {
       showToast(`Cannot add "${product.name}". It is currently out of stock.`, 'error');
       return;
     }
+    const existing = kotItems.find((it) => it.productId === product.id && (it.servingId ?? '') === (servingId ?? ''));
+    if (existing && isTracked && existing.quantity + 1 > stockQty) {
+      showToast(`Cannot add more "${product.name}". Only ${stockQty} available in stock.`, 'error');
+      return;
+    }
     setKotItems((prev) => {
       const idx = prev.findIndex((it) => it.productId === product.id && (it.servingId ?? '') === (servingId ?? ''));
       if (idx >= 0) {
-        if (isTracked && prev[idx].quantity + 1 > stockQty) {
-          showToast(`Cannot add more "${product.name}". Only ${stockQty} available in stock.`, 'error');
-          return prev;
-        }
         return prev.map((it, i) => (i === idx ? { ...it, quantity: it.quantity + 1 } : it));
       }
       return [...prev, { productId: product.id, servingId, quantity: 1 }];
@@ -175,18 +176,24 @@ export function Tables() {
   };
 
   const updateKotItemQty = (index: number, delta: number) => {
-    setKotItems((prev) => {
-      const item = prev[index];
-      if (!item) return prev;
-      const p = products.find((prod) => prod.id === item.productId);
-      const stockQty = p?.currentStock ?? p?.stockQuantity ?? 0;
-      const isTracked = p?.trackStock !== false;
-      if (delta > 0 && isTracked && item.quantity + delta > stockQty) {
-        showToast(`Cannot exceed available stock (${stockQty} bottles) for "${p?.name}".`, 'error');
-        return prev;
-      }
-      return prev.map((it, i) => (i === index ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it));
-    });
+    if (delta <= 0) {
+      setKotItems((prev) =>
+        prev.map((it, i) => (i === index ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it))
+      );
+      return;
+    }
+    const item = kotItems[index];
+    if (!item) return;
+    const p = products.find((prod) => prod.id === item.productId);
+    const stockQty = p?.currentStock ?? p?.stockQuantity ?? 0;
+    const isTracked = p?.trackStock !== false;
+    if (isTracked && item.quantity + delta > stockQty) {
+      showToast(`Cannot exceed available stock (${stockQty} bottles) for "${p?.name}".`, 'error');
+      return;
+    }
+    setKotItems((prev) =>
+      prev.map((it, i) => (i === index ? { ...it, quantity: it.quantity + delta } : it))
+    );
   };
 
   const kotStockCounts = useMemo(() => {

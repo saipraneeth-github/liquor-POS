@@ -5,7 +5,17 @@
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
+let lastToastMsg = '';
+let lastToastTime = 0;
+
 export function showToast(msg: string, type: ToastType = 'success', durationMs = 4500) {
+  const now = Date.now();
+  if (msg === lastToastMsg && now - lastToastTime < 1000) {
+    return; // suppress duplicate toast within 1 second
+  }
+  lastToastMsg = msg;
+  lastToastTime = now;
+
   let host = document.getElementById('toastHost');
   if (!host) {
     host = document.createElement('div');

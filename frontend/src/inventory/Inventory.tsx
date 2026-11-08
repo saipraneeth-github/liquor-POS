@@ -88,6 +88,7 @@ interface InvoiceItem {
 interface InvoiceHeader {
   id: string;
   supplierName: string;
+  shopName?: string | null;
   invoiceNumber: string;
   invoiceDate: string;
   totalAmount: string;
@@ -111,11 +112,25 @@ interface InvoiceHeader {
   source: string;
   notes?: string;
   extractionWarnings?: string[];
+  extractionMeta?: Record<string, unknown> | null;
   rejectionReason?: string;
   reviewedById?: string | null;
   reviewedAt?: string | null;
   approvedById?: string | null;
   approvedAt?: string | null;
+}
+
+function formatInvoiceDate(val?: string | null): string {
+  if (!val) return '—';
+  if (val.includes('T')) return val.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+  try {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  } catch {
+    // fallback
+  }
+  return val;
 }
 
 interface ActiveInvoiceData {
@@ -184,8 +199,8 @@ export function Inventory() {
   const shopName = currentBranch?.name || 'Main Store';
   const isManager = user?.role === 'manager' || user?.role === 'owner';
 
-  // Navigation tab: 'all-invoices' = All Uploaded Invoices, 'upload' = Bill Inward Wizard, 'history' = Invoices History, 'stock' = Store Stock & Breakage
-  const [activeTab, setActiveTab] = useState<'all-invoices' | 'upload' | 'history' | 'stock'>('all-invoices');
+  // Navigation tab: 'upload' = Bill Inward Wizard, 'history' = Invoices History, 'all-invoices' = All Uploaded Invoices, 'stock' = Store Stock & Breakage
+  const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'all-invoices' | 'stock'>('upload');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
   const [viewSnapshot, setViewSnapshot] = useState<ActiveInvoiceData | null>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
@@ -1065,19 +1080,13 @@ export function Inventory() {
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'all-invoices'
+              activeTab === 'upload'
                 ? 'bg-purple-600 text-white shadow-sm font-semibold'
                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
             }`}
-            onClick={() => {
-              setActiveTab('all-invoices');
-              loadInvoices();
-            }}
+            onClick={() => setActiveTab('upload')}
           >
-            All Invoices
-            <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-mono">
-              {invoices.length}
-            </span>
+            Add Supplier Bill
           </button>
           <button
             type="button"
@@ -1096,13 +1105,19 @@ export function Inventory() {
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'upload'
+              activeTab === 'all-invoices'
                 ? 'bg-purple-600 text-white shadow-sm font-semibold'
                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
             }`}
-            onClick={() => setActiveTab('upload')}
+            onClick={() => {
+              setActiveTab('all-invoices');
+              loadInvoices();
+            }}
           >
-            Add Supplier Bill
+            All Invoices
+            <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-mono">
+              {invoices.length}
+            </span>
           </button>
           <button
             type="button"
@@ -1727,7 +1742,7 @@ export function Inventory() {
                       <tr className="border-b text-[11px] text-gray-500 bg-gray-50 dark:bg-gray-800 uppercase tracking-wider">
                         <th className="py-2.5 px-3 w-8">#</th>
                         <th className="py-2.5 px-3">Item &amp; Brand Code Match</th>
-                        <th className="py-2.5 px-2 text-right w-28">Cases / Qty</th>
+                        <th className="py-2.5 px-2 text-right w-28">Qty</th>
                         <th className="py-2.5 px-2 text-right w-24">Case Rate</th>
                         <th className="py-2.5 px-2 text-right w-28">Unit Cost ₹</th>
                         <th className="py-2.5 px-2 text-right w-24">MRP ₹</th>
@@ -2058,8 +2073,8 @@ export function Inventory() {
 
                 <div className="p-3.5 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/50 rounded-xl text-center">
                   <div className="text-xs text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider">Shop &amp; Depot</div>
-                  <div className="text-xs font-bold text-amber-900 dark:text-amber-100 mt-1 truncate" title={`Shop: ${shopName}`}>
-                    Shop: {shopName}
+                  <div className="text-xs font-bold text-amber-900 dark:text-amber-100 mt-1 truncate" title={`Shop: ${(activeInvoice.invoice.extractionMeta?.shopName as string) || activeInvoice.invoice.shopName || shopName}`}>
+                    Shop: {(activeInvoice.invoice.extractionMeta?.shopName as string) || activeInvoice.invoice.shopName || shopName}
                   </div>
                   <div className="text-xs text-amber-700 dark:text-amber-300 truncate" title={`Depot: ${activeInvoice.invoice.supplierName || 'Depot'}`}>
                     Depot: {activeInvoice.invoice.supplierName || 'Depot'}
@@ -2978,7 +2993,7 @@ export function Inventory() {
             <div className="p-3.5 bg-gray-50 dark:bg-slate-800 rounded-xl border dark:border-slate-700 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div>
                 <span className="text-gray-500 dark:text-slate-400 block font-semibold uppercase text-[10px]">Shop Name</span>
-                <span className="font-bold text-gray-900 dark:text-slate-100 text-sm">{shopName}</span>
+                <span className="font-bold text-gray-900 dark:text-slate-100 text-sm">{(viewSnapshot.invoice.extractionMeta?.shopName as string) || viewSnapshot.invoice.shopName || shopName}</span>
               </div>
               <div>
                 <span className="text-gray-500 dark:text-slate-400 block font-semibold uppercase text-[10px]">Depot / Supplier</span>
@@ -2986,7 +3001,7 @@ export function Inventory() {
               </div>
               <div>
                 <span className="text-gray-500 dark:text-slate-400 block font-semibold uppercase text-[10px]">Invoice Date</span>
-                <span className="font-bold text-gray-900 dark:text-slate-100 text-sm">{viewSnapshot.invoice.invoiceDate || '—'}</span>
+                <span className="font-bold text-gray-900 dark:text-slate-100 text-sm">{formatInvoiceDate(viewSnapshot.invoice.invoiceDate)}</span>
               </div>
               <div>
                 <span className="text-gray-500 dark:text-slate-400 block font-semibold uppercase text-[10px]">Status</span>
@@ -3031,7 +3046,7 @@ export function Inventory() {
                   <tr className="border-b bg-gray-50 dark:bg-slate-800 text-gray-500 uppercase tracking-wider">
                     <th className="py-2 px-3">#</th>
                     <th className="py-2 px-3">Product / Description</th>
-                    <th className="py-2 px-3 text-right">Cases / Qty</th>
+                    <th className="py-2 px-3 text-right">Qty</th>
                     <th className="py-2 px-3 text-right">Case Rate</th>
                     <th className="py-2 px-3 text-right">Unit Cost ₹</th>
                     <th className="py-2 px-3 text-right">MRP ₹</th>

@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lt, ne, sql } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import {
@@ -651,7 +651,7 @@ export async function syncSheetWithSales(sheetId: string, txHandle?: Tx) {
       await tx.insert(dailyCounterSheetLines).values(newLineValues);
     }
 
-    for (const l of lines) {
+    const updates = lines.map((l) => {
       const inward = inwardMap.get(l.productId) ?? l.inwardBottles;
       const posSold = salesMap.get(l.productId)?.bottles ?? 0;
       const available = l.openingBottles + inward;
@@ -660,16 +660,24 @@ export async function syncSheetWithSales(sheetId: string, txHandle?: Tx) {
         { opening: l.openingBottles, inward, closing, rate: l.sellingRate },
         { allowAdjustment: true },
       );
+      return { id: l.id, inward, closing, sold: res.sold, revenue: res.revenue };
+    });
+
+    if (updates.length > 0) {
+      const inwardCase = sql`CAST(CASE ${sql.join(updates.map((u) => sql`WHEN ${dailyCounterSheetLines.id} = ${u.id} THEN ${u.inward}`), sql` `)} END AS integer)`;
+      const closingCase = sql`CAST(CASE ${sql.join(updates.map((u) => sql`WHEN ${dailyCounterSheetLines.id} = ${u.id} THEN ${u.closing}`), sql` `)} END AS integer)`;
+      const soldCase = sql`CAST(CASE ${sql.join(updates.map((u) => sql`WHEN ${dailyCounterSheetLines.id} = ${u.id} THEN ${u.sold}`), sql` `)} END AS integer)`;
+      const revCase = sql`CAST(CASE ${sql.join(updates.map((u) => sql`WHEN ${dailyCounterSheetLines.id} = ${u.id} THEN ${u.revenue}`), sql` `)} END AS numeric(12,2))`;
 
       await tx
         .update(dailyCounterSheetLines)
         .set({
-          inwardBottles:  inward,
-          closingBottles: closing,
-          soldBottles:    res.sold,
-          lineRevenue:    res.revenue,
+          inwardBottles:  inwardCase,
+          closingBottles: closingCase,
+          soldBottles:    soldCase,
+          lineRevenue:    revCase,
         })
-        .where(eq(dailyCounterSheetLines.id, l.id));
+        .where(inArray(dailyCounterSheetLines.id, updates.map((u) => u.id)));
     }
 
     const updatedLines = await tx

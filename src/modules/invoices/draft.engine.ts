@@ -86,7 +86,7 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
   return lines.map((line) => {
     const match = matchLine(line, catalog);
     const product = match.productId ? byId.get(match.productId)! : null;
-    const effectivePackQty = product?.packQuantity ?? line.packQuantity ?? 12;
+    const effectivePackQty = line.packQuantity || product?.packQuantity || 12;
 
     // Run precision arithmetic calculation
     const calc = calculatePrecisionLine({

@@ -54,17 +54,30 @@ export function OwnerView({ data, onAttention, onOpenBranch }: {
         </div>
 
         <div className="lc-card" id="dashMonthCard">
-          <h3>Monthly Sales</h3>
-          <div className="lc-kpi">
-            <span className="value">{inr(m.sales)}</span>
-            <span className="sub">Month-to-date total revenue</span>
+          <h3>Monthly Sales <em>month by month sales across all outlets</em></h3>
+          <div style={{ marginTop: 14 }}>
+            {(m.history && m.history.length > 0 ? m.history : [
+              { month: 'prev', label: 'Last Month', sales: m.lastMonthTotal },
+              { month: 'curr', label: 'This Month', sales: m.sales },
+            ]).map((h) => {
+              const histMax = Math.max(1, ...(m.history?.map((x) => Number(x.sales)) ?? [Number(m.sales), Number(m.lastMonthTotal)]));
+              const pct = Math.min(100, Math.max(0, (Number(h.sales) / histMax) * 100));
+              const isCurrent = h.month === m.history?.[m.history.length - 1]?.month;
+              return (
+                <div className="lc-hbar" key={h.month}>
+                  <span className="t" style={{ fontWeight: 600, minWidth: 44 }}>{h.label}</span>
+                  <span className="track">
+                    <i style={{ width: `${pct}%`, background: isCurrent ? 'var(--accent)' : 'var(--muted)' }} />
+                  </span>
+                  <span className="lc-num fig" style={{ fontWeight: 600 }}>{inr(h.sales)}</span>
+                </div>
+              );
+            })}
           </div>
-          <div className="lc-progress accent" style={{ marginTop: 14, height: 10 }} role="img" aria-label="Month to date sales">
-            <i style={{ width: '100%' }} />
+          <div className="lc-chart-legend" style={{ marginTop: 14 }}>
+            <span><i className="lc-sw" style={{ background: 'var(--accent)' }} />Current Month (MTD)</span>
+            <span><i className="lc-sw" style={{ background: 'var(--muted)' }} />Previous Months</span>
           </div>
-          <p style={{ margin: '14px 0 0', color: 'var(--muted)', fontSize: 13 }}>
-            Current month recorded revenue across all outlets: <b style={{ color: 'var(--text)' }}>{inr(m.sales)}</b>.
-          </p>
         </div>
       </div>
     </>

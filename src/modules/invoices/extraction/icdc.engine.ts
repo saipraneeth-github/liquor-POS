@@ -157,10 +157,46 @@ export function extractIcdcHeader(items: PagePositionedItem[], lines: string[]):
     }
   }
 
+  // 5. Shop Name (Retailer Name): e.g. "Spirit Nation Wines"
+  let shopName: string | null = null;
+  for (const it of items) {
+    if (it.y > 600 && it.page === 1) {
+      const m = it.str.match(/Name\s*:\s*([^Code\n\r]+)/i);
+      if (m && m[1].trim() && !/Licensee|Phone/i.test(m[1])) {
+        shopName = m[1].replace(/\s*Code\s*:?.*$/i, '').trim();
+        break;
+      }
+    }
+  }
+  if (!shopName) {
+    const nameLabel = items.find((i) => i.page === 1 && i.y > 600 && /^Name\s*:?$/i.test(i.str.trim()));
+    if (nameLabel) {
+      const nearby = items.filter(
+        (other) => other.page === 1 && Math.abs(other.y - nameLabel.y) <= 4 && other.x > nameLabel.x && other.x < 380,
+      );
+      if (nearby.length > 0) {
+        const candidate = nearby.map((n) => n.str).join(' ').replace(/\s*Code\s*:?.*$/i, '').trim();
+        if (candidate && !/Licensee|Phone/i.test(candidate)) {
+          shopName = candidate;
+        }
+      }
+    }
+  }
+  if (!shopName) {
+    for (const l of lines) {
+      const m = l.match(/(?:^|\s)Name\s*:\s*([^Code\n\r]+?)(?:\s+Code\s*:|$)/i);
+      if (m && m[1].trim() && !/Licensee|Phone/i.test(m[1])) {
+        shopName = m[1].trim();
+        break;
+      }
+    }
+  }
+
   return {
     invoiceNumber,
     invoiceDate,
     supplierName,
+    shopName: shopName ?? null,
     gstin,
   };
 }
@@ -442,8 +478,25 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
 
     for (let i = 0; i < pageAnchors.length; i++) {
       const cur = pageAnchors[i];
-      const upper = (i === 0) ? (p === 1 ? pageTopLimit : cur.y + 16) : (pageAnchors[i - 1].y + cur.y) / 2;
-      const lower = (i === pageAnchors.length - 1) ? Math.max(25, cur.y - 35) : (cur.y + pageAnchors[i + 1].y) / 2;
+      let lower: number;
+      if (i === pageAnchors.length - 1) {
+        lower = Math.max(25, cur.y - 35);
+      } else {
+        const next = pageAnchors[i + 1];
+        const inBetween = items.filter((it) => it.page === p && it.y <= cur.y && it.y >= next.y);
+        const ys = [...new Set(inBetween.map((it) => it.y))].sort((a, b) => b - a);
+        let maxGap = 0;
+        let splitY = (cur.y + next.y) / 2;
+        for (let j = 0; j < ys.length - 1; j++) {
+          const gap = ys[j] - ys[j + 1];
+          if (gap > maxGap) {
+            maxGap = gap;
+            splitY = (ys[j] + ys[j + 1]) / 2;
+          }
+        }
+        lower = maxGap >= 12 ? splitY : (cur.y + next.y) / 2;
+      }
+      const upper = (i === 0) ? (p === 1 ? pageTopLimit : cur.y + 16) : pageAnchors[i - 1].yLower!;
       cur.yUpper = upper;
       cur.yLower = lower;
       const rowItems = items.filter((it) => it.page === p && it.y <= upper && it.y > lower);
@@ -463,9 +516,9 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
   for (const a of anchors) {
     const isCondensed = a.items.some((i) => i.x > 370 && i.x < 420 && /[\d,]+\.\d{2}/.test(i.str));
 
-    // Brand Name: x between [75, 195] (condensed) or [95, 248] (standard)
+    // Brand Name: x between [75, 195] (condensed) or [95, 226] (standard, excluding Product Type column at x >= 228)
     const nameMinX = isCondensed ? 75 : 95;
-    const nameMaxX = isCondensed ? 195 : 248;
+    const nameMaxX = isCondensed ? 195 : 226;
     const nameItems = a.items.filter(
       (i) => i.x >= nameMinX && i.x <= nameMaxX && !HEADER_WORDS.test(i.str) && !/^\d{4}$/.test(i.str),
     );

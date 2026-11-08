@@ -515,7 +515,7 @@ export function Counter() {
             id="counterCreateBtn"
             onClick={handleCreateSheet}
           >
-            Counter Stock
+            Get stock
           </button>
         </div>
 

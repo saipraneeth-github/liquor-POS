@@ -24,9 +24,53 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "volumeMl": 90,
     "packQuantity": 96,
     "exciseCode": "0019",
-    "sku": "TS-0019",
+    "sku": "TS-0019-90",
     "costPrice": "58.42",
     "mrp": "80.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "McDowell's No 1 Luxury Whisky 180ml",
+    "brand": "McDowell's No 1",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "0019",
+    "sku": "TS-0019-180",
+    "costPrice": "125.08",
+    "mrp": "180.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "McDowell's No 1 Luxury Whisky 375ml",
+    "brand": "McDowell's No 1",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0019",
+    "sku": "TS-0019-375",
+    "costPrice": "258.42",
+    "mrp": "350.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "McDowell's No 1 Luxury Whisky 750ml",
+    "brand": "McDowell's No 1",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "0019",
+    "sku": "TS-0019-750",
+    "costPrice": "525.08",
+    "mrp": "700.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "McDowell's No 1 Luxury Whisky 1000ml",
+    "brand": "McDowell's No 1",
+    "volumeMl": 1000,
+    "packQuantity": 9,
+    "exciseCode": "0019",
+    "sku": "TS-0019-1000",
+    "costPrice": "683.44",
+    "mrp": "950.00"
   },
   {
     "category": "Brandy",

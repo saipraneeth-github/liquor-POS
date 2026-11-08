@@ -142,13 +142,19 @@ export function matchLine(line: MatchInput, catalog: CatalogProduct[]): MatchRes
     const p = active.find((c) => c.barcode && c.barcode === barcode);
     if (p) return { productId: p.id, status: 'MATCHED', method: 'BARCODE', confidence: 1, flags: [], candidates: [] };
   }
+  const lineVol = extractVolumeMl(line.description);
   const sku = line.sku?.trim().toLowerCase();
   if (sku) {
-    const p = active.find((c) => (c.sku && c.sku.trim().toLowerCase() === sku) || (c.exciseCode && c.exciseCode.trim().toLowerCase() === sku));
-    if (p) return { productId: p.id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
+    const skuMatches = active.filter((c) => (c.sku && c.sku.trim().toLowerCase() === sku) || (c.exciseCode && c.exciseCode.trim().toLowerCase() === sku));
+    if (skuMatches.length === 1) {
+      return { productId: skuMatches[0].id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
+    }
+    if (skuMatches.length > 1) {
+      const volMatch = skuMatches.find((c) => c.volumeMl === lineVol);
+      const chosen = volMatch ?? skuMatches[0];
+      return { productId: chosen.id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
+    }
   }
-
-  const lineVol = extractVolumeMl(line.description);
   const scored = active.map((p) => {
     const base = nameScore(line.description, p);
     const vol = compareVolumes(lineVol, p.volumeMl ?? extractVolumeMl(p.name));

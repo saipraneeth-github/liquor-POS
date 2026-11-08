@@ -133,6 +133,29 @@ describe('Telangana Excise ICDC Engine', () => {
         expectedLines: 23,
         expectedTotal: '1141849.72',
         expectedDepot: /IMFL Depot Medchal-II/i,
+        sampleCheck: (lines) => {
+          // Row 7 is Carlsberg Elephant Superstrong Super Prem.Beer
+          const row7 = lines.find((l) => l.lineNumber === 7);
+          expect(row7).toBeDefined();
+          expect(row7.description).toContain('CARLSBERG ELEPHANT');
+          expect(row7.description).toContain('SUPER PREM.BEER');
+          expect(row7.description).not.toContain('KINGFISHER');
+
+          // Row 8 is Kingfisher Ultra Maxpremium Strong Beer
+          const row8 = lines.find((l) => l.lineNumber === 8);
+          expect(row8).toBeDefined();
+          expect(row8.description).toContain('KINGFISHER');
+          expect(row8.description).not.toContain('SUPER PREM.BEER');
+
+          // Row 17 is McDowell's No 1 Luxury Whisky [49 cs + 44 btls]
+          const row17 = lines.find((l) => l.lineNumber === 17);
+          expect(row17).toBeDefined();
+          expect(row17.sku).toBe('0019');
+          expect(row17.cases).toBe(49);
+          expect(row17.quantity).toBe(44);
+          expect(row17.rate).toBe('125.08');
+          expect(row17.packQuantity).toBe(48);
+        },
       },
       {
         file: 'ICDCA3.pdf',

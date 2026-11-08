@@ -105,6 +105,7 @@ export async function extractInvoice(buf: Buffer, opts: ExtractOptions = {}): Pr
         header = icdc.header;
         tableStart = 0;
         meta.engine = 'icdc-extractor';
+        if (icdc.header.shopName) meta.shopName = icdc.header.shopName;
         if (icdc.specialCess) meta.specialCess = icdc.specialCess;
         if (icdc.mrpRoundingOff) meta.mrpRoundingOff = icdc.mrpRoundingOff;
         if (icdc.linesBasicTotal) meta.linesBasicTotal = icdc.linesBasicTotal;

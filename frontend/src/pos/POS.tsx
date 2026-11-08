@@ -325,14 +325,17 @@ export function POS() {
       servingId: serving?.id,
       servingLabel: serving?.label,
     };
+    const key = cartKey(line);
+    const existing = cart.find((item) => cartKey(item) === key);
+    const currentQty = existing ? existing.qty : 0;
+    if (isTracked && currentQty + 1 > stockQty) {
+      showToast(`Cannot add more "${product.name}". Only ${stockQty} available in stock.`, 'error');
+      return;
+    }
+
     setCart((prev) => {
-      const existing = prev.find((item) => cartKey(item) === cartKey(line));
-      const currentQty = existing ? existing.qty : 0;
-      if (isTracked && currentQty + 1 > stockQty) {
-        showToast(`Cannot add more "${product.name}". Only ${stockQty} available in stock.`, 'error');
-        return prev;
-      }
-      if (existing) return prev.map((item) => cartKey(item) === cartKey(line) ? { ...item, qty: item.qty + 1 } : item);
+      const ex = prev.find((item) => cartKey(item) === key);
+      if (ex) return prev.map((item) => (cartKey(item) === key ? { ...item, qty: item.qty + 1 } : item));
       return [...prev, line];
     });
   };
@@ -350,22 +353,32 @@ export function POS() {
   };
 
   const updateCartQty = (key: string, delta: number) => {
+    if (delta <= 0) {
+      // Reducing quantity or removing item never checks stock limit or throws errors
+      setCart((prev) =>
+        prev
+          .map((item) => {
+            if (cartKey(item) !== key) return item;
+            return { ...item, qty: item.qty + delta };
+          })
+          .filter((item) => item.qty > 0)
+      );
+      return;
+    }
+
+    // Only validate against stock when INCREASING quantity (delta > 0)
+    const targetItem = cart.find((item) => cartKey(item) === key);
+    if (!targetItem) return;
+    const p = products.find((prod) => prod.id === targetItem.id);
+    const stockQty = p?.currentStock ?? p?.stockQuantity ?? 0;
+    const isTracked = p?.trackStock !== false;
+    if (isTracked && targetItem.qty + delta > stockQty) {
+      showToast(`Cannot exceed available stock (${stockQty} bottles) for "${targetItem.name}".`, 'error');
+      return;
+    }
+
     setCart((prev) =>
-      prev
-        .map((item) => {
-          if (cartKey(item) !== key) return item;
-          const newQty = item.qty + delta;
-          if (newQty <= 0) return { ...item, qty: 0 };
-          const p = products.find((prod) => prod.id === item.id);
-          const stockQty = p?.currentStock ?? p?.stockQuantity ?? 0;
-          const isTracked = p?.trackStock !== false;
-          if (delta > 0 && isTracked && newQty > stockQty) {
-            showToast(`Cannot exceed available stock (${stockQty} bottles) for "${item.name}".`, 'error');
-            return item;
-          }
-          return { ...item, qty: newQty };
-        })
-        .filter((item) => item.qty > 0)
+      prev.map((item) => (cartKey(item) === key ? { ...item, qty: item.qty + delta } : item))
     );
   };
 

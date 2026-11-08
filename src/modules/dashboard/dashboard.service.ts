@@ -15,7 +15,7 @@ import { BusinessRuleError } from '../../lib/errors.js';
 import { getAccessibleBranchIds } from '../../middleware/auth.guard.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import {
-  attentionItems, closingSteps, hourlyBuckets, khataAging, mergeAging, minutesBetween, monthStartOf, paymentMix, percentChange,
+  attentionItems, closingSteps, hourlyBuckets, khataAging, mergeAging, minutesBetween, monthStartOf, pastMonthsList, paymentMix, percentChange,
   previousMonthStart, sameTimeYesterday, sumTotals, type AttentionItem, type PayMode,
 } from './dashboard.engine.js';
 
@@ -196,7 +196,17 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
     return D(r?.total ?? 0);
   };
 
-  const [branchRows, todayBy, ySameBy, yBy, mtd, prevSame, prevFull, owing, lowBy, closings, bankLinesBy, accountRows, sheetsToday, billBottlesToday, stockTotals] = await Promise.all([
+  const pastMonths = pastMonthsList(today, 6);
+  const monthlyHistoryPromise = Promise.all(
+    pastMonths.map(async (pm, idx) => {
+      const { start: mStart } = businessDayBounds(pm.start);
+      const mEnd = idx === pastMonths.length - 1 ? new Date(now.getTime() + 1) : businessDayBounds(pm.end).start;
+      const total = await oneTotal(mStart, mEnd);
+      return { month: pm.key, label: pm.label, sales: money2(total) };
+    })
+  );
+
+  const [branchRows, todayBy, ySameBy, yBy, mtd, prevSame, prevFull, owing, lowBy, closings, bankLinesBy, accountRows, sheetsToday, billBottlesToday, stockTotals, monthlyHistory] = await Promise.all([
     db.select({ id: branches.id, name: branches.name, code: branches.code }).from(branches).where(inArray(branches.id, accessible)).orderBy(asc(branches.name)),
     grouped(dayStart, dayEnd), grouped(yStart, yCutoff), grouped(yStart, yEnd),
     oneTotal(monthStart, new Date(now.getTime() + 1)), oneTotal(prevStart, prevSameEnd), oneTotal(prevStart, monthStart),
@@ -227,6 +237,7 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
     db.select({ n: sql<number>`coalesce(sum(${stock.quantity}), 0)::int` })
       .from(stock)
       .where(inArray(stock.branchId, accessible)),
+    monthlyHistoryPromise,
   ]);
 
   const sheetRevTotal = sheetsToday.reduce((acc, s) => acc.plus(s.totalRevenue || 0), D(0));
@@ -314,6 +325,7 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
     month: {
       sales: money2(mtd), sameDaysLastMonth: money2(prevSame), lastMonthTotal: money2(prevFull),
       percent: percentChange(mtd, prevSame), percentOfLastMonth: prevFull.isZero() ? null : Math.round(mtd.div(prevFull).mul(1000).toNumber()) / 10,
+      history: monthlyHistory,
     },
     khata: { owed, over30, customers: owing.length, buckets: aging },
     bank: { outlets: withBank.length, reconciled: withBank.filter((r) => r.bank?.reconciled).length },

@@ -208,3 +208,30 @@ export function previousMonthStart(isoDate: string): string {
   const m = Number(isoDate.slice(5, 7));
   return m === 1 ? `${y - 1}-12-01` : `${y}-${String(m - 1).padStart(2, '0')}-01`;
 }
+
+export function pastMonthsList(isoDate: string, count = 6): Array<{ key: string; label: string; start: string; end: string }> {
+  const result: Array<{ key: string; label: string; start: string; end: string }> = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let y = Number(isoDate.slice(0, 4));
+  let m = Number(isoDate.slice(5, 7));
+
+  for (let i = 0; i < count; i++) {
+    const startStr = `${y}-${String(m).padStart(2, '0')}-01`;
+    let nextY = y;
+    let nextM = m + 1;
+    if (nextM > 12) {
+      nextM = 1;
+      nextY = y + 1;
+    }
+    const endStr = `${nextY}-${String(nextM).padStart(2, '0')}-01`;
+    const label = monthNames[m - 1];
+    result.unshift({ key: `${y}-${String(m).padStart(2, '0')}`, label, start: startStr, end: endStr });
+
+    m--;
+    if (m < 1) {
+      m = 12;
+      y--;
+    }
+  }
+  return result;
+}
