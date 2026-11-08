@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { inr } from '../components/ui';
 import { useNavigate } from 'react-router-dom';
 import { X, Plus, Minus, Trash2, RefreshCw, Search, Banknote, CreditCard, Smartphone, BookUser, ShoppingBag } from 'lucide-react';
@@ -102,6 +102,11 @@ export function POS() {
   const [newCustLimit, setNewCustLimit] = useState('5000');
   const [newCustAllow, setNewCustAllow] = useState(true);
   const [creatingCust, setCreatingCust] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
+  // Stable clientRef per cart session — reset when cart is cleared so each new
+  // cart gets a fresh UUID. This guarantees the server's idempotency guard works
+  // correctly even if the user clicks "Checkout" twice in quick succession.
+  const cartClientRef = useRef<string>(genUUID());
   const [checkoutModal, setCheckoutModal] = useState<{
     title: string;
     billId?: string;
@@ -376,43 +381,68 @@ export function POS() {
   const cartTotal = Math.max(0, cartSubtotal - discountVal);
 
   const checkout = async () => {
-    if (paymentMode === 'CREDIT') {
-      if (!creditCustomer) {
-        showToast('Pick a khata customer for a credit sale.', 'error');
-        return;
-      }
-      if (!creditCustomer.creditAllowed || !creditCustomer.isActive) {
-        showToast('Credit is not allowed for this customer.', 'error');
-        return;
-      }
-      const limit = parseFloat(creditCustomer.creditLimit || '0');
-      const used = parseFloat(creditCustomer.currentCredit || '0');
-      if (limit > 0 && (used + cartTotal) > limit) {
-        const rem = Math.max(0, limit - used);
-        showToast(`Cannot proceed: Bill (₹${cartTotal.toFixed(2)}) exceeds customer's remaining credit (₹${rem.toFixed(2)}).`, 'error');
-        return;
-      }
-    }
-    const clientRef = genUUID();
-    const body: QueuedBill['body'] = {
-      branchId,
-      items: cart.map((c) => ({ productId: c.id, ...(c.servingId ? { servingId: c.servingId } : {}), quantity: c.qty })),
-      paymentMode,
-      discount: discountVal.toFixed(2),
-      clientRef,
-      ...(paymentMode === 'CREDIT' && creditCustomer ? { customerId: creditCustomer.id } : {}),
-      ...(buyerGstin.trim() ? { customerGstin: buyerGstin.trim().toUpperCase() } : {}),
-    };
-
+    if (isPaying) return;        // guard against double-click / re-entrancy
+    setIsPaying(true);
     try {
-      const res = await fetch('/api/v1/bills', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify(body),
-      });
+      if (paymentMode === 'CREDIT') {
+        if (!creditCustomer) {
+          showToast('Pick a khata customer for a credit sale.', 'error');
+          return;
+        }
+        if (!creditCustomer.creditAllowed || !creditCustomer.isActive) {
+          showToast('Credit is not allowed for this customer.', 'error');
+          return;
+        }
+        const limit = parseFloat(creditCustomer.creditLimit || '0');
+        const used = parseFloat(creditCustomer.currentCredit || '0');
+        if (limit > 0 && (used + cartTotal) > limit) {
+          const rem = Math.max(0, limit - used);
+          showToast(`Cannot proceed: Bill (₹${cartTotal.toFixed(2)}) exceeds customer's remaining credit (₹${rem.toFixed(2)}).`, 'error');
+          return;
+        }
+      }
+
+      // Use the stable per-cart clientRef so the server's idempotency guard fires
+      // if this handler is somehow invoked twice with the same cart.
+      const clientRef = cartClientRef.current;
+      const body: QueuedBill['body'] = {
+        branchId,
+        items: cart.map((c) => ({ productId: c.id, ...(c.servingId ? { servingId: c.servingId } : {}), quantity: c.qty })),
+        paymentMode,
+        discount: discountVal.toFixed(2),
+        clientRef,
+        ...(paymentMode === 'CREDIT' && creditCustomer ? { customerId: creditCustomer.id } : {}),
+        ...(buyerGstin.trim() ? { customerGstin: buyerGstin.trim().toUpperCase() } : {}),
+      };
+
+      let res: Response;
+      try {
+        res = await fetch('/api/v1/bills', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        // Network error — queue for offline sync
+        const queued: QueuedBill = { clientRef, ownerSub: sub, queuedAt: new Date().toISOString(), body };
+        saveQueue(sub, [...getQueue(sub), queued]);
+        refreshQueueCount();
+        setCart([]);
+        // Rotate ref so the next cart gets a fresh UUID
+        cartClientRef.current = genUUID();
+        setCheckoutModal({
+          title: 'Saved offline',
+          billNumber: clientRef.slice(0, 8),
+          total: cartTotal.toFixed(2),
+          paymentMode,
+          offline: true,
+        });
+        return;
+      }
+
       if (!res.ok && res.status !== 200) {
         const errJson = await res.json().catch(() => null);
         const errMsg = errJson?.error || errJson?.message || 'Checkout failed';
@@ -422,6 +452,8 @@ export function POS() {
       const data = await res.json();
       const custName = creditCustomer?.name;
       setCart([]);
+      // Rotate ref so the next cart gets a fresh UUID
+      cartClientRef.current = genUUID();
       setBuyerGstin('');
       setDiscountPercent('');
       setCreditCustomer(null);
@@ -437,28 +469,18 @@ export function POS() {
       });
       // Best effort: kick the receipt out to the branch's network printer if one is set up
       void autoPrint(branchId ?? '', 'bills', data.id);
-      // Immediately refresh live stock on the POS screen and notify any other tabs/screens
+      // Refresh live stock on the POS screen and notify any other tabs/screens
       loadProducts();
       window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
-    } catch {
-      // Queue for offline sync
-      const queued: QueuedBill = { clientRef, ownerSub: sub, queuedAt: new Date().toISOString(), body };
-      saveQueue(sub, [...getQueue(sub), queued]);
-      refreshQueueCount();
-      setCart([]);
-      setCheckoutModal({
-        title: 'Saved offline',
-        billNumber: clientRef.slice(0, 8),
-        total: cartTotal.toFixed(2),
-        paymentMode,
-        offline: true,
-      });
+    } finally {
+      setIsPaying(false);
     }
   };
 
   const closeCheckoutModal = () => {
     setCheckoutModal(null);
-    loadProducts();
+    // Stock was already refreshed immediately after checkout succeeded;
+    // calling loadProducts() here again causes the double-refresh the user sees.
   };
 
   const offlineVisible = !isOnline || queuedCount > 0;
@@ -1028,10 +1050,10 @@ export function POS() {
           <button
             id="checkoutBtn"
             onClick={checkout}
-            disabled={cart.length === 0}
+            disabled={cart.length === 0 || isPaying}
             className="w-full bg-purple-600 text-white py-3.5 rounded-xl text-base font-bold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs transition-colors"
           >
-            Checkout &amp; Print
+            {isPaying ? 'Processing…' : 'Checkout & Print'}
           </button>
         </div>
       </div>
