@@ -59,8 +59,8 @@ const navItems: NavItem[] = [
   { path: '/menu/kitchen', label: 'Kitchen Menu', icon: UtensilsCrossed, id: 'nav-menu-kitchen', min: 'steward', group: 'Menu & Stock', pageKey: 'menu/kitchen' },
   { path: '/menu/bar', label: 'Bar Menu', icon: GlassWater, id: 'nav-menu-bar', min: 'steward', group: 'Menu & Stock', pageKey: 'menu/bar' },
   { path: '/products', label: 'Products', icon: Wine, id: 'nav-products', min: 'cashier', group: 'Menu & Stock', pageKey: 'products' },
-  { path: '/inventory', label: 'Inventory', icon: Package, id: 'nav-inventory', min: 'cashier', group: 'Menu & Stock', pageKey: 'inventory' },
-  { path: '/counter', label: 'Get Stock', icon: ClipboardList, id: 'nav-counter', min: 'cashier', group: 'Menu & Stock', pageKey: 'counter' },
+  { path: '/inventory', label: 'Invoice Upload', icon: Package, id: 'nav-inventory', min: 'cashier', group: 'Menu & Stock', pageKey: 'inventory' },
+  { path: '/counter', label: 'Counter Stock', icon: ClipboardList, id: 'nav-counter', min: 'cashier', group: 'Menu & Stock', pageKey: 'counter' },
   { path: '/pour', label: 'Pour Control', icon: Droplets, id: 'nav-pour', min: 'manager', group: 'Menu & Stock', pageKey: 'pour' },
 
   { path: '/schemes', label: 'Schemes', icon: Target, id: 'nav-schemes', min: 'manager', group: 'Money & Compliance', pageKey: 'schemes' },

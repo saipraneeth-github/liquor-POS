@@ -1,12 +1,20 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getCategoryInfo } from '../components/category-icons';
-import { X, Trash2, AlertTriangle, FileText, Camera, PackageOpen, Loader2 } from 'lucide-react';
+import { X, Trash2, AlertTriangle, FileText, Camera, PackageOpen, Loader2, Pencil, Check, Eye } from 'lucide-react';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
-import { ProtectedButton } from '../components/ui';
+import { ProtectedButton, Modal } from '../components/ui';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { showToast } from '../lib/toast';
 import { businessDate } from '../lib/business-day';
+
+interface BrandMappingRow {
+  id: string;
+  brandCode: string;
+  productId: string;
+  productName: string | null;
+  categoryName: string | null;
+}
 
 interface StockRow {
   productId: string;
@@ -170,12 +178,24 @@ function invoiceLinesTotal(data: ActiveInvoiceData | null): string {
 }
 
 export function Inventory() {
-  const { user } = useAuth();
-  const branchId = user?.branchId;
+  const { user, branches, activeBranchId } = useAuth();
+  const branchId = activeBranchId ?? user?.branchId;
+  const currentBranch = branches?.find((b) => b.id === branchId);
+  const shopName = currentBranch?.name || 'Main Store';
   const isManager = user?.role === 'manager' || user?.role === 'owner';
 
-  // Navigation tab: 'upload' = Bill Inward Wizard, 'history' = Bill History, 'stock' = Store Stock & Breakage
-  const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'stock'>('upload');
+  // Navigation tab: 'all-invoices' = All Uploaded Invoices, 'upload' = Bill Inward Wizard, 'history' = Invoices History, 'stock' = Store Stock & Breakage
+  const [activeTab, setActiveTab] = useState<'all-invoices' | 'upload' | 'history' | 'stock'>('all-invoices');
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
+  const [viewSnapshot, setViewSnapshot] = useState<ActiveInvoiceData | null>(null);
+  const [loadingSnapshot, setLoadingSnapshot] = useState(false);
+
+  // Brand Code Mapping State
+  const [brandMappings, setBrandMappings] = useState<BrandMappingRow[]>([]);
+  const [editingRowIdx, setEditingRowIdx] = useState<number | null>(null);
+  const [newMappingNames, setNewMappingNames] = useState<Record<string, string>>({});
+  const [newMappingCats, setNewMappingCats] = useState<Record<string, string>>({});
+  const [savingMappingCode, setSavingMappingCode] = useState<string | null>(null);
 
   // Wizard Step for Bill Inward:
   // Step 1: Upload / Choose Bill
@@ -318,10 +338,70 @@ export function Inventory() {
     }
   };
 
+  const loadBrandMappings = async () => {
+    try {
+      const res = await api.get<{ mappings: BrandMappingRow[] }>('/inventory/brand-mappings');
+      setBrandMappings(res.mappings || []);
+    } catch {
+      // quiet fail
+    }
+  };
+
+  const openSnapshot = async (id: string) => {
+    if (!id) return;
+    setLoadingSnapshot(true);
+    try {
+      const data = await api.get<ActiveInvoiceData>('/invoices/detail/' + id);
+      setViewSnapshot(data);
+    } catch (err: any) {
+      showToast('Could not load invoice snapshot: ' + err.message, 'error');
+    } finally {
+      setLoadingSnapshot(false);
+    }
+  };
+
+  const getBrandCode = (it: InvoiceItem) => {
+    if (it.barcode && it.barcode.trim()) return it.barcode.trim();
+    const m = it.rawDescription.match(/^[A-Za-z0-9_-]{3,12}/);
+    return m ? m[0] : it.rawDescription.slice(0, 8);
+  };
+
+  const handleSaveBrandMapping = async (lineIdx: number, brandCode: string) => {
+    setSavingMappingCode(brandCode);
+    try {
+      const pName = newMappingNames[brandCode]?.trim() || activeInvoice?.items[lineIdx]?.rawDescription || brandCode;
+      const cName = newMappingCats[brandCode] || 'Whisky';
+      const created = await api.post<BrandMappingRow>('/inventory/brand-mappings', {
+        brandCode,
+        productName: pName,
+        categoryName: cName,
+        branchId,
+      });
+      showToast(`Brand code "${brandCode}" mapped to "${pName}"`, 'success');
+      await loadBrandMappings();
+      await loadStock();
+      if (activeInvoice) {
+        const nextItems = [...activeInvoice.items];
+        nextItems[lineIdx] = {
+          ...nextItems[lineIdx],
+          productId: created.productId,
+          productName: created.productName || pName,
+          matchStatus: 'MATCHED',
+        };
+        setActiveInvoice({ ...activeInvoice, items: nextItems });
+      }
+    } catch (err: any) {
+      showToast('Failed to save mapping: ' + err.message, 'error');
+    } finally {
+      setSavingMappingCode(null);
+    }
+  };
+
   useEffect(() => {
     loadStock();
     loadInvoices();
     loadBreakage();
+    loadBrandMappings();
   }, [branchId]);
 
   // Sync wizard step when active invoice changes
@@ -695,7 +775,7 @@ export function Inventory() {
 
   // ── Line Item Editors ─────────────────────────────────────────────────────
 
-  const handleProductChange = (idx: number, prodId: string) => {
+  const _handleProductChange = (idx: number, prodId: string) => {
     if (!activeInvoice) return;
     const items = [...activeInvoice.items];
     const item = { ...items[idx] };
@@ -715,6 +795,7 @@ export function Inventory() {
     items[idx] = item;
     setActiveInvoice({ ...activeInvoice, items });
   };
+  void _handleProductChange;
 
   const handleLineQtyChange = (idx: number, qtyVal: string) => {
     if (!activeInvoice) return;
@@ -969,11 +1050,12 @@ export function Inventory() {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-50" id="stockTitle">
-            Store Inventory &amp; Supplier Bills
+            Supplier Invoices
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {activeTab === 'upload' ? 'Add a supplier bill, check what was read, then confirm it into stock.'
-              : activeTab === 'history' ? 'Every supplier bill, with its review and inward status.'
+            {activeTab === 'all-invoices' ? 'All uploaded supplier invoices with immutable snapshots and history.'
+              : activeTab === 'upload' ? 'Upload or create a supplier invoice, map brand codes, and submit.'
+              : activeTab === 'history' ? 'Every supplier invoice, with its review and inward status.'
               : 'Live bottle counts, cost and margin for this store.'}
           </p>
         </div>
@@ -983,13 +1065,19 @@ export function Inventory() {
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'upload'
+              activeTab === 'all-invoices'
                 ? 'bg-purple-600 text-white shadow-sm font-semibold'
                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
             }`}
-            onClick={() => setActiveTab('upload')}
+            onClick={() => {
+              setActiveTab('all-invoices');
+              loadInvoices();
+            }}
           >
-            Add Supplier Bill
+            All Invoices
+            <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-mono">
+              {invoices.length}
+            </span>
           </button>
           <button
             type="button"
@@ -1003,10 +1091,18 @@ export function Inventory() {
               loadInvoices();
             }}
           >
-            Bill History
-            <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-mono">
-              {invoices.length}
-            </span>
+            Invoices History
+          </button>
+          <button
+            type="button"
+            className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'upload'
+                ? 'bg-purple-600 text-white shadow-sm font-semibold'
+                : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+            }`}
+            onClick={() => setActiveTab('upload')}
+          >
+            Add Supplier Bill
           </button>
           <button
             type="button"
@@ -1024,6 +1120,142 @@ export function Inventory() {
           </button>
         </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* TAB 0: ALL INVOICES (DEFAULT)                                           */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'all-invoices' && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800 p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b dark:border-slate-800">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">All Uploaded Invoices</h2>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                Select an invoice number to view its immutable snapshot, or browse all recorded invoices below.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-sm flex items-center gap-2 cursor-pointer self-start sm:self-auto"
+              onClick={() => {
+                setActiveInvoice(null);
+                setWizardStep(1);
+                setActiveTab('upload');
+              }}
+            >
+              <span>＋</span> Upload New Invoice
+            </button>
+          </div>
+
+          {/* Invoice Number Dropdown & View Button */}
+          <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/60 rounded-xl border dark:border-slate-700">
+            <div className="flex-1 min-w-[260px]">
+              <label htmlFor="allInvoicesDropdown" className="text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                Select Invoice Number
+              </label>
+              <select
+                id="allInvoicesDropdown"
+                className="w-full p-2.5 border dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono"
+                value={selectedInvoiceId}
+                onChange={(e) => setSelectedInvoiceId(e.target.value)}
+              >
+                <option value="">-- Choose an invoice to view snapshot --</option>
+                {invoices.map((inv) => (
+                  <option key={inv.id} value={inv.id}>
+                    {inv.invoiceNumber} · {inv.supplierName} ({inv.invoiceDate || inv.createdAt.slice(0, 10)}) — ₹{parseFloat(inv.totalAmount).toFixed(2)} [{inv.status}]
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              id="viewSelectedInvoiceBtn"
+              disabled={!selectedInvoiceId || loadingSnapshot}
+              className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer transition-all self-end"
+              onClick={() => openSnapshot(selectedInvoiceId)}
+            >
+              <Eye size={16} /> {loadingSnapshot ? 'Loading Snapshot…' : 'View Snapshot'}
+            </button>
+          </div>
+
+          {/* Invoices List Table */}
+          <div className="overflow-x-auto border dark:border-slate-800 rounded-xl">
+            {loadingInvoices ? (
+              <BeerBottleLoader inline size="sm" title="Loading Invoices…" subtitle="Fetching all uploaded supplier invoices…" />
+            ) : invoices.length === 0 ? (
+              <div className="p-8 text-center text-gray-500 text-sm">No invoices found. Click "Upload New Invoice" to begin.</div>
+            ) : (
+              <table className="w-full text-left text-sm" id="allInvoicesTable">
+                <thead>
+                  <tr className="border-b text-xs text-gray-500 dark:text-slate-400 bg-gray-50/70 dark:bg-slate-800/70 uppercase tracking-wider">
+                    <th className="py-2.5 px-3">Invoice Number</th>
+                    <th className="py-2.5 px-3">Depot / Supplier</th>
+                    <th className="py-2.5 px-3">Invoice Date</th>
+                    <th className="py-2.5 px-3 text-right">Items</th>
+                    <th className="py-2.5 px-3 text-right">Total Amount</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Snapshot</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+                  {invoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-gray-50/70 dark:hover:bg-slate-800/60 transition-colors">
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-gray-900 dark:text-slate-100 font-mono">{inv.invoiceNumber}</div>
+                        {inv.originalFilename && (
+                          <div className="text-[11px] text-gray-400 truncate max-w-xs">{inv.originalFilename}</div>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-gray-800 dark:text-slate-200 font-medium">{inv.supplierName || '—'}</td>
+                      <td className="py-3 px-3 text-xs text-gray-600 dark:text-slate-400">
+                        {inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : new Date(inv.createdAt).toLocaleDateString('en-IN')}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-medium">{inv.lineCount}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-gray-900 dark:text-slate-100">
+                        ₹{parseFloat(inv.totalAmount).toFixed(2)}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span
+                          className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                            inv.status === 'APPROVED'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                              : inv.status === 'REVIEWED'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                              : inv.status === 'REJECTED'
+                              ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                          }`}
+                        >
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                            onClick={() => openSnapshot(inv.id)}
+                            title="View read-only immutable snapshot"
+                          >
+                            <Eye size={13} /> View
+                          </button>
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-950/50 dark:text-purple-300 rounded-lg text-xs font-semibold cursor-pointer"
+                            onClick={() => openInvoice(inv.id)}
+                            title="Open in Wizard / Inward review"
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* TAB 1: ADD SUPPLIER BILL (STEP-BY-STEP WIZARD)                         */}
@@ -1494,22 +1726,28 @@ export function Inventory() {
                     <thead>
                       <tr className="border-b text-[11px] text-gray-500 bg-gray-50 dark:bg-gray-800 uppercase tracking-wider">
                         <th className="py-2.5 px-3 w-8">#</th>
-                        <th className="py-2.5 px-3">Item &amp; catalog match</th>
+                        <th className="py-2.5 px-3">Item &amp; Brand Code Match</th>
                         <th className="py-2.5 px-2 text-right w-28">Cases / Qty</th>
                         <th className="py-2.5 px-2 text-right w-24">Case Rate</th>
                         <th className="py-2.5 px-2 text-right w-28">Unit Cost ₹</th>
                         <th className="py-2.5 px-2 text-right w-24">MRP ₹</th>
                         <th className="py-2.5 px-3 text-right w-28">Total</th>
+                        <th className="py-2.5 px-2 text-center w-12">Edit</th>
                       </tr>
                     </thead>
                     <tbody id="invEditLines" className="divide-y divide-gray-100">
                       {activeInvoice.items.map((it, idx) => {
-                        const matched = !!it.productId;
-                        if (onlyIssues && matched) return null;
+                        const code = getBrandCode(it);
+                        const mappedMapping = brandMappings.find((m) => m.brandCode.toLowerCase().trim() === code.toLowerCase().trim());
+                        const matchedProd = it.productId ? productMap.get(it.productId) : mappedMapping?.productId ? productMap.get(mappedMapping.productId) : null;
+                        const isMatched = !!(it.productId || mappedMapping?.productId);
+                        const isEditing = editingRowIdx === idx;
+
+                        if (onlyIssues && isMatched) return null;
                         return (
                           <tr
                             key={it.id || idx}
-                            className={`inv-edit-row align-top ${matched ? 'hover:bg-gray-50/60' : 'bg-amber-50/40'}`}
+                            className={`inv-edit-row align-top ${isMatched ? 'hover:bg-gray-50/60' : 'bg-amber-50/40'}`}
                             data-item-id={it.id || ''}
                             data-match-status={it.matchStatus}
                           >
@@ -1517,8 +1755,7 @@ export function Inventory() {
                             <td className="py-3 px-3 space-y-1.5">
                               <div className="flex items-center gap-2">
                                 {(() => {
-                                  const matchedProd = it.productId ? productMap.get(it.productId) : null;
-                                  const lineCat = getCategoryInfo(matchedProd?.categoryName, it.rawDescription);
+                                  const lineCat = getCategoryInfo(matchedProd?.categoryName || mappedMapping?.categoryName, it.rawDescription);
                                   const { Icon } = lineCat;
                                   return (
                                     <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 border ${lineCat.badgeClass}`} title={lineCat.label}>
@@ -1526,52 +1763,66 @@ export function Inventory() {
                                     </div>
                                   );
                                 })()}
-                                <input
-                                  className="ie-desc w-full px-1 py-0.5 rounded text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-purple-400 focus:bg-white outline-none"
-                                  value={it.rawDescription}
-                                  onChange={(e) => handleLineDescChange(idx, e.target.value)}
-                                  title="Description as printed on the bill"
-                                />
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`ie-match-badge shrink-0 w-2 h-2 rounded-full ${
-                                    matched ? 'bg-emerald-500' : it.matchStatus === 'SUGGESTED' ? 'bg-amber-400' : 'bg-red-500'
-                                  }`}
-                                  title={matched ? 'Matched' : it.matchStatus === 'SUGGESTED' ? 'Suggested' : 'Needs selection'}
-                                />
-                                <select
-                                  className="ie-prod flex-1 min-w-0 max-w-md w-full p-1.5 border rounded-md text-xs bg-white text-gray-700"
-                                  value={it.productId || ''}
-                                  onChange={(e) => {
-                                    if (e.target.value === '__NEW__') {
-                                      openAddProductModalForLine(idx);
-                                      return;
-                                    }
-                                    handleProductChange(idx, e.target.value);
-                                  }}
-                                >
-                                  <option value="">Select catalog product…</option>
-                                  <option value="__NEW__">＋ Add new product…</option>
-                                  {products.map((p) => {
-                                    const pCat = getCategoryInfo(p.categoryName, p.name);
-                                    return (
-                                      <option key={p.id} value={p.id}>
-                                        {pCat.emoji} {p.name} · ₹{parseFloat(p.mrp).toFixed(0)}
-                                      </option>
-                                    );
-                                  })}
-                                </select>
-                                {!matched && (
-                                  <button
-                                    type="button"
-                                    className="shrink-0 text-xs text-blue-600 hover:underline cursor-pointer"
-                                    onClick={() => openAddProductModalForLine(idx)}
-                                  >
-                                    + New
-                                  </button>
+                                {isEditing ? (
+                                  <input
+                                    className="ie-desc w-full px-2 py-1 rounded text-sm font-medium text-gray-900 bg-white border border-purple-400 outline-none"
+                                    value={it.rawDescription}
+                                    onChange={(e) => handleLineDescChange(idx, e.target.value)}
+                                    title="Description as printed on the bill"
+                                  />
+                                ) : (
+                                  <div className="font-medium text-gray-900 text-sm">{it.rawDescription}</div>
                                 )}
                               </div>
+
+                              {/* Brand Code Mapping Section */}
+                              {isMatched ? (
+                                <div className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                  <span className="font-semibold">{matchedProd?.name || mappedMapping?.productName || it.productName}</span>
+                                  <span className="text-[10px] font-mono text-gray-500">[{code}]</span>
+                                </div>
+                              ) : (
+                                <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg space-y-2 text-xs">
+                                  <div className="font-semibold text-amber-800 dark:text-amber-200 flex items-center justify-between">
+                                    <span>Unknown Brand Code: <code className="font-mono bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border">{code}</code></span>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Product name (optional)"
+                                      className="p-1.5 border rounded text-xs bg-white flex-1 min-w-[130px]"
+                                      value={newMappingNames[code] ?? it.rawDescription}
+                                      onChange={(e) => setNewMappingNames((prev) => ({ ...prev, [code]: e.target.value }))}
+                                    />
+                                    <select
+                                      className="p-1.5 border rounded text-xs bg-white font-medium"
+                                      value={newMappingCats[code] ?? 'Whisky'}
+                                      onChange={(e) => setNewMappingCats((prev) => ({ ...prev, [code]: e.target.value }))}
+                                    >
+                                      {['Beer', 'Rum', 'Whisky', 'Vodka', 'Brandy', 'Gin', 'Wine', 'Ready to Drink', 'Other'].map((c) => (
+                                        <option key={c} value={c}>{c}</option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      disabled={savingMappingCode === code}
+                                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded font-medium text-xs shadow-sm cursor-pointer"
+                                      onClick={() => handleSaveBrandMapping(idx, code)}
+                                    >
+                                      {savingMappingCode === code ? 'Saving…' : 'Save to Mapping'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="text-[11px] text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+                                      onClick={() => openAddProductModalForLine(idx)}
+                                    >
+                                      + Advanced
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
                               {/* Compact Price Change Pill */}
                               {(() => {
                                 const curCost = parseFloat(it.costPrice);
@@ -1596,24 +1847,36 @@ export function Inventory() {
                                   </div>
                                 );
                               })()}
-                              {(it.flags || []).length > 0 && (
-                                <div className="text-[11px] text-amber-700">{it.flags.join(', ')}</div>
+
+                              {/* Flags without cases_converted */}
+                              {(it.flags || []).filter((f) => f.toLowerCase() !== 'cases_converted').length > 0 && (
+                                <div className="text-[11px] text-amber-700">
+                                  {(it.flags || []).filter((f) => f.toLowerCase() !== 'cases_converted').join(', ')}
+                                </div>
                               )}
                             </td>
+
                             <td className="py-3 px-2 text-right">
-                              <input
-                                className="ie-qty w-16 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
-                                type="number"
-                                min="1"
-                                value={it.quantity}
-                                onChange={(e) => handleLineQtyChange(idx, e.target.value)}
-                              />
+                              {isEditing ? (
+                                <input
+                                  className="ie-qty w-16 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
+                                  type="number"
+                                  min="1"
+                                  value={it.quantity}
+                                  onChange={(e) => handleLineQtyChange(idx, e.target.value)}
+                                />
+                              ) : (
+                                <div className="font-mono font-bold text-gray-900 text-sm">
+                                  {it.quantity} <span className="text-xs text-gray-500 font-normal">btls</span>
+                                </div>
+                              )}
                               {(it.casesDelivered !== undefined && it.casesDelivered !== null && it.casesDelivered > 0) && (
                                 <div className="text-[10px] text-gray-500 font-mono mt-0.5">
                                   {it.casesDelivered} cs{it.bottlesDelivered ? ` + ${it.bottlesDelivered}b` : ''}
                                 </div>
                               )}
                             </td>
+
                             <td className="py-3 px-2 text-right">
                               {it.caseRate ? (
                                 <div className="font-mono text-xs text-gray-900 dark:text-gray-100 font-medium">
@@ -1624,23 +1887,53 @@ export function Inventory() {
                                 <span className="text-gray-400 text-xs">—</span>
                               )}
                             </td>
+
                             <td className="py-3 px-2 text-right">
-                              <input
-                                className="ie-cost w-24 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
-                                value={it.costPrice}
-                                onChange={(e) => handleLineCostChange(idx, e.target.value)}
-                                title={`Unit cost: ₹${parseFloat(it.costPrice || '0').toFixed(6)}`}
-                              />
+                              {isEditing ? (
+                                <input
+                                  className="ie-cost w-24 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
+                                  value={it.costPrice}
+                                  onChange={(e) => handleLineCostChange(idx, e.target.value)}
+                                  title={`Unit cost: ₹${parseFloat(it.costPrice || '0').toFixed(6)}`}
+                                />
+                              ) : (
+                                <div className="font-mono text-sm text-gray-900 font-medium">
+                                  ₹{parseFloat(it.costPrice || '0').toFixed(2)}
+                                </div>
+                              )}
                             </td>
+
                             <td className="py-3 px-2 text-right">
-                              <input
-                                className="ie-mrp w-20 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
-                                value={it.mrp}
-                                onChange={(e) => handleLineMrpChange(idx, e.target.value)}
-                              />
+                              {isEditing ? (
+                                <input
+                                  className="ie-mrp w-20 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
+                                  value={it.mrp}
+                                  onChange={(e) => handleLineMrpChange(idx, e.target.value)}
+                                />
+                              ) : (
+                                <div className="font-mono text-sm text-gray-900">
+                                  ₹{parseFloat(it.mrp || '0').toFixed(2)}
+                                </div>
+                              )}
                             </td>
+
                             <td className="py-3 px-3 text-right font-mono font-semibold text-gray-900">
                               <span className="ie-linetotal">₹{parseFloat(it.lineCostTotal).toFixed(2)}</span>
+                            </td>
+
+                            <td className="py-3 px-2 text-center">
+                              <button
+                                type="button"
+                                className={`p-1.5 rounded-lg border cursor-pointer transition-colors ${
+                                  isEditing
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                                }`}
+                                onClick={() => setEditingRowIdx(isEditing ? null : idx)}
+                                title={isEditing ? 'Save and make read-only' : 'Edit row fields'}
+                              >
+                                {isEditing ? <Check size={14} /> : <Pencil size={14} />}
+                              </button>
                             </td>
                           </tr>
                         );
@@ -1721,7 +2014,7 @@ export function Inventory() {
                       className="min-h-[48px] px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer transition-all"
                       onClick={() => setWizardStep(3)}
                     >
-                      Proceed to Inward Confirmation
+                      Submit Invoice
                     </button>
                   )}
                 </div>
@@ -1740,8 +2033,13 @@ export function Inventory() {
               {/* Big Metrics Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="p-3.5 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 rounded-xl text-center">
-                  <div className="text-xs text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">Total Bottles</div>
-                  <div className="text-2xl font-bold text-blue-900 dark:text-blue-100 mt-1 font-mono">{draftTotalBottles}</div>
+                  <div className="text-xs text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">Total Quantity</div>
+                  <div className="text-2xl font-bold text-blue-900 dark:text-blue-100 mt-1 font-mono">
+                    {draftTotalBottles} <span className="text-sm font-normal text-blue-700">btls</span>
+                  </div>
+                  <div className="text-xs text-blue-600 dark:text-blue-400 font-medium font-mono mt-0.5">
+                    {activeInvoice.invoice.totalCases ?? activeInvoice.items.reduce((s, it) => s + (it.casesDelivered || 0), 0)} cases
+                  </div>
                 </div>
 
                 <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/50 rounded-xl text-center">
@@ -1759,9 +2057,12 @@ export function Inventory() {
                 </div>
 
                 <div className="p-3.5 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900/50 rounded-xl text-center">
-                  <div className="text-xs text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider">Depot / Supplier</div>
-                  <div className="text-base font-bold text-amber-900 dark:text-amber-100 mt-2 truncate" title={activeInvoice.invoice.supplierName}>
-                    {activeInvoice.invoice.supplierName || 'Depot'}
+                  <div className="text-xs text-amber-600 dark:text-amber-400 font-bold uppercase tracking-wider">Shop &amp; Depot</div>
+                  <div className="text-xs font-bold text-amber-900 dark:text-amber-100 mt-1 truncate" title={`Shop: ${shopName}`}>
+                    Shop: {shopName}
+                  </div>
+                  <div className="text-xs text-amber-700 dark:text-amber-300 truncate" title={`Depot: ${activeInvoice.invoice.supplierName || 'Depot'}`}>
+                    Depot: {activeInvoice.invoice.supplierName || 'Depot'}
                   </div>
                 </div>
               </div>
@@ -2664,6 +2965,119 @@ export function Inventory() {
         subtitle="Resetting store stock and purchase records to zero..."
         stage="inwarding"
       />
+
+      {/* ── IMMUTABLE INVOICE SNAPSHOT MODAL ────────────────────────────── */}
+      {viewSnapshot && (
+        <Modal
+          title={`Invoice Snapshot: ${viewSnapshot.invoice.invoiceNumber}`}
+          onClose={() => setViewSnapshot(null)}
+          wide
+        >
+          <div className="space-y-4">
+            {/* Header info */}
+            <div className="p-3.5 bg-gray-50 dark:bg-slate-800 rounded-xl border dark:border-slate-700 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-gray-500 dark:text-slate-400 block font-semibold uppercase text-[10px]">Shop Name</span>
+                <span className="font-bold text-gray-900 dark:text-slate-100 text-sm">{shopName}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 dark:text-slate-400 block font-semibold uppercase text-[10px]">Depot / Supplier</span>
+                <span className="font-bold text-gray-900 dark:text-slate-100 text-sm">{viewSnapshot.invoice.supplierName || 'Depot'}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 dark:text-slate-400 block font-semibold uppercase text-[10px]">Invoice Date</span>
+                <span className="font-bold text-gray-900 dark:text-slate-100 text-sm">{viewSnapshot.invoice.invoiceDate || '—'}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 dark:text-slate-400 block font-semibold uppercase text-[10px]">Status</span>
+                <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  viewSnapshot.invoice.status === 'APPROVED'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : viewSnapshot.invoice.status === 'REVIEWED'
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {viewSnapshot.invoice.status}
+                </span>
+              </div>
+            </div>
+
+            {/* Metrics */}
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl">
+                <span className="text-[11px] text-blue-600 dark:text-blue-400 font-bold uppercase block">Total Bottles</span>
+                <span className="text-xl font-bold font-mono text-blue-900 dark:text-blue-100">
+                  {viewSnapshot.items.reduce((s, it) => s + (it.quantity || 0), 0)}
+                </span>
+              </div>
+              <div className="p-3 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-xl">
+                <span className="text-[11px] text-purple-600 dark:text-purple-400 font-bold uppercase block">Total Cases</span>
+                <span className="text-xl font-bold font-mono text-purple-900 dark:text-purple-100">
+                  {viewSnapshot.invoice.totalCases ?? viewSnapshot.items.reduce((s, it) => s + (it.casesDelivered || 0), 0)}
+                </span>
+              </div>
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+                <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold uppercase block">Total Amount</span>
+                <span className="text-xl font-bold font-mono text-emerald-900 dark:text-emerald-100">
+                  ₹{parseFloat(viewSnapshot.invoice.totalAmount || '0').toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Read-only items table */}
+            <div className="overflow-x-auto max-h-80 border dark:border-slate-800 rounded-xl">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b bg-gray-50 dark:bg-slate-800 text-gray-500 uppercase tracking-wider">
+                    <th className="py-2 px-3">#</th>
+                    <th className="py-2 px-3">Product / Description</th>
+                    <th className="py-2 px-3 text-right">Cases / Qty</th>
+                    <th className="py-2 px-3 text-right">Case Rate</th>
+                    <th className="py-2 px-3 text-right">Unit Cost ₹</th>
+                    <th className="py-2 px-3 text-right">MRP ₹</th>
+                    <th className="py-2 px-3 text-right">Line Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-800 font-mono">
+                  {viewSnapshot.items.map((it, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
+                      <td className="py-2 px-3 text-gray-400">{idx + 1}</td>
+                      <td className="py-2 px-3 font-sans font-medium text-gray-900 dark:text-slate-100">
+                        {it.productName || it.rawDescription}
+                      </td>
+                      <td className="py-2 px-3 text-right font-bold">
+                        {it.quantity} btls {it.casesDelivered ? `(${it.casesDelivered} cs)` : ''}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-600">
+                        {it.caseRate ? `₹${parseFloat(it.caseRate).toFixed(0)}` : '—'}
+                      </td>
+                      <td className="py-2 px-3 text-right">₹{parseFloat(it.costPrice || '0').toFixed(2)}</td>
+                      <td className="py-2 px-3 text-right">₹{parseFloat(it.mrp || '0').toFixed(2)}</td>
+                      <td className="py-2 px-3 text-right font-bold text-gray-900 dark:text-slate-100">
+                        ₹{parseFloat(it.lineCostTotal).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs text-emerald-800 dark:text-emerald-300">
+              ✓ <b>Immutable Snapshot:</b> This invoice record is permanently preserved as originally recorded and is unaffected by subsequent sales or stock movements.
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-semibold text-xs border cursor-pointer"
+                onClick={() => setViewSnapshot(null)}
+              >
+                Close Snapshot
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </section>
   );
 }

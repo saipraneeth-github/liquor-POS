@@ -3,18 +3,12 @@ import { inr, lakh } from './format';
 import { Attention } from './parts';
 import type { AttentionItem, OwnerData } from './types';
 
-const AGING_COLOR = ['var(--s-upi)', 'var(--s-card)', 'var(--warn)', 'var(--bad)'];
-
-/** The owner's view across every outlet: each against its own yesterday, the month so far, and the money still owed. */
+/** The owner's view across every outlet: each against its own yesterday, the month so far, and bank reconciliation. */
 export function OwnerView({ data, onAttention, onOpenBranch }: {
   data: OwnerData; onAttention: (a: AttentionItem) => void; onOpenBranch: (branchId: string) => void;
 }) {
   const max = Math.max(1, ...data.branches.flatMap((b) => [Number(b.sales), Number(b.salesSameTimeYesterday)]));
-  const aging = data.khata.buckets;
-  const owed = Number(data.khata.owed);
   const m = data.month;
-  const lastTotal = Number(m.lastMonthTotal);
-  const barMax = Math.max(Number(m.sales), lastTotal, 1);
 
   return (
     <>
@@ -22,24 +16,24 @@ export function OwnerView({ data, onAttention, onOpenBranch }: {
 
       <div className="lc-grid lc-g-kpi">
         <div className="lc-card lc-kpi">
-          <span className="label">Sales today, all outlets</span>
-          <span className="value" id="dashSales">{inr(data.totals.sales)}</span>
-          <span className="sub">{data.totals.percent === null ? 'Nothing to compare with yet' : <><Delta percent={data.totals.percent} /> vs yesterday at this time</>}</span>
+          <span className="label">Total Sheet Revenue</span>
+          <span className="value" id="dashSales">{inr(data.totals.sheetRevenue ?? data.totals.sales)}</span>
+          <span className="sub">{data.totals.percent === null ? 'Synced with Stock Reconciliation' : <><Delta percent={data.totals.percent} /> vs yesterday at this time</>}</span>
+        </div>
+        <div className="lc-card lc-kpi">
+          <span className="label">Total Bottles Sold</span>
+          <span className="value" id="dashBottles">{data.totals.totalBottlesSold ?? 0} <small>bottles</small></span>
+          <span className="sub">Physical stock present: {data.totals.physicalStockPresent ?? 0} bottles</span>
         </div>
         <div className="lc-card lc-kpi">
           <span className="label">Month so far</span>
           <span className="value" id="dashMonth">{lakh(m.sales)}</span>
-          <span className="sub">{m.percent === null ? 'No sales in the same days last month' : <><Delta percent={m.percent} /> vs the same days last month</>}</span>
-        </div>
-        <div className="lc-card lc-kpi">
-          <span className="label">Khata owed to you</span>
-          <span className="value" id="dashKhata">{owed >= 100000 ? lakh(owed) : inr(owed)}</span>
-          <span className="sub">{Number(data.khata.over30) > 0 ? `${inr(data.khata.over30)} is over 30 days` : `${data.khata.customers} customer${data.khata.customers === 1 ? '' : 's'}, none overdue`}</span>
+          <span className="sub">{m.percent === null ? 'Current period sales' : <><Delta percent={m.percent} /> vs same period last month</>}</span>
         </div>
         <div className="lc-card lc-kpi">
           <span className="label">Bank books up to date</span>
           <span className="value">{data.bank.reconciled} <small>of {data.bank.outlets}</small></span>
-          <span className="sub">{data.bank.outlets === 0 ? 'No bank account added yet' : data.bank.reconciled === data.bank.outlets ? 'All outlets reconciled' : 'Some outlets are behind'}</span>
+          <span className="sub">{data.bank.outlets === 0 ? 'No bank account added yet' : data.bank.reconciled === data.bank.outlets ? 'All outlets reconciled & matched' : 'Statements pending reconciliation'}</span>
         </div>
       </div>
 
@@ -60,35 +54,18 @@ export function OwnerView({ data, onAttention, onOpenBranch }: {
         </div>
 
         <div className="lc-card" id="dashMonthCard">
-          <h3>Month against last month</h3>
+          <h3>Monthly Sales</h3>
           <div className="lc-kpi">
-            <span className="value">{m.percentOfLastMonth === null ? '–' : `${Math.round(m.percentOfLastMonth)}%`}</span>
-            <span className="sub">{m.percentOfLastMonth === null ? 'No sales last month to compare with' : 'of what you sold in all of last month'}</span>
+            <span className="value">{inr(m.sales)}</span>
+            <span className="sub">Month-to-date total revenue</span>
           </div>
-          <div className="lc-progress accent" style={{ marginTop: 14, height: 12 }} role="img" aria-label="Month so far against last month">
-            <i style={{ width: `${(Number(m.sales) / barMax) * 100}%` }} />
-            {lastTotal > 0 && <span style={{ position: 'absolute', top: -4, bottom: -4, width: 2, background: 'var(--text)', left: `${(lastTotal / barMax) * 100}%`, transform: 'translateX(-1px)' }} title="All of last month" />}
+          <div className="lc-progress accent" style={{ marginTop: 14, height: 10 }} role="img" aria-label="Month to date sales">
+            <i style={{ width: '100%' }} />
           </div>
-          <p style={{ margin: '10px 0 0', color: 'var(--muted)', fontSize: 12 }}>
-            {inr(m.sales)} so far. The line marks last month in full ({inr(m.lastMonthTotal)}); the same days last month came to {inr(m.sameDaysLastMonth)}.
+          <p style={{ margin: '14px 0 0', color: 'var(--muted)', fontSize: 13 }}>
+            Current month recorded revenue across all outlets: <b style={{ color: 'var(--text)' }}>{inr(m.sales)}</b>.
           </p>
         </div>
-      </div>
-
-      <div className="lc-card" id="dashAging">
-        <h3>Khata by age <em className="lc-num">{inr(data.khata.owed)}</em></h3>
-        {owed === 0 ? (
-          <div className="lc-empty" style={{ padding: 12 }}>Nobody owes you anything.</div>
-        ) : (
-          <>
-            <div className="lc-aging" role="img" aria-label={aging.map((a) => `${a.label} ${inr(a.amount)}`).join(', ')}>
-              {aging.filter((a) => Number(a.amount) > 0).map((a) => <span key={a.key} style={{ flex: Number(a.amount), background: AGING_COLOR[aging.indexOf(a)] }}>{Math.round((Number(a.amount) / owed) * 100)}%</span>)}
-            </div>
-            <div className="lc-legend" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-              {aging.map((a, i) => <div key={a.key}><i className="lc-sw" style={{ background: AGING_COLOR[i] }} /><span className="nm">{a.label}</span><span className="lc-num">{inr(a.amount)}</span></div>)}
-            </div>
-          </>
-        )}
       </div>
     </>
   );

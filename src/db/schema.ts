@@ -882,3 +882,15 @@ export const dunningLog = pgTable('dunning_log', {
 }, (t) => ({
   uqDunning: uniqueIndex('uq_dunning_once').on(t.syndicateId, t.kind, t.periodKey),
 }));
+
+export const brandCodeMappings = pgTable('brand_code_mappings', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  brandCode:    text('brand_code').notNull(),
+  productId:    uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  productName:  text('product_name'),
+  categoryName: text('category_name'),
+  branchId:     uuid('branch_id').references(() => branches.id, { onDelete: 'cascade' }),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:    timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+

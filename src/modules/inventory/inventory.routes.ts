@@ -10,6 +10,9 @@ import {
   getStockStatus,
   getBranchIndentEstimations,
   clearCompleteInventory,
+  getBrandCodeMappings,
+  upsertBrandCodeMapping,
+  deleteBrandCodeMapping,
 } from './inventory.service.js';
 
 const BranchParams = z.object({ branchId: z.string().uuid() });
@@ -137,5 +140,42 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
 
     const suggestions = await getBranchIndentEstimations(branchId);
     return suggestions;
+  });
+
+  // GET /inventory/brand-mappings — list brand code mappings
+  fastify.get('/inventory/brand-mappings', {
+    preHandler: requireRole('cashier'),
+  }, async (request) => {
+    const query = request.query as { branchId?: string };
+    return getBrandCodeMappings(query.branchId);
+  });
+
+  // POST /inventory/brand-mappings — create or update a brand code mapping
+  fastify.post('/inventory/brand-mappings', {
+    preHandler: requireRole('cashier'),
+  }, async (request, reply) => {
+    const schema = z.object({
+      brandCode: z.string().min(1),
+      productId: z.string().uuid().optional(),
+      productName: z.string().optional(),
+      categoryName: z.string().optional(),
+      branchId: z.string().uuid().optional(),
+    });
+    const parsed = schema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+    const mapping = await upsertBrandCodeMapping(parsed.data);
+    return reply.code(200).send(mapping);
+  });
+
+  // DELETE /inventory/brand-mappings/:id — delete a brand code mapping
+  fastify.delete('/inventory/brand-mappings/:id', {
+    preHandler: requireRole('manager'),
+  }, async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
+    const res = await deleteBrandCodeMapping(params.data.id);
+    return reply.code(200).send(res);
   });
 }

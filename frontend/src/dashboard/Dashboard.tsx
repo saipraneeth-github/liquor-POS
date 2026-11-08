@@ -117,13 +117,23 @@ export function Dashboard() {
     );
   }
 
-  const subtitle = scope === 'all' ? `${dateText} · every outlet` : dateText;
+  const currentBranch = branches.find((b) => b.id === (branchId || user?.branchId));
+  const shopName = currentBranch?.name || 'Liquor Store';
+
+  const welcomeTitle = scope === 'all'
+    ? `Welcome to ${shopName}`
+    : `Welcome to ${shopName}`;
+
+  const subtitle = scope === 'all'
+    ? `${greeting}, ${firstName} · ${dateText} · All Outlets`
+    : `${greeting}, ${firstName} · ${dateText}`;
+
   return (
     <section className="page active lc lc-bleed" id="page-dashboard" aria-labelledby="dashTitle">
       <div className="lc-page">
         <div className="lc-greet">
           <div>
-            <h2 id="dashTitle">{scope === 'all' ? 'All outlets today' : `${greeting}, ${firstName}`}</h2>
+            <h2 id="dashTitle">{welcomeTitle}</h2>
             <p id="dashSub">{subtitle}{updatedAt && <span className="lc-updated"> · updated {updatedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }).toUpperCase()}</span>}</p>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>

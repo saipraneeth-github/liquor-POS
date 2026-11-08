@@ -46,7 +46,15 @@ export interface OwnerData {
     id: string; name: string; code: string; sales: string; bills: number; salesSameTimeYesterday: string; percent: number | null;
     lowStock: number; bankToReview: number;
   }>;
-  totals: { sales: string; salesSameTimeYesterday: string; percent: number | null; bills: number };
+  totals: {
+    sales: string;
+    salesSameTimeYesterday: string;
+    percent: number | null;
+    bills: number;
+    sheetRevenue?: string;
+    totalBottlesSold?: number;
+    physicalStockPresent?: number;
+  };
   month: { sales: string; sameDaysLastMonth: string; lastMonthTotal: string; percent: number | null; percentOfLastMonth: number | null };
   khata: { owed: string; over30: string; customers: number; buckets: Array<{ key: string; label: string; amount: string }> };
   bank: { outlets: number; reconciled: number };

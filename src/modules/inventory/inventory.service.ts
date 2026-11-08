@@ -12,9 +12,11 @@ import {
   schemes,
   schemePurchases,
   breakageLogs,
+  brandCodeMappings,
+  categories,
 } from '../../db/schema.js';
 import { deleteAllInvoices } from '../invoices/invoice.service.js';
-import { eq, and, gte, inArray, ne, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, gte, inArray, ne, sql, ilike } from 'drizzle-orm';
 import {
   parseAndValidateInvoice,
   type RawExtractedInvoice,
@@ -421,4 +423,102 @@ export async function clearCompleteInventory(branchId: string): Promise<{ delete
   });
 
   return { deletedStock, deletedInvoices };
+}
+
+export async function getBrandCodeMappings(branchId?: string) {
+  const conditions = branchId
+    ? [or(eq(brandCodeMappings.branchId, branchId), isNull(brandCodeMappings.branchId))]
+    : [];
+  return db
+    .select({
+      id: brandCodeMappings.id,
+      brandCode: brandCodeMappings.brandCode,
+      productId: brandCodeMappings.productId,
+      productName: brandCodeMappings.productName,
+      categoryName: brandCodeMappings.categoryName,
+      branchId: brandCodeMappings.branchId,
+      createdAt: brandCodeMappings.createdAt,
+      updatedAt: brandCodeMappings.updatedAt,
+      productCatalogName: products.name,
+      productMrp: products.mrp,
+    })
+    .from(brandCodeMappings)
+    .innerJoin(products, eq(products.id, brandCodeMappings.productId))
+    .where(conditions.length ? and(...conditions) : undefined);
+}
+
+export async function upsertBrandCodeMapping(input: {
+  brandCode: string;
+  productId?: string;
+  productName?: string;
+  categoryName?: string;
+  branchId?: string;
+}) {
+  const trimmedCode = input.brandCode.trim();
+  let prodId = input.productId;
+
+  if (!prodId) {
+    const nameToSearch = input.productName?.trim() || trimmedCode;
+    const [found] = await db.select({ id: products.id }).from(products).where(eq(products.name, nameToSearch)).limit(1);
+    if (found) {
+      prodId = found.id;
+    } else {
+      let catId: string | null = null;
+      if (input.categoryName) {
+        const [cat] = await db.select({ id: categories.id }).from(categories).where(ilike(categories.name, `%${input.categoryName.trim()}%`)).limit(1);
+        catId = cat?.id ?? null;
+      }
+      if (!catId) {
+        const [firstCat] = await db.select({ id: categories.id }).from(categories).limit(1);
+        catId = firstCat?.id ?? null;
+      }
+      const [newProd] = await db.insert(products).values({
+        name: nameToSearch,
+        brand: input.brandCode.trim() || 'General',
+        barcode: trimmedCode,
+        categoryId: catId,
+        mrp: '100.00',
+        costPrice: '80.00',
+      }).returning();
+      prodId = newProd.id;
+    }
+  }
+
+  const existing = await db
+    .select()
+    .from(brandCodeMappings)
+    .where(eq(brandCodeMappings.brandCode, trimmedCode))
+    .limit(1);
+
+  if (existing.length > 0) {
+    const [updated] = await db
+      .update(brandCodeMappings)
+      .set({
+        productId: prodId,
+        productName: input.productName ?? existing[0].productName,
+        categoryName: input.categoryName ?? existing[0].categoryName,
+        branchId: input.branchId ?? existing[0].branchId,
+        updatedAt: new Date(),
+      })
+      .where(eq(brandCodeMappings.id, existing[0].id))
+      .returning();
+    return updated;
+  }
+
+  const [created] = await db
+    .insert(brandCodeMappings)
+    .values({
+      brandCode: trimmedCode,
+      productId: prodId,
+      productName: input.productName,
+      categoryName: input.categoryName,
+      branchId: input.branchId,
+    })
+    .returning();
+  return created;
+}
+
+export async function deleteBrandCodeMapping(id: string) {
+  await db.delete(brandCodeMappings).where(eq(brandCodeMappings.id, id));
+  return { success: true };
 }

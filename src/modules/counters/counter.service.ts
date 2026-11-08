@@ -169,25 +169,51 @@ export async function salesByProduct(
   );
 }
 
-/** Σ approved supplier-invoice quantities per product for a branch, approvedAt in [start, end). */
+/** Σ approved supplier-invoice quantities and purchase audits per product for a branch, in [start, end). */
 async function inwardByProduct(tx: Tx | typeof db, branchId: string, start: Date, end?: Date): Promise<Map<string, number>> {
-  const conditions = [
+  const invConditions = [
     eq(supplierInvoices.branchId, branchId),
     eq(supplierInvoices.status, 'APPROVED'),
     isNotNull(supplierInvoiceItems.productId),
     gte(supplierInvoices.approvedAt, start),
   ];
-  if (end) conditions.push(lt(supplierInvoices.approvedAt, end));
-  const rows = await tx
+  if (end) invConditions.push(lt(supplierInvoices.approvedAt, end));
+  const invRows = await tx
     .select({
       productId: supplierInvoiceItems.productId,
       qty:       sql<string>`coalesce(sum(${supplierInvoiceItems.quantity}), 0)`,
     })
     .from(supplierInvoiceItems)
     .innerJoin(supplierInvoices, eq(supplierInvoices.id, supplierInvoiceItems.invoiceId))
-    .where(and(...conditions))
+    .where(and(...invConditions))
     .groupBy(supplierInvoiceItems.productId);
-  return new Map(rows.map((r) => [r.productId!, Number(r.qty)]));
+
+  const auditConditions = [
+    eq(stockAudit.branchId, branchId),
+    eq(stockAudit.reason, 'PURCHASE'),
+    gte(stockAudit.createdAt, start),
+  ];
+  if (end) auditConditions.push(lt(stockAudit.createdAt, end));
+  const auditRows = await tx
+    .select({
+      productId: stockAudit.productId,
+      qty:       sql<string>`coalesce(sum(${stockAudit.changeQty}), 0)`,
+    })
+    .from(stockAudit)
+    .where(and(...auditConditions))
+    .groupBy(stockAudit.productId);
+
+  const res = new Map<string, number>();
+  for (const r of invRows) {
+    if (r.productId) res.set(r.productId, Math.max(0, Math.round(Number(r.qty))));
+  }
+  for (const r of auditRows) {
+    if (r.productId) {
+      const prev = res.get(r.productId) ?? 0;
+      res.set(r.productId, Math.max(prev, Math.round(Number(r.qty))));
+    }
+  }
+  return res;
 }
 
 /**
@@ -593,6 +619,38 @@ export async function syncSheetWithSales(sheetId: string, txHandle?: Tx) {
       .from(dailyCounterSheetLines)
       .where(eq(dailyCounterSheetLines.sheetId, sheetId));
 
+    const existingProductIds = new Set(lines.map((l) => l.productId));
+    const stocked = await tx
+      .select({ productId: products.id, mrp: products.mrp, quantity: stock.quantity })
+      .from(stock)
+      .innerJoin(products, eq(products.id, stock.productId))
+      .where(and(eq(stock.branchId, sheet.branchId), eq(products.isActive, true)));
+
+    const missingStocked = stocked.filter((s) => !existingProductIds.has(s.productId));
+    if (missingStocked.length > 0) {
+      const newLineValues = missingStocked.map((p) => {
+        const inward = inwardMap.get(p.productId) ?? 0;
+        const posSold = salesMap.get(p.productId)?.bottles ?? 0;
+        const opening = Math.max(0, p.quantity - inward + posSold);
+        const closing = Math.max(0, opening + inward - posSold);
+        const lineRes = computeLine(
+          { opening, inward, closing, rate: p.mrp },
+          { allowAdjustment: true },
+        );
+        return {
+          sheetId:        sheet.id,
+          productId:      p.productId,
+          openingBottles: opening,
+          inwardBottles:  inward,
+          closingBottles: closing,
+          soldBottles:    lineRes.sold,
+          sellingRate:    p.mrp,
+          lineRevenue:    lineRes.revenue,
+        };
+      });
+      await tx.insert(dailyCounterSheetLines).values(newLineValues);
+    }
+
     for (const l of lines) {
       const inward = inwardMap.get(l.productId) ?? l.inwardBottles;
       const posSold = salesMap.get(l.productId)?.bottles ?? 0;
@@ -630,10 +688,10 @@ export async function syncSheetWithSales(sheetId: string, txHandle?: Tx) {
 
 /**
  * Automatically updates any active DRAFT counter sheet for this branch & business date
- * when a bill is paid or voided.
+ * when a bill is paid or voided or a supplier invoice is approved.
  */
-export async function onBillPaidOrVoided(branchId: string, billCreatedAt: Date, tx: Tx) {
-  const sheetDate = businessDateOf(billCreatedAt);
+export async function onBillPaidOrVoided(branchId: string, eventDate: Date, tx: Tx) {
+  const sheetDate = businessDateOf(eventDate);
   const [draftSheet] = await tx
     .select({ id: dailyCounterSheets.id })
     .from(dailyCounterSheets)
@@ -661,6 +719,9 @@ export function registerCounterSheetHandlers(): void {
     }),
     onDomainEvent('bill.voided', async ({ bill }, tx) => {
       await onBillPaidOrVoided(bill.branchId, bill.createdAt ?? new Date(), tx);
+    }),
+    onDomainEvent('supplierInvoice.approved', async ({ invoice }, tx) => {
+      await onBillPaidOrVoided(invoice.branchId, invoice.approvedAt ?? new Date(), tx);
     }),
   ];
 }

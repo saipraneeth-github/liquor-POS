@@ -158,11 +158,16 @@ export function Tables() {
     const stockQty = product.currentStock ?? product.stockQuantity ?? 0;
     const isTracked = product.trackStock !== false;
     if (isTracked && stockQty <= 0) {
-      showToast(`Note: ${product.name} is currently out of stock.`, 'info');
+      showToast(`Cannot add "${product.name}". It is currently out of stock.`, 'error');
+      return;
     }
     setKotItems((prev) => {
       const idx = prev.findIndex((it) => it.productId === product.id && (it.servingId ?? '') === (servingId ?? ''));
       if (idx >= 0) {
+        if (isTracked && prev[idx].quantity + 1 > stockQty) {
+          showToast(`Cannot add more "${product.name}". Only ${stockQty} available in stock.`, 'error');
+          return prev;
+        }
         return prev.map((it, i) => (i === idx ? { ...it, quantity: it.quantity + 1 } : it));
       }
       return [...prev, { productId: product.id, servingId, quantity: 1 }];
@@ -170,9 +175,18 @@ export function Tables() {
   };
 
   const updateKotItemQty = (index: number, delta: number) => {
-    setKotItems((prev) =>
-      prev.map((it, i) => (i === index ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it))
-    );
+    setKotItems((prev) => {
+      const item = prev[index];
+      if (!item) return prev;
+      const p = products.find((prod) => prod.id === item.productId);
+      const stockQty = p?.currentStock ?? p?.stockQuantity ?? 0;
+      const isTracked = p?.trackStock !== false;
+      if (delta > 0 && isTracked && item.quantity + delta > stockQty) {
+        showToast(`Cannot exceed available stock (${stockQty} bottles) for "${p?.name}".`, 'error');
+        return prev;
+      }
+      return prev.map((it, i) => (i === index ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it));
+    });
   };
 
   const kotStockCounts = useMemo(() => {
@@ -356,6 +370,16 @@ export function Tables() {
     if (!validItems.length) {
       showToast('Each KOT line needs a valid product and quantity of at least 1.', 'error');
       return;
+    }
+
+    for (const item of validItems) {
+      const p = products.find((prod) => prod.id === item.productId);
+      const stockQty = p?.currentStock ?? p?.stockQuantity ?? 0;
+      const isTracked = p?.trackStock !== false;
+      if (isTracked && item.quantity > stockQty) {
+        showToast(`Insufficient stock for "${p?.name}": requested ${item.quantity}, only ${stockQty} available.`, 'error');
+        return;
+      }
     }
 
     setKotSubmitting(true);

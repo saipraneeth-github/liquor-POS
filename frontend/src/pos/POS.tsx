@@ -311,6 +311,13 @@ export function POS() {
   }, [products, search, selectedCategory, stockFilter]);
 
   const addToCart = (product: Product, serving?: Serving) => {
+    const stockQty = product.currentStock ?? product.stockQuantity ?? 0;
+    const isTracked = product.trackStock !== false;
+    if (isTracked && stockQty <= 0) {
+      showToast(`Cannot add "${product.name}". It is currently out of stock.`, 'error');
+      return;
+    }
+
     const line: CartItem = {
       ...product,
       qty: 1,
@@ -320,6 +327,11 @@ export function POS() {
     };
     setCart((prev) => {
       const existing = prev.find((item) => cartKey(item) === cartKey(line));
+      const currentQty = existing ? existing.qty : 0;
+      if (isTracked && currentQty + 1 > stockQty) {
+        showToast(`Cannot add more "${product.name}". Only ${stockQty} available in stock.`, 'error');
+        return prev;
+      }
       if (existing) return prev.map((item) => cartKey(item) === cartKey(line) ? { ...item, qty: item.qty + 1 } : item);
       return [...prev, line];
     });
@@ -327,6 +339,12 @@ export function POS() {
 
   const pickProduct = (product: Product) => {
     if (product.isAvailable === false) return;
+    const stockQty = product.currentStock ?? product.stockQuantity ?? 0;
+    const isTracked = product.trackStock !== false;
+    if (isTracked && stockQty <= 0) {
+      showToast(`"${product.name}" is currently out of stock.`, 'error');
+      return;
+    }
     if (product.servings && product.servings.length > 0) setServingPicker(product);
     else addToCart(product);
   };
@@ -334,7 +352,19 @@ export function POS() {
   const updateCartQty = (key: string, delta: number) => {
     setCart((prev) =>
       prev
-        .map((item) => (cartKey(item) === key ? { ...item, qty: item.qty + delta } : item))
+        .map((item) => {
+          if (cartKey(item) !== key) return item;
+          const newQty = item.qty + delta;
+          if (newQty <= 0) return { ...item, qty: 0 };
+          const p = products.find((prod) => prod.id === item.id);
+          const stockQty = p?.currentStock ?? p?.stockQuantity ?? 0;
+          const isTracked = p?.trackStock !== false;
+          if (delta > 0 && isTracked && newQty > stockQty) {
+            showToast(`Cannot exceed available stock (${stockQty} bottles) for "${item.name}".`, 'error');
+            return item;
+          }
+          return { ...item, qty: newQty };
+        })
         .filter((item) => item.qty > 0)
     );
   };
@@ -437,6 +467,18 @@ export function POS() {
         if (limit > 0 && (used + cartTotal) > limit) {
           const rem = Math.max(0, limit - used);
           showToast(`Cannot proceed: Bill (₹${cartTotal.toFixed(2)}) exceeds customer's remaining credit (₹${rem.toFixed(2)}).`, 'error');
+          return;
+        }
+      }
+
+      // Validate each item against available stock
+      for (const item of cart) {
+        const p = products.find((prod) => prod.id === item.id);
+        const stockQty = p?.currentStock ?? p?.stockQuantity ?? 0;
+        const isTracked = p?.trackStock !== false;
+        if (isTracked && item.qty > stockQty) {
+          showToast(`Insufficient stock for "${item.name}": requested ${item.qty}, only ${stockQty} available.`, 'error');
+          setIsPaying(false);
           return;
         }
       }

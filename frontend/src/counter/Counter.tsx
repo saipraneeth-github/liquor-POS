@@ -108,13 +108,36 @@ export function Counter() {
   useEffect(() => {
     if (!branchId || !sheetDate) return;
     let active = true;
+    setLoading(true);
     api.get<RecentSheet[]>(`/counter-sheets/${branchId}?date=${sheetDate}`)
-      .then((rows) => {
-        if (active && rows.length > 0 && (!sheet || sheet.sheetDate !== sheetDate)) {
-          openSheetById(rows[0].id, true);
+      .then(async (rows) => {
+        if (!active) return;
+        if (rows.length > 0) {
+          if (!sheet || sheet.sheetDate !== sheetDate) {
+            await openSheetById(rows[0].id, true);
+          }
+        } else if (sheetDate === todayStr) {
+          // Automatically create/load today's sheet so user never gets stuck at "Pick a date"
+          try {
+            const sh = await api.post<CounterSheet>('/counter-sheets/' + branchId, { sheetDate });
+            if (active) {
+              loadSheet(sh);
+              loadRecent();
+            }
+          } catch (err: any) {
+            if (active && (err.status === 409 || err.message?.toLowerCase().includes('already exists'))) {
+              const existingId = err.data?.details?.sheetId;
+              if (existingId) {
+                await openSheetById(existingId, true);
+              }
+            }
+          }
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => { active = false; };
   }, [branchId, sheetDate]);
 
@@ -460,7 +483,7 @@ export function Counter() {
   return (
     <section className="page active" id="page-counter" aria-labelledby="counterTitle">
       <div className="mb-4">
-        <h2 className="h1 text-2xl font-bold" id="counterTitle">Get Stock</h2>
+        <h2 className="h1 text-2xl font-bold" id="counterTitle">Counter Stock</h2>
         <div className="muted small text-xs text-gray-500">
           Physical bottle counts: sold = opening + inward − {isAdmin ? 'physical stock present' : 'closing'}. Adjust counts and post to reconcile stock.
         </div>
@@ -492,7 +515,7 @@ export function Counter() {
             id="counterCreateBtn"
             onClick={handleCreateSheet}
           >
-            Get Stock
+            Counter Stock
           </button>
         </div>
 
@@ -519,14 +542,14 @@ export function Counter() {
 
       <div className="card bg-white rounded shadow" id="counterSheet">
         {loading ? (
-          <BeerBottleLoader inline size="sm" title="Loading Get Stock Sheet…" subtitle="Fetching opening, inward and physical bottle counts…" />
+          <BeerBottleLoader inline size="sm" title="Loading Counter Stock Sheet…" subtitle="Fetching opening, inward and physical bottle counts…" />
         ) : !sheet ? (
-          <div className="state p-8 text-center text-gray-500">Pick a date and click "Get Stock" to create or open a sheet.</div>
+          <div className="state p-8 text-center text-gray-500">Loading Counter Stock for today...</div>
         ) : (
           <div>
             <div className="pad row between p-4 flex justify-between items-center border-b">
               <div>
-                <div className="h2 text-lg font-bold">Get Stock Sheet for {sheet.sheetDate}</div>
+                <div className="h2 text-lg font-bold">Counter Stock Sheet for {sheet.sheetDate}</div>
                 <div className="muted small text-xs text-gray-500">
                   {sheet.lines.length} {sheet.lines.length === 1 ? 'product' : 'products'}
                   {sheet.postedAt ? ` · posted ${new Date(sheet.postedAt).toLocaleString('en-IN')}` : ''}

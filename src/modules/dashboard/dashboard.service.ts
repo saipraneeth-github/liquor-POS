@@ -8,7 +8,7 @@ import { Decimal } from 'decimal.js';
 import { db } from '../../db/client.js';
 import {
   bankAccounts, bankStatementLines, bankStatements, billItems, bills, branches, creditTransactions, customers, dailyClosings,
-  dailyCounterSheets, pourCounts, products, shiftSessions, stock, tableSessions, tables, terminals, users,
+  dailyCounterSheets, dailyCounterSheetLines, pourCounts, products, shiftSessions, stock, tableSessions, tables, terminals, users,
 } from '../../db/schema.js';
 import { businessDateOf, businessDayBounds } from '../../lib/business-day.js';
 import { BusinessRuleError } from '../../lib/errors.js';
@@ -196,7 +196,7 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
     return D(r?.total ?? 0);
   };
 
-  const [branchRows, todayBy, ySameBy, yBy, mtd, prevSame, prevFull, owing, lowBy, closings, bankLinesBy, accountRows] = await Promise.all([
+  const [branchRows, todayBy, ySameBy, yBy, mtd, prevSame, prevFull, owing, lowBy, closings, bankLinesBy, accountRows, sheetsToday, billBottlesToday, stockTotals] = await Promise.all([
     db.select({ id: branches.id, name: branches.name, code: branches.code }).from(branches).where(inArray(branches.id, accessible)).orderBy(asc(branches.name)),
     grouped(dayStart, dayEnd), grouped(yStart, yCutoff), grouped(yStart, yEnd),
     oneTotal(monthStart, new Date(now.getTime() + 1)), oneTotal(prevStart, prevSameEnd), oneTotal(prevStart, monthStart),
@@ -210,7 +210,28 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
       .innerJoin(bankAccounts, eq(bankStatementLines.accountId, bankAccounts.id))
       .where(and(inArray(bankAccounts.branchId, accessible), inArray(bankStatementLines.status, ['UNMATCHED', 'SUGGESTED']))).groupBy(bankAccounts.branchId),
     db.select({ id: bankAccounts.id, branchId: bankAccounts.branchId }).from(bankAccounts).where(and(inArray(bankAccounts.branchId, accessible), eq(bankAccounts.isActive, true))),
+    db.select({
+      branchId: dailyCounterSheets.branchId,
+      totalRevenue: dailyCounterSheets.totalRevenue,
+      soldBottles: sql<number>`coalesce(sum(${dailyCounterSheetLines.soldBottles}), 0)::int`,
+      closingBottles: sql<number>`coalesce(sum(${dailyCounterSheetLines.closingBottles}), 0)::int`,
+    })
+      .from(dailyCounterSheets)
+      .leftJoin(dailyCounterSheetLines, eq(dailyCounterSheets.id, dailyCounterSheetLines.sheetId))
+      .where(and(inArray(dailyCounterSheets.branchId, accessible), eq(dailyCounterSheets.sheetDate, today)))
+      .groupBy(dailyCounterSheets.id, dailyCounterSheets.branchId, dailyCounterSheets.totalRevenue),
+    db.select({ n: sql<number>`coalesce(sum(${billItems.quantity}), 0)::int` })
+      .from(billItems)
+      .innerJoin(bills, eq(billItems.billId, bills.id))
+      .where(paidIn(inBranches, dayStart, dayEnd)),
+    db.select({ n: sql<number>`coalesce(sum(${stock.quantity}), 0)::int` })
+      .from(stock)
+      .where(inArray(stock.branchId, accessible)),
   ]);
+
+  const sheetRevTotal = sheetsToday.reduce((acc, s) => acc.plus(s.totalRevenue || 0), D(0));
+  const sheetSoldTotal = sheetsToday.reduce((acc, s) => acc + (s.soldBottles || 0), 0);
+  const sheetClosingTotal = sheetsToday.reduce((acc, s) => acc + (s.closingBottles || 0), 0);
 
   // Khata ageing across every customer who still owes money
   const owingIds = owing.map((c) => c.id);
@@ -231,8 +252,10 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
     const cur = bankBy.get(a.branchId);
     const latest = mine[0];
     const latestEnd = latest?.periodEnd ?? null;
-    if (!cur) bankBy.set(a.branchId, { latestEnd, reconciled: latest?.status === 'RECONCILED' });
-    else bankBy.set(a.branchId, { latestEnd: latestEnd && (!cur.latestEnd || latestEnd > cur.latestEnd) ? latestEnd : cur.latestEnd, reconciled: cur.reconciled && latest?.status === 'RECONCILED' });
+    const pendingCount = bankLinesBy.find((l) => l.branchId === a.branchId)?.n ?? 0;
+    const isReconciled = latest?.status === 'RECONCILED' && pendingCount === 0;
+    if (!cur) bankBy.set(a.branchId, { latestEnd, reconciled: isReconciled });
+    else bankBy.set(a.branchId, { latestEnd: latestEnd && (!cur.latestEnd || latestEnd > cur.latestEnd) ? latestEnd : cur.latestEnd, reconciled: cur.reconciled && isReconciled });
   }
 
   const num = (rows: Array<{ branchId: string; total: string; n: number }>, id: string) => rows.find((r) => r.branchId === id);
@@ -253,6 +276,10 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
 
   const totalToday = rows.reduce((a, r) => a.plus(r.sales), D(0));
   const totalSame = rows.reduce((a, r) => a.plus(r.salesSameTimeYesterday), D(0));
+
+  const finalSheetRevenue = sheetRevTotal.gt(0) ? money2(sheetRevTotal) : money2(totalToday);
+  const finalBottlesSold = sheetSoldTotal > 0 ? sheetSoldTotal : (billBottlesToday[0]?.n ?? 0);
+  const finalPhysicalStock = sheetClosingTotal > 0 ? sheetClosingTotal : (stockTotals[0]?.n ?? 0);
 
   // What needs the owner's eye, per outlet, most urgent first
   const STALE_DAYS = 10;
@@ -275,7 +302,15 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
   return {
     businessDate: today, generatedAt: now.toISOString(),
     branches: rows.map(({ yesterdayHadSales, yesterdayClosed, bank, ...r }) => { void yesterdayHadSales; void yesterdayClosed; void bank; return r; }),
-    totals: { sales: money2(totalToday), salesSameTimeYesterday: money2(totalSame), percent: percentChange(totalToday, totalSame), bills: rows.reduce((a, r) => a + r.bills, 0) },
+    totals: {
+      sales: money2(totalToday),
+      salesSameTimeYesterday: money2(totalSame),
+      percent: percentChange(totalToday, totalSame),
+      bills: rows.reduce((a, r) => a + r.bills, 0),
+      sheetRevenue: finalSheetRevenue,
+      totalBottlesSold: finalBottlesSold,
+      physicalStockPresent: finalPhysicalStock,
+    },
     month: {
       sales: money2(mtd), sameDaysLastMonth: money2(prevSame), lastMonthTotal: money2(prevFull),
       percent: percentChange(mtd, prevSame), percentOfLastMonth: prevFull.isZero() ? null : Math.round(mtd.div(prevFull).mul(1000).toNumber()) / 10,

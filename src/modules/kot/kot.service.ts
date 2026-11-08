@@ -4,7 +4,7 @@
  */
 
 import { db } from '../../db/client.js';
-import { kotOrders, kotItems, tableSessions, products, productServings, categories } from '../../db/schema.js';
+import { kotOrders, kotItems, tableSessions, products, productServings, categories, stock } from '../../db/schema.js';
 import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
 import { canTransitionKotItem, consolidateKotOrders, type KotItemStatus, type KotOrder } from './kot.engine.js';
@@ -64,6 +64,22 @@ export async function createKotOrder(input: CreateKotInput) {
       ? await tx.select().from(productServings).where(inArray(productServings.id, servingIds))
       : [];
     const servingMap = new Map(servingRows.map((s) => [s.id, s]));
+
+    const bottleItems = input.items.filter((i) => !i.servingId);
+    if (bottleItems.length > 0) {
+      const stockEntries = await tx
+        .select({ productId: stock.productId, quantity: stock.quantity })
+        .from(stock)
+        .where(and(eq(stock.branchId, input.branchId), inArray(stock.productId, bottleItems.map((b) => b.productId))));
+      const stockMap = new Map(stockEntries.map((s) => [s.productId, s.quantity]));
+      for (const item of bottleItems) {
+        const available = stockMap.get(item.productId) ?? 0;
+        if (item.quantity > available) {
+          const p = productMap.get(item.productId);
+          throw new BusinessRuleError(`Insufficient stock for ${p?.name ?? 'item'}: requested ${item.quantity}, available ${available}`);
+        }
+      }
+    }
 
     const [order] = await tx
       .insert(kotOrders)
