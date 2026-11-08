@@ -38,9 +38,10 @@ interface RecentSheet {
 }
 
 export function Counter() {
-  const { user } = useAuth();
+  const { user, saasRole } = useAuth();
   const branchId = user?.branchId;
-  const isManager = user?.role === 'manager' || user?.role === 'owner';
+  const isManager = user?.role === 'manager' || user?.role === 'owner' || user?.role === 'office_admin';
+  const isAdmin = user?.role === 'owner' || saasRole === 'admin' || saasRole === 'super_admin';
 
   const todayStr = businessDate();
   const [sheetDate, setSheetDate] = useState(todayStr);
@@ -439,6 +440,7 @@ export function Counter() {
     .filter((l) => l.diffType === 'EXCESS')
     .reduce((sum, l) => sum + l.diffAmount, 0);
   const totalDiscrepancyCount = surplusCount + shortageCount + excessCount;
+  const liveTotalClosingBottles = computedLines.reduce((sum, l) => sum + (parseInt(l.liveClosing, 10) || 0), 0);
 
   const displayLines = computedLines.filter((l) => {
     if (filterStatus !== 'ALL' && l.diffType !== filterStatus) return false;
@@ -458,9 +460,9 @@ export function Counter() {
   return (
     <section className="page active" id="page-counter" aria-labelledby="counterTitle">
       <div className="mb-4">
-        <h2 className="h1 text-2xl font-bold" id="counterTitle">Daily Counter Sheet</h2>
+        <h2 className="h1 text-2xl font-bold" id="counterTitle">Get Stock</h2>
         <div className="muted small text-xs text-gray-500">
-          Auto-updates with POS sales: sold = opening + inward − closing. Physical bottle counts can be adjusted and posted to reconcile stock.
+          Physical bottle counts: sold = opening + inward − {isAdmin ? 'physical stock present' : 'closing'}. Adjust counts and post to reconcile stock.
         </div>
       </div>
 
@@ -485,12 +487,12 @@ export function Counter() {
             Open
           </button>
           <button
-            className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium"
+            className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium cursor-pointer"
             type="button"
             id="counterCreateBtn"
             onClick={handleCreateSheet}
           >
-            Create sheet
+            Get Stock
           </button>
         </div>
 
@@ -517,14 +519,14 @@ export function Counter() {
 
       <div className="card bg-white rounded shadow" id="counterSheet">
         {loading ? (
-          <BeerBottleLoader inline size="sm" title="Loading Counter Sheet…" subtitle="Fetching opening, inward and sold bottle counts…" />
+          <BeerBottleLoader inline size="sm" title="Loading Get Stock Sheet…" subtitle="Fetching opening, inward and physical bottle counts…" />
         ) : !sheet ? (
-          <div className="state p-8 text-center text-gray-500">Pick a date and create or open a sheet.</div>
+          <div className="state p-8 text-center text-gray-500">Pick a date and click "Get Stock" to create or open a sheet.</div>
         ) : (
           <div>
             <div className="pad row between p-4 flex justify-between items-center border-b">
               <div>
-                <div className="h2 text-lg font-bold">Sheet for {sheet.sheetDate}</div>
+                <div className="h2 text-lg font-bold">Get Stock Sheet for {sheet.sheetDate}</div>
                 <div className="muted small text-xs text-gray-500">
                   {sheet.lines.length} {sheet.lines.length === 1 ? 'product' : 'products'}
                   {sheet.postedAt ? ` · posted ${new Date(sheet.postedAt).toLocaleString('en-IN')}` : ''}
@@ -609,13 +611,13 @@ export function Counter() {
                   {liveTotalSoldBottles} bottles
                 </span>
               </div>
-              <div className="p-3 bg-white rounded border flex flex-col">
-                <span className="text-xs text-gray-500 flex items-center gap-1">
-                  <RefreshCw size={13} className="text-indigo-600" />
-                  POS Billed Sales
+              <div className="p-3 bg-white dark:bg-gray-800 rounded border flex flex-col">
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <Package size={13} className="text-purple-600" />
+                  {isAdmin ? 'Physical Stock Present' : 'Total Closing Stock'}
                 </span>
-                <span className="text-lg font-bold text-indigo-700 mt-1">
-                  {totalPosSoldBottles} bottles
+                <span className="text-lg font-bold text-gray-900 dark:text-gray-100 mt-1" id="counterTotalStockPresent">
+                  {liveTotalClosingBottles} bottles
                 </span>
               </div>
               <div className="p-3 bg-white dark:bg-gray-800 rounded border flex flex-col justify-between">
@@ -757,8 +759,9 @@ export function Counter() {
                     <th className="py-2 px-3">Product</th>
                     <th className="py-2 px-3 text-right">Opening</th>
                     <th className="py-2 px-3 text-right">Inward</th>
-                    <th className="py-2 px-3 text-right text-indigo-700">POS Sold</th>
-                    <th className="py-2 px-3 text-right">Closing</th>
+                    <th className="py-2 px-3 text-right">
+                      {isAdmin ? 'Physical Stock Present' : 'Closing'}
+                    </th>
                     <th className="py-2 px-3 text-right">Sold</th>
                     <th className="py-2 px-3 text-right">Rate</th>
                     <th className="py-2 px-3 text-right">Revenue</th>
@@ -814,9 +817,6 @@ export function Counter() {
                           l.liveInward
                         )}
                       </td>
-                      <td className="py-2 px-3 text-right font-mono text-indigo-700 font-semibold">
-                        {l.posSold}
-                      </td>
                       <td className="py-2 px-3 text-right font-mono">
                         {isDraft ? (
                           <div className="flex flex-col items-end gap-1">
@@ -827,7 +827,7 @@ export function Counter() {
                               min="0"
                               value={l.liveClosing}
                               style={{ width: '80px' }}
-                              aria-label={`Closing bottles for ${l.productName}`}
+                              aria-label={`${isAdmin ? 'Physical Stock Present' : 'Closing'} bottles for ${l.productName}`}
                               onChange={(e) => handleClosingChange(l.productId, e.target.value)}
                             />
                             {isManager && l.isSurplus && (
@@ -886,7 +886,7 @@ export function Counter() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t font-bold bg-gray-50">
-                    <td colSpan={7} className="py-3 px-3">Total revenue</td>
+                    <td colSpan={6} className="py-3 px-3">Total revenue</td>
                     <td className="py-3 px-3 text-right font-mono" id="counterTotal">
                       ₹{dirty
                         ? liveTotalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })

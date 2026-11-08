@@ -12,7 +12,7 @@ import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniq
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
-const ROLE = z.enum(['owner', 'manager', 'cashier', 'steward']);
+const ROLE = z.enum(['owner', 'manager', 'office_admin', 'cashier', 'steward']);
 
 const USER_NAME = z.string().trim().min(1).max(100).refine((s) => !/[<>]/.test(s), 'Name must not contain < or >');
 

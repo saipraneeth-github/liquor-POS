@@ -72,7 +72,7 @@ export const LoginSchema = z.object({
 
 // ─── TOKEN PAYLOAD ──────────────────────────────────────────────────────────
 
-export type UserRole = 'owner' | 'manager' | 'cashier' | 'steward';
+export type UserRole = 'owner' | 'manager' | 'office_admin' | 'cashier' | 'steward';
 
 export interface JwtPayload {
   sub: string;        // user ID

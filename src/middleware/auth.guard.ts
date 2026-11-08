@@ -8,10 +8,11 @@ import { ACCESS_MESSAGE, accessState } from '../modules/platform/access.engine.j
 // ─── RBAC ROLE HIERARCHY ─────────────────────────────────────────────────────
 
 export const ROLE_RANK: Record<UserRole, number> = {
-  steward:  1,
-  cashier:  2,
-  manager:  3,
-  owner:    4,
+  steward:      1,
+  cashier:      2,
+  office_admin: 3,
+  manager:      3,
+  owner:        4,
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -14,7 +14,7 @@ process.env.JWT_SECRET ??= 'integration_test_secret_at_least_32_chars!!';
 import bcrypt from 'bcryptjs';
 import type { FastifyInstance } from 'fastify';
 
-export type Role = 'owner' | 'manager' | 'cashier' | 'steward';
+export type Role = 'owner' | 'manager' | 'office_admin' | 'cashier' | 'steward';
 
 export interface IntegrationContext {
   app: FastifyInstance;
@@ -45,7 +45,7 @@ export async function setupIntegration(): Promise<IntegrationContext> {
   const [other] = await db.insert(schema.branches).values({ name: 'Other', code: 'OTH' }).returning();
 
   const passwordHash = await bcrypt.hash('Password@123', 4);
-  const roles: Role[] = ['owner', 'manager', 'cashier', 'steward'];
+  const roles: Role[] = ['owner', 'manager', 'office_admin', 'cashier', 'steward'];
   const users = {} as IntegrationContext['users'];
   for (const role of roles) {
     const [u] = await db.insert(schema.users).values({

@@ -212,7 +212,7 @@ export function Admin() {
     }
   };
 
-  const roles = isOwner ? ['manager', 'cashier', 'steward'] : ['cashier', 'steward'];
+  const roles = isOwner ? ['manager', 'office_admin', 'cashier', 'steward'] : ['office_admin', 'cashier', 'steward'];
 
   const [revealed, setRevealed] = useState<{ email: string; password: string } | null>(null);
 
@@ -266,7 +266,7 @@ export function Admin() {
                       <b>{u.name}</b>
                       <div className="muted small text-xs text-gray-500">{u.email}</div>
                     </td>
-                    <td className="py-2 px-3 font-medium capitalize">{u.role}</td>
+                    <td className="py-2 px-3 font-medium">{u.role === 'office_admin' ? 'Office Admin' : u.role}</td>
                     <td className="py-2 px-3">
                       <span
                         className={`badge text-xs px-2 py-0.5 rounded font-medium ${
@@ -366,7 +366,7 @@ export function Admin() {
             >
               {roles.map((r) => (
                 <option key={r} value={r}>
-                  {r}
+                  {r === 'office_admin' ? 'Office Admin' : r}
                 </option>
               ))}
             </select>

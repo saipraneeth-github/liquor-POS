@@ -40,7 +40,7 @@ type NavItem = {
   label: string;
   icon: typeof Wine;
   id: string;
-  min: 'steward' | 'cashier' | 'manager' | 'owner';
+  min: 'steward' | 'cashier' | 'office_admin' | 'manager' | 'owner';
   group: string;
   pageKey: string;
   /** Restrict an item to one SaaS role (e.g. the Platform console is Super Admin only). */
@@ -60,7 +60,7 @@ const navItems: NavItem[] = [
   { path: '/menu/bar', label: 'Bar Menu', icon: GlassWater, id: 'nav-menu-bar', min: 'steward', group: 'Menu & Stock', pageKey: 'menu/bar' },
   { path: '/products', label: 'Products', icon: Wine, id: 'nav-products', min: 'cashier', group: 'Menu & Stock', pageKey: 'products' },
   { path: '/inventory', label: 'Inventory', icon: Package, id: 'nav-inventory', min: 'cashier', group: 'Menu & Stock', pageKey: 'inventory' },
-  { path: '/counter', label: 'Counter Sheet', icon: ClipboardList, id: 'nav-counter', min: 'cashier', group: 'Menu & Stock', pageKey: 'counter' },
+  { path: '/counter', label: 'Get Stock', icon: ClipboardList, id: 'nav-counter', min: 'cashier', group: 'Menu & Stock', pageKey: 'counter' },
   { path: '/pour', label: 'Pour Control', icon: Droplets, id: 'nav-pour', min: 'manager', group: 'Menu & Stock', pageKey: 'pour' },
 
   { path: '/schemes', label: 'Schemes', icon: Target, id: 'nav-schemes', min: 'manager', group: 'Money & Compliance', pageKey: 'schemes' },
@@ -75,14 +75,15 @@ const navItems: NavItem[] = [
   { path: '/platform', label: 'Platform Console', icon: Globe, id: 'nav-platform', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
 ];
 
-const roleRank = { steward: 1, cashier: 2, manager: 3, owner: 4 };
+const roleRank = { steward: 1, cashier: 2, office_admin: 3, manager: 3, owner: 4 };
 
 const ROLE_LABEL: Record<SaasRole, string> = {
   super_admin: 'Super Admin',
   admin: 'Admin',
-  manager: 'manager',
-  cashier: 'cashier',
-  steward: 'steward',
+  office_admin: 'Office Admin',
+  manager: 'Manager',
+  cashier: 'Cashier',
+  steward: 'Steward',
 };
 
 export function Layout() {
@@ -228,6 +229,12 @@ export function Layout() {
       if (perm !== undefined) {
         return perm.canAccess;
       }
+    }
+
+    // Office Admin access: Dashboard, Inventory, Counter / Get Stock, and Bank Statement Upload
+    if (user.role === 'office_admin' && (!user.pages || user.pages.length === 0)) {
+      const allowedKeys = ['dashboard', 'inventory', 'counter', 'bank'];
+      return allowedKeys.includes(item.pageKey);
     }
 
     // Role-based rank fallback if no explicit menu permissions row exists

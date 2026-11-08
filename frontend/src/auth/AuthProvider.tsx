@@ -5,7 +5,7 @@ export type User = {
   id: string;
   email: string;
   name: string;
-  role: 'owner' | 'manager' | 'cashier' | 'steward';
+  role: 'owner' | 'manager' | 'office_admin' | 'cashier' | 'steward';
   branchId?: string | null;
   syndicateId?: string | null;
   /** OK, or why the business is locked: TRIAL_EXPIRED / OVERDUE (SUSPENDED never gets this far). */
@@ -16,7 +16,7 @@ export type User = {
 export type BranchOption = { id: string; name: string; code: string };
 
 /** Owners have no home branch; they work in the branch picked in the header. */
-export type SaasRole = 'super_admin' | 'admin' | 'manager' | 'cashier' | 'steward';
+export type SaasRole = 'super_admin' | 'admin' | 'office_admin' | 'manager' | 'cashier' | 'steward';
 
 interface AuthContextType {
   /** `branchId` is the branch the app is working in (an owner's selected branch). */

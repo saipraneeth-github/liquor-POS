@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 // ─── ENUMS ──────────────────────────────────────────────────────────────────
 
-export const userRoleEnum = pgEnum('user_role', ['owner', 'manager', 'cashier', 'steward']);
+export const userRoleEnum = pgEnum('user_role', ['owner', 'manager', 'office_admin', 'cashier', 'steward']);
 export const billStatusEnum = pgEnum('bill_status', ['OPEN', 'PAID', 'VOIDED']);
 export const taxTypeEnum = pgEnum('tax_type', ['GST', 'VAT_EXCISE']);
 export const menuTypeEnum = pgEnum('menu_type', ['RETAIL', 'KITCHEN', 'BAR']);

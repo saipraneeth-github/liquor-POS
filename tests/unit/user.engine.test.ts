@@ -11,15 +11,16 @@ const manager = { id: 'm', role: 'manager' };
 const cashier = { id: 'c', role: 'cashier', branchId: 'b1' };
 
 describe('role assignment', () => {
-  it('owner can assign any role; manager only cashier/steward; others none', () => {
-    expect(assignableRoles('owner')).toHaveLength(4);
-    expect(assignableRoles('manager')).toEqual(['cashier', 'steward']);
+  it('owner can assign any role; manager only office_admin/cashier/steward; others none', () => {
+    expect(assignableRoles('owner')).toHaveLength(5);
+    expect(assignableRoles('manager')).toEqual(['office_admin', 'cashier', 'steward']);
     expect(assignableRoles('cashier')).toEqual([]);
   });
 
   it('manager cannot create a manager or owner', () => {
     expect(() => assertCanAssignRole('manager', 'manager')).toThrow();
     expect(() => assertCanAssignRole('manager', 'owner')).toThrow();
+    expect(() => assertCanAssignRole('manager', 'office_admin')).not.toThrow();
     expect(() => assertCanAssignRole('manager', 'steward')).not.toThrow();
   });
 });

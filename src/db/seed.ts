@@ -46,16 +46,17 @@ export async function seedDatabase(): Promise<void> {
   // 2. Users — owner is scoped to the syndicate (no single branch); others work in the branch
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   await db.insert(users).values([
-    { name: 'Store Owner',     email: 'owner@liquor.com',   passwordHash, role: 'owner',   branchId: null, syndicateId: syndicate.id },
-    { name: 'Branch Manager',  email: 'manager@liquor.com', passwordHash, role: 'manager', branchId },
-    { name: 'Counter Cashier', email: 'cashier@liquor.com', passwordHash, role: 'cashier', branchId },
-    { name: 'Floor Steward',   email: 'steward@liquor.com', passwordHash, role: 'steward', branchId },
+    { name: 'Store Owner',     email: 'owner@liquor.com',       passwordHash, role: 'owner',        branchId: null, syndicateId: syndicate.id },
+    { name: 'Branch Manager',  email: 'manager@liquor.com',     passwordHash, role: 'manager',      branchId },
+    { name: 'Office Admin',    email: 'officeadmin@liquor.com', passwordHash, role: 'office_admin', branchId },
+    { name: 'Counter Cashier', email: 'cashier@liquor.com',     passwordHash, role: 'cashier',      branchId },
+    { name: 'Floor Steward',   email: 'steward@liquor.com',     passwordHash, role: 'steward',      branchId },
   ]).onConflictDoNothing();
   // Super Admin = platform owner (no branch, no tenant): the SaaS vendor team
   await db.insert(users).values({
     name: 'Platform Owner', email: 'superadmin@liquor.com', passwordHash, role: 'owner', branchId: null, syndicateId: null,
   }).onConflictDoNothing();
-  console.log(` Users ready: superadmin@ / owner@ (Admin) / manager@ / cashier@ / steward@liquor.com (Password: ${SEED_PASSWORD})`);
+  console.log(` Users ready: superadmin@ / owner@ (Admin) / manager@ / officeadmin@ / cashier@ / steward@liquor.com (Password: ${SEED_PASSWORD})`);
 
   // 3. Categories
   await db.insert(categories).values([

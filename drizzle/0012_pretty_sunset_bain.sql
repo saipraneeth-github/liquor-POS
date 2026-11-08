@@ -1,0 +1,1 @@
+ALTER TYPE "public"."user_role" ADD VALUE 'office_admin' BEFORE 'cashier';

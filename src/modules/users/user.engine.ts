@@ -4,7 +4,7 @@
 
 import type { UserRole } from '../auth/auth.service.js';
 
-const RANK: Record<UserRole, number> = { steward: 1, cashier: 2, manager: 3, owner: 4 };
+const RANK: Record<UserRole, number> = { steward: 1, cashier: 2, office_admin: 3, manager: 4, owner: 5 };
 
 function rank(role: string): number {
   return RANK[role as UserRole] ?? 0;
@@ -13,12 +13,12 @@ function rank(role: string): number {
 /**
  * Which roles an actor may grant (on create or role change).
  *   owner   → any role
- *   manager → cashier, steward
+ *   manager → office_admin, cashier, steward
  *   others  → none
  */
 export function assignableRoles(actorRole: string): UserRole[] {
-  if (actorRole === 'owner') return ['owner', 'manager', 'cashier', 'steward'];
-  if (actorRole === 'manager') return ['cashier', 'steward'];
+  if (actorRole === 'owner') return ['owner', 'manager', 'office_admin', 'cashier', 'steward'];
+  if (actorRole === 'manager') return ['office_admin', 'cashier', 'steward'];
   return [];
 }
 

@@ -62,11 +62,13 @@ interface ClosingResponse {
 }
 
 export function Closing() {
-  const { user } = useAuth();
+  const { user, saasRole } = useAuth();
   const branchId = user?.branchId;
+  const isAdmin = user?.role === 'owner' || saasRole === 'admin' || saasRole === 'super_admin';
 
   const todayStr = businessDate();
   const [closingDate, setClosingDate] = useState(todayStr);
+  const [physicalStockPresent, setPhysicalStockPresent] = useState<number | null>(null);
 
   // Auto-calculated live sales from system bills
   const [autoSales, setAutoSales] = useState<{
@@ -158,6 +160,18 @@ export function Closing() {
         const expected = Math.max(0, (parseFloat(op) || 0) + (parseFloat(res.sales.cashSales) || 0));
         setActualCash(expected.toFixed(2));
       }
+
+      // Fetch Get Stock physical present bottle count for the day
+      api.get<{ lines?: Array<{ closingBottles: number }> }>(`/counter-sheets/${branchId}?date=${d}`)
+        .then((sheetRes) => {
+          if (sheetRes?.lines && Array.isArray(sheetRes.lines)) {
+            const total = sheetRes.lines.reduce((sum, l) => sum + (l.closingBottles || 0), 0);
+            setPhysicalStockPresent(total);
+          } else {
+            setPhysicalStockPresent(null);
+          }
+        })
+        .catch(() => setPhysicalStockPresent(null));
     } catch (err: any) {
       console.error('Failed to load closing preview:', err);
     } finally {
@@ -673,10 +687,10 @@ export function Closing() {
             <div className="flex justify-between items-start border-b border-purple-800/80 pb-3">
               <div>
                 <span className="text-[11px] uppercase tracking-wider text-purple-300 font-semibold">
-                  Final Summary
+                  {isAdmin ? 'Admin Summary' : 'Final Summary'}
                 </span>
                 <h3 className="text-lg font-extrabold text-white">
-                  Total Amount for Day Closing
+                  {isAdmin ? 'Physical Stock Present & Sales Summary' : 'Total Amount for Day Closing'}
                 </h3>
               </div>
               <span
@@ -687,6 +701,21 @@ export function Closing() {
                 {isBalanced ? 'Balanced' : 'Diff: ₹' + Math.abs(cashDiscrepancy).toFixed(2)}
               </span>
             </div>
+
+            {/* Admin Physical Stock Present Display */}
+            {isAdmin && (
+              <div className="bg-white/15 p-3 rounded-xl border border-white/20 space-y-1">
+                <span className="text-purple-200 text-xs font-bold block uppercase tracking-wide">
+                  Physical Stock Present
+                </span>
+                <div id="closingPhysicalStockPresent" className="text-2xl font-mono font-black text-emerald-300">
+                  {physicalStockPresent !== null ? `${physicalStockPresent.toLocaleString('en-IN')} bottles` : 'Recorded in Get Stock'}
+                </div>
+                <span className="text-[10px] text-purple-200/80">
+                  Total verified physical bottle count from Get Stock for {closingDate}
+                </span>
+              </div>
+            )}
 
             {/* Huge Gross Sales Display */}
             <div className="space-y-1">
