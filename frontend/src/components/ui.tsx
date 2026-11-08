@@ -63,3 +63,5 @@ export function Badge({ children, tone }: { children: ReactNode; tone: 'good' | 
 }
 
 export { BeerBottleLoader, type BeerBottleLoaderProps } from './BeerBottleLoader';
+export { ProtectedButton } from './ProtectedButton';
+export type { ProtectedButtonProps, ButtonVariant, AppRole } from './ProtectedButton';

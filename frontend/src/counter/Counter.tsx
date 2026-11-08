@@ -3,6 +3,7 @@ import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package, Download,
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { ProtectedButton } from '../components/ui';
 import { businessDate } from '../lib/business-day';
 
 interface CounterLine {
@@ -935,14 +936,17 @@ export function Counter() {
                     </button>
                   </div>
                   {isManager ? (
-                    <button
-                      type="button"
-                      className="btn-sec px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border font-medium"
+                    <ProtectedButton
+                      variant="secondary"
+                      minRole="manager"
                       id="counterPostBtn"
+                      className="px-4 py-2 font-medium"
+                      confirmMessage="Are you sure you want to post this sheet? Posted sheets record stock adjustments and become read-only."
+                      confirmLabel="Post sheet"
                       onClick={handlePostSheet}
                     >
                       Post sheet
-                    </button>
+                    </ProtectedButton>
                   ) : (
                     <span className="muted small text-xs text-gray-500">A manager posts the sheet.</span>
                   )}
@@ -963,14 +967,17 @@ export function Counter() {
                 </span>
                 <div className="flex items-center gap-2">
                   {canRevertToDraft && (
-                    <button
-                      type="button"
-                      className="btn-sec px-3 py-2 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 rounded border border-amber-300 dark:border-amber-700 font-medium text-xs flex items-center gap-1.5 cursor-pointer"
+                    <ProtectedButton
+                      variant="secondary"
+                      minRole="manager"
+                      confirmMessage="Revert this posted sheet to draft? You will be able to make changes again."
+                      confirmLabel="Revert to Draft"
+                      className="px-3 py-2 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 rounded border border-amber-300 dark:border-amber-700 font-medium text-xs flex items-center gap-1.5 cursor-pointer"
                       onClick={handleRevertToDraft}
                     >
                       <RotateCcw size={14} />
                       Revert to Draft
-                    </button>
+                    </ProtectedButton>
                   )}
                   <div className="flex items-center gap-1">
                     <button

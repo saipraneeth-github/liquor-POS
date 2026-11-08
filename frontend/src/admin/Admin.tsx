@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { errorMessage } from '../lib/print';
-import { Modal } from '../components/ui';
+import { Modal, ProtectedButton } from '../components/ui';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 
 interface UserItem {
@@ -281,13 +281,17 @@ export function Admin() {
                         <span className="muted small text-xs text-gray-500">You</span>
                       ) : (
                         <div className="row flex items-center gap-2">
-                          <button
+                          <ProtectedButton
                             type="button"
-                            className="btn-sec btn-sm px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border text-xs"
+                            variant={u.isActive ? 'danger' : 'secondary'}
+                            minRole="manager"
+                            confirmMessage={u.isActive ? 'Deactivate this user? They will not be able to log in until reactivated.' : undefined}
+                            confirmLabel="Deactivate"
+                            className="px-2.5 py-1 text-xs"
                             onClick={() => handleToggleUserActive(u.id, !u.isActive)}
                           >
                             {u.isActive ? 'Deactivate' : 'Activate'}
-                          </button>
+                          </ProtectedButton>
                           <button
                             type="button"
                             className="btn-sec btn-sm px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border text-xs"
@@ -295,13 +299,17 @@ export function Admin() {
                           >
                             Pages
                           </button>
-                          <button
+                          <ProtectedButton
                             type="button"
-                            className="user-reset btn-sec btn-sm px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border text-xs"
+                            variant="secondary"
+                            minRole="manager"
+                            confirmMessage="Reset password for this user? A temporary password will be generated."
+                            confirmLabel="Reset password"
+                            className="user-reset px-2.5 py-1 text-xs"
                             onClick={() => resetPassword(u.id)}
                           >
                             Reset password
-                          </button>
+                          </ProtectedButton>
                         </div>
                       )}
                     </td>
@@ -364,14 +372,16 @@ export function Admin() {
             </select>
           </label>
           <div className="col-span-full">
-            <button
-              className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm disabled:opacity-50"
+            <ProtectedButton
               type="submit"
               id="nuSubmit"
+              minRole="manager"
+              loading={creatingUser}
               disabled={creatingUser}
+              className="px-4 py-2 font-medium text-sm"
             >
-              {creatingUser ? 'Creating…' : 'Create user'}
-            </button>
+              Create user
+            </ProtectedButton>
           </div>
         </form>
       </div>
@@ -418,13 +428,15 @@ export function Admin() {
               onChange={(e) => setNtName(e.target.value)}
             />
           </label>
-          <button
-            className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm disabled:opacity-50"
+          <ProtectedButton
             type="submit"
+            minRole="manager"
+            loading={creatingTerminal}
             disabled={creatingTerminal}
+            className="px-4 py-2 font-medium text-sm"
           >
-            {creatingTerminal ? 'Adding…' : 'Add terminal'}
-          </button>
+            Add terminal
+          </ProtectedButton>
         </form>
       </div>
 

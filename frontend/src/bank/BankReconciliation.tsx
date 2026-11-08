@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Landmark } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
-import { Badge, Field, Modal, inr } from '../components/ui';
+import { Badge, Field, Modal, inr, ProtectedButton } from '../components/ui';
 import { errorMessage, showToast } from '../lib/print';
 import { IgnoreRules } from './IgnoreRules';
 import { ReconcileStatement } from './ReconcileStatement';
@@ -47,7 +47,6 @@ export function BankReconciliation() {
   useEffect(() => { void loadStatements(); }, [loadStatements]);
 
   const deleteStatement = async (s: StatementRow) => {
-    if (!window.confirm(`Delete the statement ${s.periodStart} → ${s.periodEnd}? Its lines and matches are removed. Entries posted to your books stay (a statement that posted any cannot be deleted).`)) return;
     try { await api.delete(`/bank/statements/${s.id}`); showToast('Statement deleted', 'success'); await loadStatements(); }
     catch (err) { showToast(errorMessage(err), 'error'); }
   };
@@ -109,7 +108,16 @@ export function BankReconciliation() {
                     </div>
                     <div className="flex gap-2">
                       <button type="button" data-action="open-statement" onClick={() => setView({ name: 'reconcile', statementId: s.id })} className="px-3 py-2 text-sm rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-700 cursor-pointer">{s.status === 'RECONCILED' ? 'View' : 'Reconcile'}</button>
-                      <button type="button" onClick={() => void deleteStatement(s)} className="px-3 py-2 text-sm rounded-lg border dark:border-gray-600 text-gray-500 hover:text-red-600 cursor-pointer">Delete</button>
+                      <ProtectedButton
+                        variant="secondary"
+                        minRole="manager"
+                        confirmMessage={`Delete the statement ${s.periodStart} → ${s.periodEnd}? Its lines and matches are removed. Entries posted to your books stay (a statement that posted any cannot be deleted).`}
+                        confirmLabel="Delete"
+                        onClick={() => deleteStatement(s)}
+                        className="px-3 py-2 text-sm border dark:border-gray-600 text-gray-500 hover:text-red-600"
+                      >
+                        Delete
+                      </ProtectedButton>
                     </div>
                   </div>
                 );

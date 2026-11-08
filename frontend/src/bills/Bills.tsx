@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { ProtectedButton } from '../components/ui';
 import { businessDate } from '../lib/business-day';
 
 type BillItem = {
@@ -40,8 +41,6 @@ function todayIso(): string {
   return businessDate();
 }
 
-const roleRank = { steward: 1, cashier: 2, manager: 3, owner: 4 };
-
 export function Bills() {
   const { user } = useAuth();
   const [date, setDate] = useState(todayIso());
@@ -58,7 +57,6 @@ export function Bills() {
   const [voidReason, setVoidReason] = useState('');
   const [voidSubmitting, setVoidSubmitting] = useState(false);
 
-  const canVoid = (roleRank[user?.role ?? 'cashier'] ?? 0) >= roleRank.manager;
   const sub = (user as any)?.sub ?? user?.id ?? '';
   const branchId = (user as any)?.branchId ?? '';
 
@@ -293,14 +291,16 @@ export function Bills() {
                       >
                         View
                       </button>
-                      {canVoid && b.status === 'PAID' && (
-                        <button
+                      {b.status === 'PAID' && (
+                        <ProtectedButton
                           type="button"
+                          variant="danger"
+                          minRole="manager"
                           onClick={() => handleOpenVoid(b)}
-                          className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                          className="px-2 py-1 text-xs"
                         >
                           Void
-                        </button>
+                        </ProtectedButton>
                       )}
                     </td>
                   </tr>
@@ -368,14 +368,17 @@ export function Bills() {
                     >
                       Cancel
                     </button>
-                    <button
+                    <ProtectedButton
                       type="submit"
                       id="voidConfirmBtn"
+                      variant="danger"
+                      minRole="manager"
+                      loading={voidSubmitting}
                       disabled={voidReason.trim().length < 5 || voidSubmitting}
-                      className="px-4 py-2 bg-red-600 text-white rounded text-sm font-semibold hover:bg-red-700 disabled:opacity-50"
+                      className="px-4 py-2 text-sm"
                     >
-                      {voidSubmitting ? 'Voiding...' : 'Void bill'}
-                    </button>
+                      Void bill
+                    </ProtectedButton>
                   </div>
                 </form>
               )}

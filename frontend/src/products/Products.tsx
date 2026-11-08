@@ -9,6 +9,7 @@ import {
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { ProtectedButton } from '../components/ui';
 
 interface Category {
   id: string;
@@ -403,13 +404,14 @@ export function Products() {
                   </td>
                   {isManager && (
                     <td className="py-2 px-3 text-right">
-                      <button
-                        type="button"
-                        className="btn-sec btn-sm px-2 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded border border-gray-300 dark:border-gray-600 text-xs transition-colors"
+                      <ProtectedButton
+                        variant="secondary"
+                        minRole="manager"
+                        className="px-2 py-1 text-xs"
                         onClick={() => handleOpenMrp(p)}
                       >
                         Edit MRP
-                      </button>
+                      </ProtectedButton>
                     </td>
                   )}
                 </tr>
@@ -536,13 +538,15 @@ export function Products() {
               </label>
 
               <div className="col-span-full pt-2">
-                <button
-                  className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium text-sm disabled:opacity-50 transition-colors"
+                <ProtectedButton
                   type="submit"
+                  minRole="manager"
+                  loading={creating}
                   disabled={creating}
+                  className="px-4 py-2 font-medium text-sm"
                 >
-                  {creating ? 'Creating…' : 'Create product'}
-                </button>
+                  Create product
+                </ProtectedButton>
               </div>
             </form>
           </div>
@@ -586,14 +590,16 @@ export function Products() {
                 >
                   Cancel
                 </button>
-                <button
+                <ProtectedButton
                   type="submit"
                   id="mrpSaveBtn"
-                  className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium disabled:opacity-50 transition-colors"
+                  minRole="manager"
+                  loading={savingMrp}
                   disabled={savingMrp}
+                  className="px-4 py-2 text-sm font-medium"
                 >
-                  {savingMrp ? 'Saving…' : 'Save & audit'}
-                </button>
+                  Save & audit
+                </ProtectedButton>
               </div>
             </form>
           </div>

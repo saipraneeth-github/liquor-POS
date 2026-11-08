@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getCategoryInfo } from '../components/category-icons';
 import { X, Trash2, AlertTriangle, FileText, Camera, PackageOpen, Loader2 } from 'lucide-react';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { ProtectedButton } from '../components/ui';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { showToast } from '../lib/toast';
@@ -898,9 +899,6 @@ export function Inventory() {
 
 
   const handleDeleteInvoice = async (id: string, invoiceNumber: string) => {
-    if (!window.confirm(`Are you sure you want to delete invoice ${invoiceNumber || 'draft'}? This action cannot be undone.`)) {
-      return;
-    }
     try {
       await api.delete(`/invoices/detail/${id}`);
       showToast(`Invoice ${invoiceNumber || 'draft'} deleted.`, 'success');
@@ -1280,15 +1278,16 @@ export function Inventory() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {isManager && (
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg font-medium cursor-pointer transition-colors"
-                      onClick={() => handleDeleteInvoice(activeInvoice.invoice.id, activeInvoice.invoice.invoiceNumber)}
-                    >
-                      <Trash2 size={14} /> Delete Bill
-                    </button>
-                  )}
+                  <ProtectedButton
+                    variant="danger"
+                    minRole="manager"
+                    confirmMessage={`Are you sure you want to delete invoice ${activeInvoice.invoice.invoiceNumber || 'draft'}? This action cannot be undone.`}
+                    confirmLabel="Delete"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg font-medium cursor-pointer transition-colors"
+                    onClick={() => handleDeleteInvoice(activeInvoice.invoice.id, activeInvoice.invoice.invoiceNumber)}
+                  >
+                    <Trash2 size={14} /> Delete Bill
+                  </ProtectedButton>
                   <button
                     type="button"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg font-medium cursor-pointer transition-colors"
@@ -1674,16 +1673,18 @@ export function Inventory() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {isManager && activeInvoice.invoice.status === 'DRAFT' && (
-                    <button
+                  {activeInvoice.invoice.status === 'DRAFT' && (
+                    <ProtectedButton
                       id="invReviewBtn"
                       type="button"
+                      minRole="manager"
+                      loading={isReviewing}
                       disabled={isReviewing || isApproving}
                       className="min-h-[44px] px-4 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all shadow-sm"
                       onClick={handleReview}
                     >
                       <span>✓</span> {isReviewing ? 'Reviewing…' : 'Mark as Reviewed'}
-                    </button>
+                    </ProtectedButton>
                   )}
 
                   {activeInvoice.invoice.status === 'REVIEWED' && (
@@ -1812,32 +1813,28 @@ export function Inventory() {
                   ) : (
                     <div className="flex items-center gap-3 w-full sm:w-auto">
                       {activeInvoice.invoice.status === 'DRAFT' && (
-                        <button
+                        <ProtectedButton
                           type="button"
+                          minRole="manager"
+                          loading={isReviewing}
                           disabled={isReviewing || isApproving}
                           className="min-h-[48px] px-5 py-2.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all shadow-sm"
                           onClick={handleReview}
                         >
                           <span>✓</span> {isReviewing ? 'Reviewing…' : 'Mark as Reviewed'}
-                        </button>
+                        </ProtectedButton>
                       )}
-                      <button
+                      <ProtectedButton
                         id="invApproveBtn"
                         type="button"
+                        minRole="manager"
+                        loading={isApproving}
                         disabled={isApproving}
                         className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
                         onClick={handleApprove}
                       >
-                      {isApproving ? (
-                        <>
-                          <Loader2 size={18} className="animate-spin" aria-hidden="true" /> Pouring into Live Stock...
-                        </>
-                      ) : (
-                        <>
-                          Confirm &amp; Add to Live Stock
-                        </>
-                      )}
-                    </button>
+                        {isApproving ? 'Pouring into Live Stock...' : 'Confirm & Add to Live Stock'}
+                      </ProtectedButton>
                   </div>
                 )
                 ) : (
@@ -1988,15 +1985,16 @@ export function Inventory() {
                       </td>
                       <td className="py-3 px-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {isManager && inv.status === 'DRAFT' && (
-                            <button
+                          {inv.status === 'DRAFT' && (
+                            <ProtectedButton
                               type="button"
+                              minRole="manager"
                               className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:hover:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded font-semibold text-xs cursor-pointer flex items-center gap-1 shadow-xs transition-colors"
                               onClick={() => handleReviewInvoiceById(inv.id, inv.invoiceNumber)}
                               title="Mark bill as reviewed"
                             >
                               <span>✓</span> Review
-                            </button>
+                            </ProtectedButton>
                           )}
                           <button
                             type="button"
@@ -2005,16 +2003,17 @@ export function Inventory() {
                           >
                             Open Bill
                           </button>
-                          {isManager && (
-                            <button
-                              type="button"
-                              title="Delete bill"
-                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer"
-                              onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
+                          <ProtectedButton
+                            variant="ghost"
+                            minRole="manager"
+                            title="Delete bill"
+                            confirmMessage={`Delete invoice ${inv.invoiceNumber || 'draft'}? This action cannot be undone.`}
+                            confirmLabel="Delete"
+                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer"
+                            onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                          >
+                            <Trash2 size={16} />
+                          </ProtectedButton>
                         </div>
                       </td>
                     </tr>
@@ -2114,16 +2113,15 @@ export function Inventory() {
                   {showBreakage ? '✕ Hide Breakage' : 'Record Breakage'}
                 </button>
 
-                {isManager && (
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 cursor-pointer flex items-center gap-1 transition-colors"
-                    onClick={handleClearCompleteInventory}
-                    title="Delete all stock and previous bills to start fresh"
-                  >
-                    <Trash2 size={13} /> Clear Store Stock
-                  </button>
-                )}
+                <ProtectedButton
+                  variant="danger"
+                  minRole="manager"
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 cursor-pointer flex items-center gap-1 transition-colors"
+                  onClick={handleClearCompleteInventory}
+                  title="Delete all stock and previous bills to start fresh"
+                >
+                  <Trash2 size={13} /> Clear Store Stock
+                </ProtectedButton>
               </div>
             </div>
 

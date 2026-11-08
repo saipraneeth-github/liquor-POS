@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { ProtectedButton } from '../components/ui';
 
 interface Customer {
   id: string;
@@ -374,14 +375,15 @@ export function Customers() {
                     </label>
                   </>
                 )}
-                <button
-                  className="btn-primary mt-2 px-4 py-2 bg-purple-600 text-white rounded font-medium disabled:opacity-50"
+                <ProtectedButton
                   type="submit"
                   id="custCreateBtn"
+                  loading={creating}
                   disabled={creating}
+                  className="mt-2 px-4 py-2 font-medium"
                 >
-                  {creating ? 'Creating…' : 'Create'}
-                </button>
+                  Create
+                </ProtectedButton>
               </form>
             </div>
           </details>
@@ -479,14 +481,15 @@ export function Customers() {
                     onChange={(e) => setRepayNotes(e.target.value)}
                   />
                 </label>
-                <button
+                <ProtectedButton
                   type="submit"
-                  className="btn-primary px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium disabled:opacity-50"
                   id="repayBtn"
+                  loading={repaying}
                   disabled={repaying || parseFloat(statement.outstanding) <= 0}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
                 >
-                  {repaying ? 'Saving…' : 'Record repayment'}
-                </button>
+                  Record repayment
+                </ProtectedButton>
               </form>
 
               {isManager && (
@@ -522,9 +525,14 @@ export function Customers() {
                         />
                         Active
                       </label>
-                      <button type="submit" className="btn-sec px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border">
+                      <ProtectedButton
+                        type="submit"
+                        minRole="manager"
+                        variant="secondary"
+                        className="px-3 py-1"
+                      >
                         Save
-                      </button>
+                      </ProtectedButton>
                     </form>
                   </div>
                 </details>

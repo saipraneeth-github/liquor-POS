@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { Badge, Field, Modal, inr } from '../components/ui';
+import { Badge, Field, Modal, inr, ProtectedButton } from '../components/ui';
 import { errorMessage, showToast } from '../lib/print';
 import { IGNORE_REASONS, IGNORE_REASON_LABEL, type Account, type IgnoreReason, type IgnoreRule, type RuleDraft } from './types';
 
@@ -22,7 +22,6 @@ export function IgnoreRules({ account }: { account: Account }) {
     try { await api.patch(`/bank/rules/${id}`, body); await load(); } catch (err) { showToast(errorMessage(err), 'error'); }
   };
   const remove = async (r: IgnoreRule) => {
-    if (!window.confirm(`Delete the rule “${r.pattern}”? Lines it already ignored stay ignored; it just stops acting on new statements.`)) return;
     try { await api.delete(`/bank/rules/${r.id}`); showToast('Rule deleted', 'success'); await load(); } catch (err) { showToast(errorMessage(err), 'error'); }
   };
 
@@ -63,7 +62,17 @@ export function IgnoreRules({ account }: { account: Account }) {
                   <label className="flex items-center gap-1 text-xs cursor-pointer">
                     <input type="checkbox" checked={r.isActive} onChange={(e) => void patch(r.id, { isActive: e.target.checked })} /> On
                   </label>
-                  <button type="button" data-rule-delete onClick={() => void remove(r)} className="text-xs text-gray-500 hover:text-red-600 cursor-pointer">Delete</button>
+                  <ProtectedButton
+                    variant="ghost"
+                    minRole="manager"
+                    data-rule-delete
+                    confirmMessage={`Delete the rule “${r.pattern}”? Lines it already ignored stay ignored; it just stops acting on new statements.`}
+                    confirmLabel="Delete"
+                    onClick={() => remove(r)}
+                    className="p-0 text-xs text-gray-500 hover:text-red-600"
+                  >
+                    Delete
+                  </ProtectedButton>
                 </div>
               ))}
             </div>
