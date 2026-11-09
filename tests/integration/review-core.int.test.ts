@@ -130,7 +130,8 @@ describe('branch hierarchy', () => {
 
 describe('bill tax with discount', () => {
   it('stores GST on the discounted transaction value', async () => {
-    const res = await inject('POST', '/api/v1/bills', ctx.auth('cashier'), {
+    // a 10% discount: needs manager-level rights (a cashier is capped at 5%)
+    const res = await inject('POST', '/api/v1/bills', ctx.auth('manager'), {
       branchId: ctx.branchId, paymentMode: 'CASH', discount: '100.00',
       items: [{ productId: ctx.products[0].id, quantity: 1 }],   // whisky 1000 @ 18%
     });

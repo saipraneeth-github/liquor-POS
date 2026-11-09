@@ -12,6 +12,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
+import { assertSaleTypeAllowed, allowedSaleTypeIds } from '../permissions/permission.service.js';
+import { listBranchSaleTypes } from '../saletypes/saletype.service.js';
+import { db } from '../../db/client.js';
 import {
   createSheet,
   listSheets,
@@ -36,7 +39,15 @@ async function loadAccessibleSheet(request: FastifyRequest, reply: FastifyReply)
   if (!params.success) { reply.code(404).send({ error: 'Counter sheet not found' }); return null; }
   const sheet = await getSheetRow(params.data.id);
   if (!sheet) { reply.code(404).send({ error: 'Counter sheet not found' }); return null; }
-  if (!(await assertBranchAccess(getUser(request), sheet.branchId, reply))) return null;
+  const user = getUser(request);
+  if (!(await assertBranchAccess(user, sheet.branchId, reply))) return null;
+  // a cashier limited to some sale types cannot open, count or export another type's sheet
+  try {
+    await assertSaleTypeAllowed(user, sheet.branchId, sheet.saleTypeId);
+  } catch {
+    reply.code(403).send({ error: 'You are not allowed to work with this sale type' });
+    return null;
+  }
   return sheet;
 }
 
@@ -49,6 +60,7 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
     const user = getUser(request);
     if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
     try {
+      await assertSaleTypeAllowed(user, params.data.branchId, parsed.data.saleTypeId ?? null);
       const sheet = await createSheet(user, params.data.branchId, parsed.data.sheetDate, parsed.data.saleTypeId);
       return reply.code(201).send(sheet);
     } catch (err) {
@@ -73,7 +85,11 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
     if (!query.success) return reply.code(400).send({ error: 'Validation failed', details: query.error.flatten() });
     if (!(await assertBranchAccess(getUser(request), params.data.branchId, reply))) return;
     try {
-      return await listSheets(params.data.branchId, query.data.date, query.data.saleTypeId);
+      const sheets = await listSheets(params.data.branchId, query.data.date, query.data.saleTypeId);
+      const allowed = await allowedSaleTypeIds(getUser(request));
+      if (allowed === null) return sheets;
+      const defaultId = (await listBranchSaleTypes(db, params.data.branchId)).find((t) => t.isDefault)?.id ?? '';
+      return sheets.filter((s) => allowed.includes(s.saleTypeId ?? defaultId));
     } catch (err) {
       return sendError(reply, err, 'Counter sheet listing failed');
     }
@@ -176,6 +192,7 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
     const query = ListSheetsQuerySchema.safeParse(request.query);
     if (!query.success) return reply.code(400).send({ error: 'Validation failed', details: query.error.flatten() });
     if (!(await assertBranchAccess(getUser(request), params.data.branchId, reply))) return;
+    if ((await allowedSaleTypeIds(getUser(request))) !== null) return reply.code(403).send({ error: 'Export a single sheet instead: you are limited to some sale types' });
     try {
       if (query.data.format === 'xlsx' || query.data.format === 'excel') {
         const { buffer, filename } = await getBranchSheetExcel(params.data.branchId, query.data.date);
@@ -200,6 +217,7 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
     const query = ListSheetsQuerySchema.safeParse(request.query);
     if (!query.success) return reply.code(400).send({ error: 'Validation failed', details: query.error.flatten() });
     if (!(await assertBranchAccess(getUser(request), params.data.branchId, reply))) return;
+    if ((await allowedSaleTypeIds(getUser(request))) !== null) return reply.code(403).send({ error: 'Export a single sheet instead: you are limited to some sale types' });
     try {
       const { buffer, filename } = await getBranchSheetExcel(params.data.branchId, query.data.date);
       return reply

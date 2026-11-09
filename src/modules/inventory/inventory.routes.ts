@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
+import { stripCost, userCan } from '../permissions/permission.service.js';
 
 const MONEY = z.string().regex(/^\d+(\.\d{1,2})?$/, 'must be a decimal string with up to 2dp');
 import {
@@ -49,7 +50,8 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
     if (!(await assertBranchAccess(user, branchId, reply))) return;
 
     const stockList = await getStockStatus(branchId);
-    return stockList;
+    // buying prices only for people who may see them; everyone else gets the selling side of the stock
+    return (await userCan(user, 'cost.view')) ? stockList : stripCost(stockList);
   });
 
   // GET /inventory/indent/:branchId — auto indent estimation (manager+)

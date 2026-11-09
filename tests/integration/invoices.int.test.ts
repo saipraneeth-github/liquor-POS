@@ -75,7 +75,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     const upRes = await ctx.app.inject({
       method: 'POST',
       url: `/api/v1/invoices/${ctx.branchId}/upload`,
-      headers: { ...ctx.auth('cashier'), 'content-type': mp.contentType },
+      headers: { ...ctx.auth('manager'), 'content-type': mp.contentType },
       payload: mp.body,
     });
     expect(upRes.statusCode).toBe(201);
@@ -108,7 +108,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     });
 
     // Download original attachment and check security headers
-    const dlRes = await inject('GET', `/invoices/detail/${invId}/file`, ctx.auth('cashier'));
+    const dlRes = await inject('GET', `/invoices/detail/${invId}/file`, ctx.auth('manager'));
     expect(dlRes.statusCode).toBe(200);
     expect(dlRes.headers['x-content-type-options']).toBe('nosniff');
     expect(dlRes.headers['content-disposition']).toContain('tsbcl-oct.csv');
@@ -119,7 +119,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     expect((await inject('POST', `/invoices/detail/${invId}/approve`, ctx.auth('manager'))).statusCode).toBe(422);
 
     // Cashier edits draft to map line 2 to beer
-    const editRes = await inject('PUT', `/invoices/detail/${invId}`, ctx.auth('cashier'), {
+    const editRes = await inject('PUT', `/invoices/detail/${invId}`, ctx.auth('manager'), {
       supplierName: 'Telangana Beverages Corp',
       invoiceNumber: 'TSBCL-2026-101',
       invoiceDate: '2026-10-24',
@@ -228,13 +228,13 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     expect(dupRes.json().message).toMatch(/Invoice number DG-2026-55 has already been uploaded on/);
 
     // Verify GET /invoices/:branchId/check-duplicate (case-insensitive & trimmed)
-    const checkFound = await inject('GET', `/invoices/${ctx.branchId}/check-duplicate?invoiceNumber=  dg-2026-55  `, ctx.auth('cashier'));
+    const checkFound = await inject('GET', `/invoices/${ctx.branchId}/check-duplicate?invoiceNumber=  dg-2026-55  `, ctx.auth('manager'));
     expect(checkFound.statusCode).toBe(200);
     expect(checkFound.json().exists).toBe(true);
     expect(checkFound.json().message).toMatch(/Invoice number DG-2026-55 has already been uploaded on/);
     expect(checkFound.json().invoice.id).toBe(body1.invoice.id);
 
-    const checkNotFound = await inject('GET', `/invoices/${ctx.branchId}/check-duplicate?invoiceNumber=NON-EXISTENT-99`, ctx.auth('cashier'));
+    const checkNotFound = await inject('GET', `/invoices/${ctx.branchId}/check-duplicate?invoiceNumber=NON-EXISTENT-99`, ctx.auth('manager'));
     expect(checkNotFound.statusCode).toBe(200);
     expect(checkNotFound.json().exists).toBe(false);
 
@@ -263,7 +263,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
   it('creates a manual draft, requires real invoice number before approval, and lists history with filters', async () => {
     const [whisky] = ctx.products;
     // Manual draft without invoiceNumber gets a DRAFT-* placeholder
-    const draftRes = await inject('POST', `/invoices/${ctx.branchId}`, ctx.auth('cashier'), {
+    const draftRes = await inject('POST', `/invoices/${ctx.branchId}`, ctx.auth('manager'), {
       supplierName: 'Pernod Ricard',
       items: [
         { productId: whisky.id, rawDescription: 'Test Whisky 750ml', quantity: 6, costPrice: '800.00', mrp: '1020.00' },
@@ -277,7 +277,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     expect((await inject('POST', `/invoices/detail/${draftId}/approve`, ctx.auth('manager'))).statusCode).toBe(422);
 
     // List history with search & status filters
-    const listAll = await inject('GET', `/invoices/${ctx.branchId}?q=Pernod`, ctx.auth('cashier'));
+    const listAll = await inject('GET', `/invoices/${ctx.branchId}?q=Pernod`, ctx.auth('manager'));
     expect(listAll.statusCode).toBe(200);
     expect(listAll.json().total).toBe(1);
     expect(listAll.json().items[0]).toMatchObject({
@@ -292,7 +292,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     const badRes = await ctx.app.inject({
       method: 'POST',
       url: `/api/v1/invoices/${ctx.branchId}/upload`,
-      headers: { ...ctx.auth('cashier'), 'content-type': badMp.contentType },
+      headers: { ...ctx.auth('manager'), 'content-type': badMp.contentType },
       payload: badMp.body,
     });
     expect(badRes.statusCode).toBe(415);
@@ -333,7 +333,7 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
     expect(newProduct.mrp).toBe('4800.00');
 
     // 3. Cashier uses newly created product in an invoice draft
-    const invoiceRes = await inject('POST', `/invoices/${ctx.branchId}`, ctx.auth('cashier'), {
+    const invoiceRes = await inject('POST', `/invoices/${ctx.branchId}`, ctx.auth('manager'), {
       supplierName: 'William Grant & Sons',
       invoiceNumber: 'INV-GLEN-999',
       items: [

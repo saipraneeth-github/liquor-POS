@@ -174,6 +174,27 @@ export const productPrices = pgTable('product_prices', {
 }, (t) => ({
   uqProductType: unique('uq_product_price_type').on(t.productId, t.saleTypeId),
 }));
+// Per-user permission overrides on top of the role defaults (see modules/permissions/permissions.engine.ts).
+// A row says "this user is explicitly allowed / denied this action"; no row = the role default.
+export const userPermissions = pgTable('user_permissions', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  userId:     uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  permission: text('permission').notNull(),                 // e.g. 'prices.edit', 'cost.view'
+  allowed:    boolean('allowed').notNull(),
+  updatedById: uuid('updated_by_id').references(() => users.id),
+  updatedAt:  timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqUserPermission: unique('uq_user_permission').on(t.userId, t.permission),
+}));
+
+// Sale types a cashier / steward may bill and count under. No rows = every sale type of their shop.
+export const userSaleTypes = pgTable('user_sale_types', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  userId:     uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  saleTypeId: uuid('sale_type_id').notNull().references(() => saleTypes.id, { onDelete: 'cascade' }),
+}, (t) => ({
+  uqUserSaleType: unique('uq_user_sale_type').on(t.userId, t.saleTypeId),
+}));
 // ─── STOCK ──────────────────────────────────────────────────────────────────
 
 export const stock = pgTable('stock', {

@@ -67,7 +67,11 @@ describe('breakage', () => {
     expect(res.statusCode).toBe(201);
     const body = res.json();
     expect(body.stockQuantity).toBe(before - 3);
-    expect(body.breakage).toMatchObject({ quantity: 3, costValue: '2400.00' });   // 800 × 3
+    // a cashier never sees cost: the response omits it, but the log still records it (800 × 3)
+    expect(body.breakage).toMatchObject({ quantity: 3 });
+    expect(body.breakage).not.toHaveProperty('costValue');
+    const [logged] = await ctx.db.select().from(ctx.schema.breakageLogs).where(eq(ctx.schema.breakageLogs.id, body.breakage.id));
+    expect(logged.costValue).toBe('2400.00');
     expect(await stockOf(whiskyId)).toBe(before - 3);
 
     const audits = await ctx.db.select().from(ctx.schema.stockAudit)

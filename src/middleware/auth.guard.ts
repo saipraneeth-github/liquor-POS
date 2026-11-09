@@ -10,8 +10,8 @@ import { ACCESS_MESSAGE, accessState } from '../modules/platform/access.engine.j
 export const ROLE_RANK: Record<UserRole, number> = {
   steward:      1,
   cashier:      2,
-  office_admin: 3,
   manager:      3,
+  office_admin: 3.5,   // runs the business on the owner's behalf: above a manager, below the owner (platform / outlets / billing stay owner-only)
   owner:        4,
 };
 

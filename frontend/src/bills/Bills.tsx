@@ -32,6 +32,7 @@ type Bill = {
   customerId?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
+  saleTypeId?: string | null;   // null = the default sale type (Walk-in)
   items: BillItem[];
   voidedAt?: string | null;
   voidReason?: string | null;
@@ -59,6 +60,15 @@ export function Bills() {
 
   const sub = (user as any)?.sub ?? user?.id ?? '';
   const branchId = (user as any)?.branchId ?? '';
+
+  // Sale type names (Walk-in, Janata, ...) so each bill can say which one it was rung under
+  const [saleTypes, setSaleTypes] = useState<{ id: string; name: string; isDefault: boolean }[]>([]);
+  useEffect(() => {
+    if (!branchId) return;
+    api.get<{ id: string; name: string; isDefault: boolean }[]>(`/sale-types/${branchId}?all=1`).then(setSaleTypes).catch(() => {});
+  }, [branchId]);
+  const showType = saleTypes.length > 1;
+  const typeName = (id?: string | null) => (id ? saleTypes.find((t) => t.id === id)?.name ?? 'Other' : saleTypes.find((t) => t.isDefault)?.name ?? 'Walk-in');
 
   const checkPendingQueue = useCallback(() => {
     if (!sub) return;
@@ -224,6 +234,7 @@ export function Bills() {
                 <tr>
                   <th className="p-3">Bill No.</th>
                   <th className="p-3">Time</th>
+                  {showType && <th className="p-3">Sale type</th>}
                   <th className="p-3">Payment</th>
                   <th className="p-3">Status</th>
                   <th className="p-3 text-right">Gross</th>
@@ -240,6 +251,11 @@ export function Bills() {
                     <td className="p-3 text-gray-500">
                       {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
+                    {showType && (
+                      <td className="p-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${b.saleTypeId ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>{typeName(b.saleTypeId)}</span>
+                      </td>
+                    )}
                     <td className="p-3">
                       <span className={`px-2 py-0.5 text-xs rounded font-medium ${
                         b.paymentMode === 'CREDIT'
@@ -295,7 +311,7 @@ export function Bills() {
                         <ProtectedButton
                           type="button"
                           variant="danger"
-                          minRole="manager"
+                          permission="bills.void"
                           onClick={() => handleOpenVoid(b)}
                           className="px-2 py-1 text-xs"
                         >
@@ -372,7 +388,7 @@ export function Bills() {
                       type="submit"
                       id="voidConfirmBtn"
                       variant="danger"
-                      minRole="manager"
+                      permission="bills.void"
                       loading={voidSubmitting}
                       disabled={voidReason.trim().length < 5 || voidSubmitting}
                       className="px-4 py-2 text-sm"

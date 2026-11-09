@@ -4,11 +4,12 @@ import { X, Trash2, AlertTriangle, FileText, Camera, PackageOpen, Loader2, Penci
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { ProtectedButton, Modal } from '../components/ui';
 import { api } from '../api/client';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, isManagerLike, userCan } from '../auth/AuthProvider';
 import { showToast } from '../lib/toast';
 import { businessDate } from '../lib/business-day';
 import ChallanTotals from './ChallanTotals';
 import { StockSplit } from './StockSplit';
+import { StockByType } from './StockByType';
 
 interface BrandMappingRow {
   id: string;
@@ -208,10 +209,12 @@ export function Inventory() {
   const branchId = activeBranchId ?? user?.branchId;
   const currentBranch = branches?.find((b) => b.id === branchId);
   const shopName = currentBranch?.name || 'Main Store';
-  const isManager = user?.role === 'manager' || user?.role === 'owner';
+  const isManager = isManagerLike(user);
+  const canSeeCost = userCan(user, 'cost.view');     // supplier invoices and every buying price
+  const canMove = userCan(user, 'stock.move');       // divide stock between sale types
 
   // Navigation tab: 'upload' = Bill Inward Wizard, 'history' = Invoices History, 'all-invoices' = All Uploaded Invoices, 'stock' = Store Stock & Breakage
-  const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'all-invoices' | 'stock'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'all-invoices' | 'stock'>(userCan(user, 'cost.view') ? 'upload' : 'stock');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
   const [viewSnapshot, setViewSnapshot] = useState<ActiveInvoiceData | null>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
@@ -337,7 +340,7 @@ export function Inventory() {
   };
 
   const loadInvoices = async () => {
-    if (!branchId) return;
+    if (!branchId || !canSeeCost) return;     // supplier invoices are cost data: not even requested without the permission
     setLoadingInvoices(true);
     const qs = new URLSearchParams({ limit: '50' });
     if (filterStatus) qs.set('status', filterStatus);
@@ -1143,6 +1146,7 @@ export function Inventory() {
 
         {/* Tab Switcher */}
         <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm font-medium">
+          {canSeeCost && (<>
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
@@ -1185,6 +1189,7 @@ export function Inventory() {
               {invoices.length}
             </span>
           </button>
+          </>)}
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
@@ -1596,7 +1601,7 @@ export function Inventory() {
                   {activeInvoice.invoice.status === 'APPROVED' ? (
                     <ProtectedButton
                       type="button"
-                      minRole="manager"
+                      permission="invoices.approve"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg font-medium cursor-pointer transition-colors"
                       onClick={() => { setReverseReason(''); setReverseTarget({ id: activeInvoice.invoice.id, number: activeInvoice.invoice.invoiceNumber }); }}
                       title="An approved invoice cannot be deleted. Reversing takes the stock back out and posts reversing entries."
@@ -1606,7 +1611,7 @@ export function Inventory() {
                   ) : (
                     <ProtectedButton
                       variant="danger"
-                      minRole="manager"
+                      permission="invoices.approve"
                       confirmMessage={`Are you sure you want to delete invoice ${activeInvoice.invoice.invoiceNumber || 'draft'}? This action cannot be undone.`}
                       confirmLabel="Delete"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg font-medium cursor-pointer transition-colors"
@@ -2094,7 +2099,7 @@ export function Inventory() {
                     <ProtectedButton
                       id="invReviewBtn"
                       type="button"
-                      minRole="manager"
+                      permission="invoices.approve"
                       loading={isReviewing}
                       disabled={isReviewing || isApproving}
                       className="min-h-[44px] px-4 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all shadow-sm"
@@ -2240,7 +2245,7 @@ export function Inventory() {
                       {activeInvoice.invoice.status === 'DRAFT' && (
                         <ProtectedButton
                           type="button"
-                          minRole="manager"
+                          permission="invoices.approve"
                           loading={isReviewing}
                           disabled={isReviewing || isApproving}
                           className="min-h-[48px] px-5 py-2.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/50 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all shadow-sm"
@@ -2252,7 +2257,7 @@ export function Inventory() {
                       <ProtectedButton
                         id="invApproveBtn"
                         type="button"
-                        minRole="manager"
+                        permission="invoices.approve"
                         loading={isApproving}
                         disabled={isApproving}
                         className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
@@ -2417,7 +2422,7 @@ export function Inventory() {
                           {inv.status === 'DRAFT' && (
                             <ProtectedButton
                               type="button"
-                              minRole="manager"
+                              permission="invoices.approve"
                               className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:hover:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded font-semibold text-xs cursor-pointer flex items-center gap-1 shadow-xs transition-colors"
                               onClick={() => handleReviewInvoiceById(inv.id, inv.invoiceNumber)}
                               title="Mark bill as reviewed"
@@ -2435,7 +2440,7 @@ export function Inventory() {
                           {inv.status === 'APPROVED' ? (
                             <ProtectedButton
                               type="button"
-                              minRole="manager"
+                              permission="invoices.approve"
                               title="Reverse this invoice: takes the stock back out and posts reversing entries"
                               className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded font-semibold text-xs cursor-pointer"
                               onClick={() => { setReverseReason(''); setReverseTarget({ id: inv.id, number: inv.invoiceNumber }); }}
@@ -2445,7 +2450,7 @@ export function Inventory() {
                           ) : inv.status === 'REVERSED' ? null : (
                             <ProtectedButton
                               variant="ghost"
-                              minRole="manager"
+                              permission="invoices.approve"
                               title="Delete bill"
                               confirmMessage={`Delete invoice ${inv.invoiceNumber || 'draft'}? This action cannot be undone.`}
                               confirmLabel="Delete"
@@ -2471,7 +2476,15 @@ export function Inventory() {
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'stock' && (
         <div className="space-y-5">
-          {isManager && branchId && (
+          {branchId && (
+            <StockByType
+              branchId={branchId}
+              canMove={canMove}
+              reloadKey={stockRows.reduce((s, r) => s + r.quantity, 0)}
+              stockRows={stockRows.map((r) => ({ productId: r.productId, name: r.name, brand: r.brand, volumeMl: r.volumeMl, reorderLevel: r.reorderLevel, mrp: r.mrp }))}
+            />
+          )}
+          {canMove && branchId && (
             <StockSplit branchId={branchId} stockRows={stockRows.map((r) => ({ productId: r.productId, name: r.name, brand: r.brand, volumeMl: r.volumeMl }))} />
           )}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" id="stockStats">
@@ -2616,9 +2629,9 @@ export function Inventory() {
                     <tr className="border-b text-[11px] text-gray-500 bg-gray-50 dark:bg-gray-800 uppercase tracking-wider">
                       <th className="py-2.5 px-4">Product</th>
                       <th className="py-2.5 px-4 w-56">Stock level</th>
-                      <th className="py-2.5 px-3 text-right">Cost Price</th>
+                      {canSeeCost && <th className="py-2.5 px-3 text-right">Cost Price</th>}
                       <th className="py-2.5 px-3 text-right">MRP</th>
-                      <th className="py-2.5 px-3 text-right">Margin</th>
+                      {canSeeCost && <th className="py-2.5 px-3 text-right">Margin</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -2695,7 +2708,7 @@ export function Inventory() {
                               )}
                             </div>
                           </td>
-                          <td className="py-3 px-3 text-right">
+                          {canSeeCost && <td className="py-3 px-3 text-right">
                             {(() => {
                               const prodObj = productMap.get(r.productId);
                               const cost = r.costPrice || prodObj?.costPrice;
@@ -2714,11 +2727,11 @@ export function Inventory() {
                                 </div>
                               );
                             })()}
-                          </td>
+                          </td>}
                           <td className="py-3 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">
                             ₹{parseFloat(r.mrp).toFixed(2)}
                           </td>
-                          <td className="py-3 px-3 text-right">
+                          {canSeeCost && <td className="py-3 px-3 text-right">
                             {(() => {
                               const prodObj = productMap.get(r.productId);
                               const cost = r.costPrice ? parseFloat(r.costPrice) : (prodObj?.costPrice ? parseFloat(prodObj.costPrice) : null);
@@ -2735,7 +2748,7 @@ export function Inventory() {
                                 </span>
                               );
                             })()}
-                          </td>
+                          </td>}
                         </tr>
                       );
                     })}

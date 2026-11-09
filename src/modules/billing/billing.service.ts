@@ -27,6 +27,8 @@ import { businessDateOf, businessDayBounds, isIsoDate } from '../../lib/business
 import type { JwtPayload } from '../auth/auth.service.js';
 import { counterQuantity, rowTypeId, unitPriceFor } from '../saletypes/saletype.engine.js';
 import { explicitSums, resolveSaleType, typePrices } from '../saletypes/saletype.service.js';
+import { assertSaleTypeAllowed, userDiscountCapPct } from '../permissions/permission.service.js';
+import { discountWithinCap } from '../permissions/permissions.engine.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
@@ -179,6 +181,7 @@ export async function createBill(
   // Sale type (Walk-in, Janata, ...): picks the price list and which counter the bottles come out of
   const saleType = await resolveSaleType(db, input.branchId, input.saleTypeId);
   const billTypeId = rowTypeId(saleType);
+  await assertSaleTypeAllowed(cashier, input.branchId, billTypeId);      // a cashier may be limited to some sale types
   const typePriceMap = saleType.isDefault ? new Map<string, string>() : await typePrices(db, saleType.id, productIds);
   if (!saleType.isDefault) {
     if (items.some((i) => i.servingId)) throw new BusinessRuleError('Peg / glass servings can only be sold under the default sale type');
@@ -204,6 +207,12 @@ export async function createBill(
     input.discount,
     input.roundOff ?? branchSettings?.roundOff ?? false,
   );
+
+  // Discount cap: without the "discounts above 5%" permission a bill discount may not exceed 5% of the bill
+  const cap = await userDiscountCapPct(cashier);
+  if (!discountWithinCap(calculation.discount, calculation.subtotal, cap)) {
+    throw new BusinessRuleError(`A discount above ${cap}% of the bill needs a manager (or the "discounts above ${cap}%" permission)`);
+  }
 
   // Stock only moves for stock-tracked products (kitchen items are not). Whole units deduct
   // bottles; peg servings deduct ml from the open bottle.

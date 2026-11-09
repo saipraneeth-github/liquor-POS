@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import {
   branches, branchSaleTypes, priceAudit, productPrices, products, saleTypes, stock, stockAudit, stockByType,
@@ -315,4 +315,18 @@ export async function setAllocation(user: JwtPayload, branchId: string, input: z
     }
     return { moved: plan.length, typeIds: [...new Set(plan.map((p) => p.type.id))] };
   });
+}
+
+/** Recent stock movements of one product in a shop, each tagged with the counter (sale type) that moved. */
+export async function productMovements(branchId: string, productId: string, limit = 100) {
+  const types = await listBranchSaleTypes(db, branchId, { all: true });
+  const names = new Map(types.map((t) => [t.id, t.name]));
+  const walkIn = types.find((t) => t.isDefault)?.name ?? 'Walk-in';
+  const rows = await db.select().from(stockAudit)
+    .where(and(eq(stockAudit.branchId, branchId), eq(stockAudit.productId, productId)))
+    .orderBy(desc(stockAudit.createdAt)).limit(Math.min(Math.max(limit, 1), 500));
+  return rows.map((r) => ({
+    id: r.id, at: r.createdAt, reason: r.reason, changeQty: r.changeQty, referenceId: r.referenceId,
+    counter: r.saleTypeId ? (names.get(r.saleTypeId) ?? 'Other') : walkIn,
+  }));
 }

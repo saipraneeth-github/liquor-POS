@@ -5,7 +5,6 @@ import { useAuth } from '../auth/AuthProvider';
 import { CashierView } from './CashierView';
 import { ManagerView } from './ManagerView';
 import { OwnerView } from './OwnerView';
-import { OfficeAdminView } from './OfficeAdminView';
 import { Icon } from './parts';
 import type { AttentionItem, CashierData, ManagerData, OwnerData } from './types';
 
@@ -29,7 +28,6 @@ export function Dashboard() {
   const navigate = useNavigate();
   const branchId = activeBranchId ?? user?.branchId ?? '';
   const isSteward = user?.role === 'steward';
-  const isOfficeAdmin = user?.role === 'office_admin';
   const canSeeAllOutlets = user?.role === 'owner' && !!user?.syndicateId;
 
   const [scope, setScope] = useState<Scope>(canSeeAllOutlets ? 'all' : 'branch');
@@ -39,7 +37,7 @@ export function Dashboard() {
   const inflight = useRef(0);
 
   const load = useCallback(async () => {
-    if (isSteward || isOfficeAdmin || (!branchId && scope === 'branch')) return;
+    if (isSteward || (!branchId && scope === 'branch')) return;
     const ticket = ++inflight.current;
     try {
       let next: Loaded;
@@ -100,18 +98,6 @@ export function Dashboard() {
             </p>
             <button type="button" className="lc-btn lc-btn-primary" id="dashTablesBtn" onClick={() => go('/tables')}>Open Tables &amp; KOT</button>
           </div>
-        </div>
-      </section>
-    );
-  }
-
-  if (isOfficeAdmin) {
-    const currentBranch = branches.find((b) => b.id === (branchId || user?.branchId));
-    const shopName = currentBranch?.name || 'Main Counter Branch';
-    return (
-      <section className="page active lc lc-bleed" id="page-dashboard" aria-labelledby="officeAdminWelcome">
-        <div className="lc-page">
-          <OfficeAdminView shopName={shopName} onNavigate={go} />
         </div>
       </section>
     );

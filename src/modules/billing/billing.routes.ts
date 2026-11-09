@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
+import { requirePermission } from '../permissions/permission.service.js';
 import {
   createBill,
   voidBill,
@@ -64,9 +65,9 @@ export async function billingRoutes(fastify: FastifyInstance) {
     return bill;
   });
 
-  // POST /bills/:id/void — void a bill (manager+, own/accessible branch only)
+  // POST /bills/:id/void — void a bill (needs the 'void bills' permission: managers and above by default; own/accessible branch only)
   fastify.post('/bills/:id/void', {
-    preHandler: requireRole('manager'),
+    preHandler: [requireRole('steward'), requirePermission('bills.void')],
   }, async (request, reply) => {
     const params = IdParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(404).send({ error: 'Bill not found' });

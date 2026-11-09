@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireRole, getUser } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
 import { tenantOf } from '../menu/menu-access.js';
+import { requirePermission, stripCost, userCan } from '../permissions/permission.service.js';
 import {
   createProduct,
   getProductByBarcode,
@@ -25,8 +26,8 @@ export async function productRoutes(fastify: FastifyInstance) {
     const query = request.query as { branchId?: string };
     const branchId = query?.branchId ?? user.branchId ?? undefined;
     const list = await listProducts(true, await tenantOf(user), branchId);
-    if (user.role !== 'steward') return list;
-    return list.map(({ costPrice: _costPrice, ...rest }) => rest);
+    // Cost prices are for people who may see them (cost.view); everyone else only sees selling prices
+    return (await userCan(user, 'cost.view')) ? list : stripCost(list);
   });
 
   // GET /products/barcode/:barcode — POS barcode lookup (cashier+)
@@ -34,9 +35,10 @@ export async function productRoutes(fastify: FastifyInstance) {
     preHandler: requireRole('cashier'),
   }, async (request, reply) => {
     const { barcode } = request.params as { barcode: string };
-    const product = await getProductByBarcode(barcode, await tenantOf(getUser(request)));
+    const user = getUser(request);
+    const product = await getProductByBarcode(barcode, await tenantOf(user));
     if (!product || !product.isActive) return reply.code(404).send({ error: 'Product not found' });
-    return product;
+    return (await userCan(user, 'cost.view')) ? product : stripCost(product);
   });
 
   // GET /categories — list all active categories (steward+)
@@ -51,16 +53,17 @@ export async function productRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
     }
     try {
-      const product = await createProduct(parsed.data, await tenantOf(getUser(request)));
-      return reply.code(201).send(product);
+      const user = getUser(request);
+      const product = await createProduct(parsed.data, await tenantOf(user));
+      return reply.code(201).send((await userCan(user, 'cost.view')) ? product : stripCost(product));
     } catch (err: unknown) {
       return sendError(reply, err, 'Product creation failed');
     }
   });
 
-  // PATCH /products/:id/mrp — update MRP with price audit (manager+)
+  // PATCH /products/:id/mrp — update MRP with price audit (needs the 'change selling prices' permission)
   fastify.patch('/products/:id/mrp', {
-    preHandler: requireRole('manager'),
+    preHandler: [requireRole('steward'), requirePermission('prices.edit')],
   }, async (request, reply) => {
     const params = IdParams.safeParse(request.params);
     if (!params.success) return reply.code(404).send({ error: 'Product not found' });
@@ -70,7 +73,7 @@ export async function productRoutes(fastify: FastifyInstance) {
     }
     const user = getUser(request);
     try {
-      await updateMrp(params.data.id, parsed.data.mrp, user);
+      await updateMrp(params.data.id, parsed.data.mrp, user, await tenantOf(user));
       return { success: true };
     } catch (err: unknown) {
       return sendError(reply, err, 'Update failed');

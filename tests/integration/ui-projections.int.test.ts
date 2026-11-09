@@ -36,7 +36,9 @@ describe('steward table service access', () => {
     expect(list[0]).not.toHaveProperty('costPrice');
 
     const cashierList = (await ctx.app.inject({ method: 'GET', url: '/api/v1/products', headers: ctx.auth('cashier') })).json() as Array<Record<string, unknown>>;
-    expect(cashierList[0]).toHaveProperty('costPrice');
+    expect(cashierList[0]).not.toHaveProperty('costPrice');            // cashiers see selling prices only
+    const managerList = (await ctx.app.inject({ method: 'GET', url: '/api/v1/products', headers: ctx.auth('manager') })).json() as Array<Record<string, unknown>>;
+    expect(managerList[0]).toHaveProperty('costPrice');
 
     const res = await ctx.app.inject({ method: 'GET', url: `/api/v1/tables/${ctx.branchId}`, headers: ctx.auth('steward') });
     expect(res.statusCode).toBe(200);

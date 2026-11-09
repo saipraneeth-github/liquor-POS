@@ -13,6 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
+import { stripCost, userCan } from '../permissions/permission.service.js';
 import {
   CreateQuotaSchema,
   DateRangeQuerySchema,
@@ -25,6 +26,9 @@ import {
   listBreakage,
   getStockAuditReport,
 } from './compliance.service.js';
+
+/** The breakage log nests its cost under entries/totals. */
+const stripLogCost = (log: { entries: unknown[]; totals: Record<string, unknown> }) => ({ entries: stripCost(log.entries), totals: stripCost(log.totals) });
 
 const BranchParams = z.object({ branchId: z.string().uuid() });
 
@@ -74,7 +78,7 @@ export async function complianceRoutes(app: FastifyInstance) {
     if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
     try {
       const result = await recordBreakage(params.data.branchId, body.data, user);
-      return reply.status(201).send(result);
+      return reply.status(201).send((await userCan(user, 'cost.view')) ? result : stripCost(result));
     } catch (err) {
       return sendError(reply, err, 'Recording breakage failed');
     }
@@ -87,7 +91,8 @@ export async function complianceRoutes(app: FastifyInstance) {
     if (!query.success) return reply.status(400).send({ error: 'Validation failed', details: query.error.flatten() });
     const user = getUser(req);
     if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
-    return reply.send(await listBreakage(params.data.branchId, query.data.from, query.data.to));
+    const log = await listBreakage(params.data.branchId, query.data.from, query.data.to);
+    return reply.send((await userCan(user, 'cost.view')) ? log : stripLogCost(log));
   });
 
   // ─── STOCK RECONCILIATION ───────────────────────────────────────────────────

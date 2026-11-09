@@ -197,11 +197,13 @@ export function POS() {
     return () => window.removeEventListener('app:stock_updated', loadSaleTypes);
   }, [loadSaleTypes]);
 
-  const activeType = saleTypes.find((t) => (t.isDefault ? '' : t.id) === saleTypeId) ?? saleTypes.find((t) => t.isDefault);
+  // The chosen type; if it is not one this user may use (e.g. limited to Janata only), the first allowed one.
+  const activeType = saleTypes.find((t) => (t.isDefault ? '' : t.id) === saleTypeId) ?? saleTypes.find((t) => t.isDefault) ?? saleTypes[0];
 
   /** What the cashier can sell under the chosen type: its price, and only the bottles in its own counter. */
   const products = useMemo<Product[]>(() => {
-    if (!activeType || saleTypes.length < 2) return rawProducts;
+    // a shop with only the default type (or nothing loaded yet) sells the plain catalog, exactly as before
+    if (!activeType || (activeType.isDefault && saleTypes.length < 2)) return rawProducts;
     return rawProducts.flatMap((p) => {
       const q = counters[p.id]?.[activeType.id];
       const stock = p.trackStock === false || q === undefined ? {} : { currentStock: q, stockQuantity: q };
@@ -211,6 +213,7 @@ export function POS() {
       return [{ ...p, ...stock, mrp: price, servings: [] }];
     });
   }, [rawProducts, activeType, saleTypes.length, counters, typePrices]);
+  const limitedToOneType = saleTypes.length === 1 && !saleTypes[0].isDefault;   // e.g. a cashier who may only sell as Janata
 
   // Listen to global stock updates (e.g. from table billing, invoice inward, or counter sheets)
   useEffect(() => {
@@ -513,8 +516,11 @@ export function POS() {
   };
 
   const cartSubtotal = cart.reduce((sum, item) => sum + parseFloat(item.price) * item.qty, 0);
-  const discountPctNum = Math.max(0, Math.min(100, parseFloat(discountPercent) || 0));
-  const discountVal = (cartSubtotal * discountPctNum) / 100;
+  // Without the 'discounts above 5%' permission the server caps a bill discount (user.discountCapPct; null = unlimited)
+  const discountCap = user?.discountCapPct ?? null;
+  const discountPctNum = Math.max(0, Math.min(discountCap ?? 100, parseFloat(discountPercent) || 0));
+  // capped users: round DOWN to the paisa so the amount can never land half a paisa over the cap
+  const discountVal = discountCap !== null ? Math.floor(cartSubtotal * discountPctNum + 1e-9) / 100 : (cartSubtotal * discountPctNum) / 100;
   const cartTotal = Math.max(0, cartSubtotal - discountVal);
 
   const checkout = async () => {
@@ -653,6 +659,12 @@ export function POS() {
 
       {/* Product search + catalog */}
       <div className="md:flex-1 flex flex-col min-w-0 h-[68dvh] md:h-auto shrink-0 md:shrink">
+        {limitedToOneType && (
+          <div className="mb-3 text-sm" id="posSaleTypeFixed">
+            <span className="text-xs font-semibold text-gray-500 mr-2">Selling as:</span>
+            <span className="px-3.5 py-1.5 rounded-full text-sm font-semibold bg-purple-600 text-white">{saleTypes[0].name}</span>
+          </div>
+        )}
         {saleTypes.length > 1 && (
           <div className="flex flex-wrap items-center gap-2 mb-3" role="tablist" aria-label="Sale type" id="posSaleTypes">
             <span className="text-xs font-semibold text-gray-500">Sell as:</span>
@@ -963,7 +975,7 @@ export function POS() {
                 Discount
               </label>
               <div className="flex items-center gap-1 flex-1 min-w-0">
-                {[5, 10, 15, 20].map((pct) => (
+                {[5, 10, 15, 20].filter((pct) => discountCap === null || pct <= discountCap).map((pct) => (
                   <button
                     key={pct}
                     type="button"
@@ -985,15 +997,23 @@ export function POS() {
                   type="number"
                   step="any"
                   min="0"
-                  max="100"
+                  max={discountCap ?? 100}
                   className="w-full py-1 pl-2 pr-6 border border-gray-200 dark:border-gray-600 rounded-md text-right font-mono text-xs bg-white dark:bg-gray-700"
                   placeholder="0"
                   value={discountPercent}
-                  onChange={(e) => setDiscountPercent(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    // clamp to the cap as the cashier types
+                    setDiscountPercent(discountCap !== null && parseFloat(v) > discountCap ? String(discountCap) : v);
+                  }}
                 />
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-xs pointer-events-none">%</span>
               </div>
             </div>
+
+            {discountCap !== null && (
+              <div className="text-[11px] text-gray-500" id="discountCapHint">Discounts up to {discountCap}%. A bigger discount needs a manager.</div>
+            )}
 
             {discountVal > 0 && (
               <div className="flex justify-between items-center text-xs">

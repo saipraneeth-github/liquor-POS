@@ -7,6 +7,8 @@
  * PATCH /users/:id         — manager+ (name / role / isActive; never above own role)
  * GET   /users/:id/pages   — manager+ (page-permission matrix)
  * PUT   /users/:id/pages   — manager+ (replace page-permission matrix)
+ * GET   /users/:id/permissions — manager+ (actions + sale types a user may use)
+ * PUT   /users/:id/permissions — manager+ (overrides on the role defaults; only users below the actor)
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -21,6 +23,9 @@ import {
   resetUserPassword,
   getUserPages,
   setUserPages,
+  getUserPermissions,
+  setUserPermissions,
+  SetPermissionsSchema,
   CreateUserSchema,
   UpdateUserSchema,
   ListUsersQuerySchema,
@@ -91,6 +96,30 @@ export async function userRoutes(fastify: FastifyInstance) {
       return { pages: await getUserPages(getUser(request), params.data.id) };
     } catch (err) {
       return sendError(reply, err, 'Page lookup failed');
+    }
+  });
+
+  // What a user may do (cost prices, prices, stock moves, approvals, voids, big discounts) and which sale types a cashier may use.
+  // Manager+ — and only for users below them; nobody can grant what they do not hold.
+  fastify.get('/users/:id/permissions', { preHandler: requireRole('manager') }, async (request, reply) => {
+    const params = IdParams.safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: 'User not found' });
+    try {
+      return await getUserPermissions(getUser(request), params.data.id);
+    } catch (err) {
+      return sendError(reply, err, 'Permission lookup failed');
+    }
+  });
+
+  fastify.put('/users/:id/permissions', { preHandler: requireRole('manager') }, async (request, reply) => {
+    const params = IdParams.safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: 'User not found' });
+    const parsed = SetPermissionsSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+    try {
+      return await setUserPermissions(getUser(request), params.data.id, parsed.data);
+    } catch (err) {
+      return sendError(reply, err, 'Permission update failed');
     }
   });
 

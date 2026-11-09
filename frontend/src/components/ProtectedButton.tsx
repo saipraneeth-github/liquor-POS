@@ -7,15 +7,17 @@
  */
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, userCan } from '../auth/AuthProvider';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'link';
-export type AppRole = 'steward' | 'cashier' | 'manager' | 'owner';
+export type AppRole = 'steward' | 'cashier' | 'manager' | 'office_admin' | 'owner';
 
+// office_admin runs the business for the owner: above a manager, below the owner (same ranks as the server)
 const ROLE_RANK: Record<AppRole, number> = {
   steward: 1,
   cashier: 2,
   manager: 3,
+  office_admin: 3.5,
   owner: 4,
 };
 
@@ -35,6 +37,8 @@ export interface ProtectedButtonProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> {
   /** If the logged-in user is below this role, the button is hidden entirely. */
   minRole?: AppRole;
+  /** Hidden unless the user holds this permission (e.g. 'prices.edit', 'bills.void', 'invoices.approve'). */
+  permission?: string;
   /** If the logged-in user is below this role, the button is shown but disabled with a tooltip. */
   disableBelow?: AppRole;
   /** Visual style. Default: 'primary'. */
@@ -59,6 +63,7 @@ export interface ProtectedButtonProps
 
 export function ProtectedButton({
   minRole,
+  permission,
   disableBelow,
   variant = 'primary',
   loading = false,
@@ -80,6 +85,7 @@ export function ProtectedButton({
 
   // Hide entirely if user is below minRole
   if (minRole && userRank < ROLE_RANK[minRole]) return null;
+  if (permission && !userCan(user, permission)) return null;
 
   const roleLocked = !!disableBelow && userRank < ROLE_RANK[disableBelow];
   const isDisabled = disabled || loading || inFlight || roleLocked;

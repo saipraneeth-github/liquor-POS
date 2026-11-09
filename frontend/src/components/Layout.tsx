@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, type SaasRole } from '../auth/AuthProvider';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
@@ -75,7 +75,8 @@ const navItems: NavItem[] = [
   { path: '/platform', label: 'Platform Console', icon: Globe, id: 'nav-platform', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
 ];
 
-const roleRank = { steward: 1, cashier: 2, office_admin: 3, manager: 3, owner: 4 };
+// Office Admin runs the business for the owner: above a manager, below the owner (platform / business settings stay owner-only)
+const roleRank = { steward: 1, cashier: 2, manager: 3, office_admin: 3.5, owner: 4 };
 
 const ROLE_LABEL: Record<SaasRole, string> = {
   super_admin: 'Super Admin',
@@ -231,17 +232,16 @@ export function Layout() {
       }
     }
 
-    // Office Admin access: Dashboard, Inventory, Counter / Get Stock, and Bank Statement Upload
-    if (user.role === 'office_admin' && (!user.pages || user.pages.length === 0)) {
-      const allowedKeys = ['dashboard', 'inventory', 'counter', 'bank'];
-      return allowedKeys.includes(item.pageKey);
-    }
-
     // Role-based rank fallback if no explicit menu permissions row exists
     return userRank >= roleRank[item.min];
   };
 
   const items = navItems.filter(isItemVisible);
+
+  // A page that is not in the user's menu does not open by typing its address either
+  // (the API still enforces role and permission on every call; this just stops the empty screens)
+  const currentItem = navItems.find((i) => i.path === location.pathname);
+  if (currentItem && !isItemVisible(currentItem)) return <Navigate to="/" replace />;
   const groups = [...new Set(items.map((i) => i.group))];
   const pageTitle = navItems.find((i) => i.path === location.pathname)?.label || '';
 

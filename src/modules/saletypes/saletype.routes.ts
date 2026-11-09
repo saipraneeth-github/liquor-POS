@@ -5,10 +5,11 @@ import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.
 import { sendError } from '../../lib/errors.js';
 import { businessDateOf } from '../../lib/business-day.js';
 import { syncDraftSheetsFor } from '../counters/counter.service.js';
+import { allowedSaleTypeIds, requirePermission } from '../permissions/permission.service.js';
 import { rowTypeId } from './saletype.engine.js';
 import {
   CreateSaleTypeSchema, SetAllocationSchema, SetPricesSchema, TransferSchema, UpdateSaleTypeSchema,
-  createSaleType, getPriceMatrix, listBranchSaleTypes, listCounters, resolveSaleType, setAllocation, setPrices, transferStock, updateSaleType,
+  createSaleType, getPriceMatrix, listBranchSaleTypes, listCounters, productMovements, resolveSaleType, setAllocation, setPrices, transferStock, updateSaleType,
 } from './saletype.service.js';
 
 const BranchParams = z.object({ branchId: z.string().uuid() });
@@ -23,12 +24,15 @@ export async function saleTypeRoutes(fastify: FastifyInstance) {
     if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
     const all = (request.query as { all?: string })?.all === '1';
     try {
-      return await listBranchSaleTypes(db, params.data.branchId, { all });
+      const list = await listBranchSaleTypes(db, params.data.branchId, { all });
+      // a cashier limited to some sale types only sees those
+      const allowed = await allowedSaleTypeIds(getUser(request));
+      return allowed === null ? list : list.filter((t) => allowed.includes(t.id));
     } catch (err) { return sendError(reply, err); }
   });
 
   // POST /sale-types/:branchId — add a sale type to this shop's business (manager+)
-  fastify.post('/sale-types/:branchId', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.post('/sale-types/:branchId', { preHandler: [requireRole('steward'), requirePermission('sale_types.manage')] }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const body = CreateSaleTypeSchema.safeParse(request.body);
@@ -38,7 +42,7 @@ export async function saleTypeRoutes(fastify: FastifyInstance) {
   });
 
   // PATCH /sale-types/:branchId/:id — rename, reorder, switch off, or switch on/off for this shop (manager+)
-  fastify.patch('/sale-types/:branchId/:id', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.patch('/sale-types/:branchId/:id', { preHandler: [requireRole('steward'), requirePermission('sale_types.manage')] }, async (request, reply) => {
     const params = TypeParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
     const body = UpdateSaleTypeSchema.safeParse(request.body);
@@ -56,7 +60,7 @@ export async function saleTypeRoutes(fastify: FastifyInstance) {
   });
 
   // PUT /sale-types/:branchId/prices — set / clear prices for the non-default types (manager+)
-  fastify.put('/sale-types/:branchId/prices', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.put('/sale-types/:branchId/prices', { preHandler: [requireRole('steward'), requirePermission('prices.edit')] }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const body = SetPricesSchema.safeParse(request.body);
@@ -75,7 +79,7 @@ export async function saleTypeRoutes(fastify: FastifyInstance) {
   });
 
   // PUT /sale-types/:branchId/allocation — divide the stock: how many bottles each non-default counter holds (manager+)
-  fastify.put('/sale-types/:branchId/allocation', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.put('/sale-types/:branchId/allocation', { preHandler: [requireRole('steward'), requirePermission('stock.move')] }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const body = SetAllocationSchema.safeParse(request.body);
@@ -90,7 +94,7 @@ export async function saleTypeRoutes(fastify: FastifyInstance) {
   });
 
   // POST /sale-types/:branchId/transfer — move bottles between two counters of this shop (manager+)
-  fastify.post('/sale-types/:branchId/transfer', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.post('/sale-types/:branchId/transfer', { preHandler: [requireRole('steward'), requirePermission('stock.move')] }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const body = TransferSchema.safeParse(request.body);
@@ -106,4 +110,11 @@ export async function saleTypeRoutes(fastify: FastifyInstance) {
       return reply.code(201).send(result);
     } catch (err) { return sendError(reply, err); }
   });
-}
+
+  // GET /sale-types/:branchId/history/:productId — recent movements of a product, per counter
+  fastify.get('/sale-types/:branchId/history/:productId', { preHandler: requireRole('cashier') }, async (request, reply) => {
+    const params = z.object({ branchId: z.string().uuid(), productId: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
+    if (!(await assertBranchAccess(getUser(request), params.data.branchId, reply))) return;
+    try { return await productMovements(params.data.branchId, params.data.productId); } catch (err) { return sendError(reply, err); }
+  });}

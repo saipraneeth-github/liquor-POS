@@ -293,3 +293,19 @@ describe('dividing the stock (inventory is the source of truth)', () => {
     expect((await put([{ productId: whisky.id, saleTypeId: janata, quantity: 5 }], ctx.auth('cashier'))).statusCode).toBe(403);
   });
 });
+
+describe('movement history per counter', () => {
+  it('lists a product\'s movements tagged with the counter that moved', async () => {
+    const [whisky] = ctx.products;
+    const res = await inject('GET', `/sale-types/${ctx.branchId}/history/${whisky.id}`, ctx.auth('cashier'));
+    expect(res.statusCode, res.body).toBe(200);
+    const rows = res.json() as { reason: string; changeQty: number; counter: string }[];
+    expect(rows.length).toBeGreaterThan(0);
+    // moves come in pairs: one side out of a counter, the other into the other counter
+    const transfers = rows.filter((r) => r.reason === 'TYPE_TRANSFER');
+    expect(transfers.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(transfers.map((r) => r.counter))).toEqual(new Set(['Walk-in', 'Janata']));
+    expect(rows.some((r) => r.reason === 'SALE' && r.counter === 'Janata')).toBe(true);
+    expect((await inject('GET', `/sale-types/${ctx.branchId}/history/not-a-uuid`, ctx.auth('cashier'))).statusCode).toBe(400);
+  });
+});

@@ -71,7 +71,7 @@ describe.skipIf(!existsSync(FILE))('ICDC upload: stored depot figures and the gu
     const mp = multipart(readFileSync(FILE));
     const res = await ctx.app.inject({
       method: 'POST', url: `/api/v1/invoices/${ctx.branchId}/upload`,
-      headers: { ...ctx.auth('cashier'), 'content-type': mp.contentType }, payload: mp.body,
+      headers: { ...ctx.auth('manager'), 'content-type': mp.contentType }, payload: mp.body,
     });
     expect(res.statusCode).toBe(201);
     uploaded = res.json();
@@ -103,7 +103,7 @@ describe.skipIf(!existsSync(FILE))('ICDC upload: stored depot figures and the gu
   it('a manually chosen product of another bottle size blocks review and approval', async () => {
     // line 1 is Kingfisher Premium 650ml → point it at a 330ml product
     const wrong = [...productByKey.entries()].find(([k]) => k.endsWith('/330'))![1];
-    const edit = await inject('PUT', `/invoices/detail/${uploaded.invoice.id}`, ctx.auth('cashier'),
+    const edit = await inject('PUT', `/invoices/detail/${uploaded.invoice.id}`, ctx.auth('manager'),
       toInput(await fresh(uploaded.invoice.id), {}, { 0: { productId: wrong, confirmMatch: true } }));
     expect(edit.statusCode, edit.body).toBe(200);
     expect(edit.json().items[0].flags).toContain('VOLUME_MISMATCH');
@@ -114,7 +114,7 @@ describe.skipIf(!existsSync(FILE))('ICDC upload: stored depot figures and the gu
   });
 
   it('a misread figure (e-challan) breaks the chain and blocks approval until corrected', async () => {
-    const bad = await inject('PUT', `/invoices/detail/${uploaded.invoice.id}`, ctx.auth('cashier'), toInput(await fresh(uploaded.invoice.id), { challanAmount: '152500.00' }));
+    const bad = await inject('PUT', `/invoices/detail/${uploaded.invoice.id}`, ctx.auth('manager'), toInput(await fresh(uploaded.invoice.id), { challanAmount: '152500.00' }));
     expect(bad.statusCode, bad.body).toBe(200);
     expect(bad.json().invoice.extractionWarnings ?? bad.json().warnings).toContain('SUBTOTAL_MISMATCH');
     const approve = await inject('POST', `/invoices/detail/${uploaded.invoice.id}/approve`, ctx.auth('manager'));
@@ -125,7 +125,7 @@ describe.skipIf(!existsSync(FILE))('ICDC upload: stored depot figures and the gu
   it('once the figures are right it approves: stock by code+ml, depot ledger stored, purchase voucher includes MRP rounding', async () => {
     const line1Product = uploaded.items[0].productId as string;
     const before = await stockOf(line1Product);
-    const fixed = await inject('PUT', `/invoices/detail/${uploaded.invoice.id}`, ctx.auth('cashier'), toInput(await fresh(uploaded.invoice.id), { challanAmount: '1525000.00' }, { 0: { productId: uploaded.items[0].productId, confirmMatch: true } }));
+    const fixed = await inject('PUT', `/invoices/detail/${uploaded.invoice.id}`, ctx.auth('manager'), toInput(await fresh(uploaded.invoice.id), { challanAmount: '1525000.00' }, { 0: { productId: uploaded.items[0].productId, confirmMatch: true } }));
     expect(fixed.statusCode, fixed.body).toBe(200);
     const detail = fixed.json();
     expect((detail.invoice.extractionWarnings ?? []).filter((w: string) => /MISMATCH|UNVERIFIED/.test(w))).toEqual([]);
@@ -178,7 +178,7 @@ describe.skipIf(!existsSync(FILE))('ICDC upload: stored depot figures and the gu
     const mp = multipart(readFileSync(FILE));
     const again = await ctx.app.inject({
       method: 'POST', url: `/api/v1/invoices/${ctx.branchId}/upload`,
-      headers: { ...ctx.auth('cashier'), 'content-type': mp.contentType }, payload: mp.body,
+      headers: { ...ctx.auth('manager'), 'content-type': mp.contentType }, payload: mp.body,
     });
     expect(again.statusCode, again.body).toBe(201);
     // an unapproved draft can still be deleted

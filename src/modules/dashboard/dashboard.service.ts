@@ -32,7 +32,8 @@ const paidIn = (branchFilter: ReturnType<typeof eq> | ReturnType<typeof inArray>
 // ─── ONE OUTLET ─────────────────────────────────────────────────────────────
 
 export async function branchDashboard(user: JwtPayload, branchId: string, now: Date = new Date()) {
-  const role: 'cashier' | 'manager' | 'owner' = user.role === 'owner' ? 'owner' : user.role === 'manager' ? 'manager' : 'cashier';
+  // An office admin runs the business for the owner, so they get the owner's view (a manager's or above)
+  const role: 'cashier' | 'manager' | 'owner' = user.role === 'owner' || user.role === 'office_admin' ? 'owner' : user.role === 'manager' ? 'manager' : 'cashier';
   const staff = role !== 'cashier';
 
   const today = businessDateOf(now);

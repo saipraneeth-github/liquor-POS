@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, RefreshCw, AlertCircle, CheckCircle2, TrendingUp, Package, Download, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, isManagerLike, userCan } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { ProtectedButton } from '../components/ui';
 import { businessDate } from '../lib/business-day';
@@ -52,7 +52,8 @@ interface SaleType {
 export function Counter() {
   const { user, saasRole } = useAuth();
   const branchId = user?.branchId;
-  const isManager = user?.role === 'manager' || user?.role === 'owner' || user?.role === 'office_admin';
+  const isManager = isManagerLike(user);
+  const canMoveStock = userCan(user, 'stock.move');
   const isAdmin = user?.role === 'owner' || saasRole === 'admin' || saasRole === 'super_admin';
 
   const todayStr = businessDate();
@@ -126,7 +127,11 @@ export function Counter() {
 
   useEffect(() => {
     if (!branchId) return;
-    api.get<SaleType[]>('/sale-types/' + branchId).then(setSaleTypes).catch(() => {});
+    api.get<SaleType[]>('/sale-types/' + branchId).then((list) => {
+      setSaleTypes(list);
+      // a cashier limited to some sale types starts on one they may use
+      if (list.length > 0 && !list.some((t) => idOf(t) === saleTypeId)) setSaleTypeId(idOf(list[0]));
+    }).catch(() => {});
   }, [branchId]);
 
   useEffect(() => {
@@ -565,7 +570,7 @@ export function Counter() {
                 {t.name}
               </button>
             ))}
-            {isManager && (
+            {canMoveStock && (
               <button
                 type="button"
                 id="counterMoveBtn"
@@ -639,7 +644,7 @@ export function Counter() {
               <div>
                 <div className="h2 text-lg font-bold">
                   Counter Stock Sheet for {sheet.sheetDate}
-                  {saleTypes.length > 1 && <span className="ml-2 text-sm font-semibold text-purple-700">· {typeLabel}</span>}
+                  {(saleTypes.length > 1 || (saleTypes.length === 1 && !saleTypes[0].isDefault)) && <span className="ml-2 text-sm font-semibold text-purple-700">· {typeLabel}</span>}
                 </div>
                 <div className="muted small text-xs text-gray-500">
                   {sheet.lines.length} {sheet.lines.length === 1 ? 'product' : 'products'}

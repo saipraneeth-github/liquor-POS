@@ -90,6 +90,7 @@ export async function updateMrp(
   productId: string,
   newMrp: string,
   user: JwtPayload,
+  tenant: Tenant = 'ALL',
 ): Promise<void> {
   const normalized = new Decimal(newMrp);
   if (normalized.isZero() || normalized.isNegative()) throw new BusinessRuleError('MRP must be greater than zero');
@@ -98,11 +99,13 @@ export async function updateMrp(
   await db.transaction(async (tx) => {
     // Read the old MRP under a row lock so concurrent changes audit correctly
     const [existing] = await tx
-      .select({ id: products.id, mrp: products.mrp })
+      .select({ id: products.id, mrp: products.mrp, syndicateId: products.syndicateId })
       .from(products)
       .where(eq(products.id, productId))
       .for('update');
-    if (!existing) throw new NotFoundError(`Product ${productId} not found`);
+    // A product of another business is reported as missing (no existence leak) — the MRP belongs to its own business
+    const foreign = existing && existing.syndicateId !== null && tenant !== 'ALL' && existing.syndicateId !== tenant;
+    if (!existing || foreign) throw new NotFoundError(`Product ${productId} not found`);
     if (new Decimal(existing.mrp).equals(mrp)) return;   // no-op, nothing to audit
 
     await tx.update(products)

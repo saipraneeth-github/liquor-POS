@@ -97,7 +97,7 @@ Modules: `saletypes`, `auth`, `users`, `branches`, `syndicates`, `products`, `bi
 
 ## 5. Auth & RBAC
 
-Role rank: `steward(1) < cashier(2) < manager(3) < owner(4)`. `requireRole('x')` allows that role and above,
+Role rank: `steward(1) < cashier(2) < manager(3) < office_admin(3.5) < owner(4)`. `requireRole('x')` allows that role and above,
 and re-reads the user from the DB on every request (deactivation/demotion takes effect immediately).
 
 Tenancy (JWT carries `sub, email, role, branchId, syndicateId`):
@@ -168,6 +168,14 @@ Schema change: edit `schema.ts` → `npm run db:generate` (needs any `DATABASE_U
 - Windows PowerShell 5.1 `Get-Content` mis-displays UTF-8 (box-drawing comments look like `â”€`); the files are fine — use `-Encoding utf8`.
 - `.agents/` and `README.md` describe generic AI tooling, not this app; ignore them for project context.
 
+### Permissions (`src/modules/permissions/`, Staff & Terminals → Access)
+
+- **Office Admin** runs the business for the owner: above a manager, below the owner. Everything inside the business, nothing above it: the platform console, creating outlets, subscription billing and business-wide shared bank accounts stay owner-only. Only the owner creates an office admin; an office admin creates managers / cashiers / stewards; a manager creates cashiers / stewards. `ProtectedButton` and the guard use the same ranks.
+- **Actions** are permissions with role defaults (owner / office admin / manager = all, cashier / steward = none) and per-user overrides in `user_permissions`: `cost.view`, `prices.edit`, `sale_types.manage`, `stock.move`, `invoices.approve` (needs `cost.view`), `bills.void`, `discount.unlimited`. Owner and office admin cannot be restricted. Use `requirePermission(key)` after `requireRole('steward')` on a route; the permission, not the rank, decides. Only users below you can be changed and nobody can grant what they do not hold (`GET/PUT /users/:id/permissions`, manager+). `/me` returns the effective `permissions`, `discountCapPct` and `saleTypeIds`.
+- **Cost is a permission.** Without `cost.view` a user never gets cost fields (`stripCost`, any depth) from products, stock, breakage, and every supplier-invoice route is closed (403 `PERMISSION_DENIED`).
+- **Discounts** above 5% of the bill (`DISCOUNT_CAP_PCT`) need `discount.unlimited`; checked exactly in paise in `createBill`.
+- **Sale types per user** (`user_sale_types`, cashier / steward only; no rows = all): enforced in billing and every counter-sheet route; `GET /sale-types/:b` returns only the allowed ones.
+- **Page access** (`user_page_permissions`) only controls the sidebar and which URLs open; the API is protected by role + permission, not by the page matrix (`requirePage` is unused).
 ### Sale types (Walk-in, Janata, ...) (`src/modules/saletypes/`)
 
 - A sale type is a **price list plus its own counter**. `POST /bills` takes `saleTypeId` (omitted = default/Walk-in); the price comes from the DB (`products.mrp` for the default type, `product_prices` for the others — missing price → 422, pegs/servings only under the default type).

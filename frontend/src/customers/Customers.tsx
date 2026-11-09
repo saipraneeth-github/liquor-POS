@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api/client';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, isManagerLike } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { ProtectedButton } from '../components/ui';
 
@@ -60,7 +60,7 @@ export function Customers() {
   const [ecActive, setEcActive] = useState(true);
 
   const branchId = user?.branchId;
-  const isManager = user?.role === 'manager' || user?.role === 'owner';
+  const isManager = isManagerLike(user);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     const host = document.getElementById('toastHost');

@@ -62,12 +62,24 @@ const PAGE_MIN_ROLE: Record<string, string> = {
   admin: 'manager',
 };
 
-const ROLE_RANK: Record<string, number> = { steward: 1, cashier: 2, manager: 3, owner: 4 };
+const ROLE_RANK: Record<string, number> = { steward: 1, cashier: 2, manager: 3, office_admin: 3.5, owner: 4 };
+
+interface PermissionRow { key: string; label: string; description: string; roleDefault: boolean; override: boolean | null; effective: boolean }
+interface PermissionData {
+  role: string;
+  unrestricted: boolean;
+  permissions: PermissionRow[];
+  discountCapPct: number | null;
+  canLimitSaleTypes: boolean;
+  saleTypes: { id: string; name: string; isDefault: boolean }[];
+  saleTypeIds: string[];
+}
 
 export function Admin() {
   const { user } = useAuth();
   const branchId = user?.branchId;
   const isOwner = user?.role === 'owner';
+  const isOfficeAdmin = user?.role === 'office_admin';
 
   const [users, setUsers] = useState<UserItem[]>([]);
   const [terminals, setTerminals] = useState<TerminalItem[]>([]);
@@ -77,7 +89,7 @@ export function Admin() {
   const [nuName, setNuName] = useState('');
   const [nuEmail, setNuEmail] = useState('');
   const [nuPass, setNuPass] = useState('');
-  const [nuRole, setNuRole] = useState(isOwner ? 'manager' : 'cashier');
+  const [nuRole, setNuRole] = useState(isOwner || isOfficeAdmin ? 'manager' : 'cashier');
   const [creatingUser, setCreatingUser] = useState(false);
 
   // New terminal form
@@ -88,6 +100,10 @@ export function Admin() {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [userPages, setUserPages] = useState<Set<string>>(new Set());
   const [loadingPages, setLoadingPages] = useState(false);
+  // What the user may do (cost prices, prices, stock moves, approvals, voids, big discounts) + which sale types a cashier may use
+  const [permData, setPermData] = useState<PermissionData | null>(null);
+  const [permEdits, setPermEdits] = useState<Record<string, boolean>>({});    // key → effective value being edited
+  const [limitTypes, setLimitTypes] = useState<Set<string>>(new Set());
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     const host = document.getElementById('toastHost');
@@ -181,6 +197,14 @@ export function Admin() {
     const rank = ROLE_RANK[targetUser?.role || 'cashier'] || 2;
     const defaults = PAGE_KEYS.filter((k) => rank >= (ROLE_RANK[PAGE_MIN_ROLE[k]] || 2));
     try {
+      const perm = await api.get<PermissionData>(`/users/${id}/permissions`);
+      setPermData(perm);
+      setPermEdits(Object.fromEntries(perm.permissions.map((q) => [q.key, q.effective])));
+      setLimitTypes(new Set(perm.saleTypeIds));
+    } catch {
+      setPermData(null);
+    }
+    try {
       const res = await api.get<{ pages: { routePath: string; canAccess: boolean }[] }>(`/users/${id}/pages`);
       if (res.pages.length === 0) {
         setUserPages(new Set(defaults));
@@ -205,14 +229,20 @@ export function Admin() {
       await api.put(`/users/${editingUserId}/pages`, {
         pages: PAGE_KEYS.map((p) => ({ routePath: p, canAccess: userPages.has(p) })),
       });
-      showToast('Page permissions saved', 'success');
+      if (permData && !permData.unrestricted) {
+        // only what differs from the role's default is stored
+        const overrides = Object.fromEntries(permData.permissions.map((q) => [q.key, permEdits[q.key] === q.roleDefault ? null : permEdits[q.key]]));
+        await api.put(`/users/${editingUserId}/permissions`, { overrides, saleTypeIds: permData.canLimitSaleTypes ? [...limitTypes] : [] });
+      }
+      showToast('Access saved', 'success');
       setEditingUserId(null);
     } catch (err: any) {
       showToast('Failed to save pages: ' + errorMessage(err), 'error');
     }
   };
 
-  const roles = isOwner ? ['manager', 'office_admin', 'cashier', 'steward'] : ['office_admin', 'cashier', 'steward'];
+  // who can create whom: an office admin has owner-level power, so only the owner creates one; a manager creates cashiers and stewards
+  const roles = isOwner ? ['manager', 'office_admin', 'cashier', 'steward'] : isOfficeAdmin ? ['manager', 'cashier', 'steward'] : ['cashier', 'steward'];
 
   const [revealed, setRevealed] = useState<{ email: string; password: string } | null>(null);
 
@@ -279,6 +309,8 @@ export function Admin() {
                     <td className="py-2 px-3">
                       {u.id === user?.id ? (
                         <span className="muted small text-xs text-gray-500">You</span>
+                      ) : (ROLE_RANK[u.role] ?? 0) >= (ROLE_RANK[user?.role ?? 'steward'] ?? 0) && user?.role !== 'owner' ? (
+                        <span className="muted small text-xs text-gray-500" title="You can only manage people below your own role">—</span>
                       ) : (
                         <div className="row flex items-center gap-2">
                           <ProtectedButton
@@ -297,7 +329,7 @@ export function Admin() {
                             className="btn-sec btn-sm px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded border text-xs"
                             onClick={() => openPagesModal(u.id)}
                           >
-                            Pages
+                            Access
                           </button>
                           <ProtectedButton
                             type="button"
@@ -442,9 +474,9 @@ export function Admin() {
 
       {editingUserId && (
         <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-2xl w-full p-6">
             <div className="flex justify-between items-start mb-1">
-              <h3 className="text-lg font-bold" id="modalTitle">Page permissions</h3>
+              <h3 className="text-lg font-bold" id="modalTitle">Access — {users.find((x) => x.id === editingUserId)?.name}</h3>
               <button
                 type="button"
                 onClick={() => setEditingUserId(null)}
@@ -455,13 +487,14 @@ export function Admin() {
               </button>
             </div>
             <div className="muted small text-xs text-gray-500 dark:text-gray-400 mb-4">
-              Optional page matrix used by page-guarded features. Owners bypass it.
+              Which pages this person sees, what they may do, and which sale types they may sell. Owners and office admins always have everything.
             </div>
 
             {loadingPages ? (
               <BeerBottleLoader inline size="sm" title="Loading Permissions…" subtitle="Fetching page access rights…" />
             ) : (
               <div className="flex flex-col gap-3" id="modalBody">
+                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pages</div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   {PAGE_KEYS.map((k) => (
                     <label key={k} className="check flex items-center gap-2">
@@ -479,6 +512,57 @@ export function Admin() {
                     </label>
                   ))}
                 </div>
+
+                {permData && (
+                  <div id="permissionSection" className="pt-3 border-t space-y-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">What they can do</div>
+                    {permData.unrestricted ? (
+                      <p className="text-sm text-gray-600 dark:text-gray-300">An {permData.role === 'owner' ? 'owner' : 'office admin'} always has every permission and cannot be restricted.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {permData.permissions.map((q) => (
+                          <label key={q.key} className="flex items-start gap-2 text-sm" data-permission={q.key}>
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={permEdits[q.key] ?? false}
+                              onChange={(e) => setPermEdits({ ...permEdits, [q.key]: e.target.checked })}
+                            />
+                            <span>
+                              <span className="font-medium">{q.label}</span>
+                              {permEdits[q.key] !== q.roleDefault && <span className="ml-2 text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">{permEdits[q.key] ? 'extra' : 'removed'}</span>}
+                              <span className="block text-xs text-gray-500">{q.description}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+
+                    {permData.canLimitSaleTypes && permData.saleTypes.length > 1 && (
+                      <div id="saleTypeSection" className="pt-3 border-t">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Sale types they may bill and count</div>
+                        <p className="text-xs text-gray-500 mb-2">Tick the ones this person may use. Leave all unticked to allow every sale type.</p>
+                        <div className="flex flex-wrap gap-4 text-sm">
+                          {permData.saleTypes.map((t) => (
+                            <label key={t.id} className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={limitTypes.has(t.id)}
+                                onChange={(e) => {
+                                  const next = new Set(limitTypes);
+                                  if (e.target.checked) next.add(t.id);
+                                  else next.delete(t.id);
+                                  setLimitTypes(next);
+                                }}
+                              />
+                              {t.name}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex justify-end gap-3 pt-4 border-t">
                   <button
                     type="button"

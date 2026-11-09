@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { api } from '../api/client';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, isManagerLike } from '../auth/AuthProvider';
 import { errorMessage, showToast } from '../lib/print';
 import { Field, Modal, inr } from '../components/ui';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
@@ -99,7 +99,7 @@ const COPY = {
 
 export function MenuManager({ kind }: { kind: MenuKind }) {
   const { user } = useAuth();
-  const canEdit = user?.role === 'manager' || user?.role === 'owner';
+  const canEdit = isManagerLike(user);
   const branchId = user?.branchId;
   const copy = COPY[kind];
 

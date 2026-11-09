@@ -11,7 +11,25 @@ export type User = {
   /** OK, or why the business is locked: TRIAL_EXPIRED / OVERDUE (SUSPENDED never gets this far). */
   access?: 'OK' | 'TRIAL_EXPIRED' | 'OVERDUE' | 'SUSPENDED';
   pages?: { routePath: string; canAccess: boolean }[];
+  /** What the user may do (see the server's permissions engine); owner and office admin always have everything. */
+  permissions?: Record<string, boolean>;
+  /** Largest bill discount in % (null = unlimited). */
+  discountCapPct?: number | null;
+  /** Sale types a cashier is limited to (null = all). */
+  saleTypeIds?: string[] | null;
 };
+
+/** True when the user may do key (e.g. 'prices.edit', 'cost.view', 'stock.move', 'bills.void'). */
+export function userCan(u: User | null | undefined, key: string): boolean {
+  if (!u) return false;
+  if (u.role === 'owner' || u.role === 'office_admin') return true;
+  return u.permissions?.[key] === true;
+}
+
+/** Manager, office admin or owner: may manage staff, counters and day-to-day approvals. */
+export function isManagerLike(u: User | null | undefined): boolean {
+  return !!u && (u.role === 'owner' || u.role === 'office_admin' || u.role === 'manager');
+}
 
 export type BranchOption = { id: string; name: string; code: string };
 

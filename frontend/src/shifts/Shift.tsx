@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { inr } from '../components/ui';
 import { X } from 'lucide-react';
 import { api } from '../api/client';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, isManagerLike } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { businessDate } from '../lib/business-day';
 
@@ -52,7 +52,7 @@ interface ShiftCloseResponse {
 export function Shift() {
   const { user } = useAuth();
   const branchId = user?.branchId;
-  const isManager = user?.role === 'manager' || user?.role === 'owner';
+  const isManager = isManagerLike(user);
 
   const [loading, setLoading] = useState(false);
   const [terminals, setTerminals] = useState<Terminal[]>([]);

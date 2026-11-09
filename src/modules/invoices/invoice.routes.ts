@@ -3,6 +3,7 @@ import fastifyMultipart from '@fastify/multipart';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
+import { requirePermission } from '../permissions/permission.service.js';
 import { db } from '../../db/client.js';
 import { isPlaceholderNumber } from './validate.engine.js';
 import { NothingExtractableError, UnsupportedFileError, terminateOcr } from './extraction/index.js';
@@ -49,7 +50,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   // OCR / PDF parsing is CPU-heavy, so cap uploads per client in production (tests upload in bursts).
   fastify.post('/invoices/:branchId/upload', {
     config: process.env.NODE_ENV === 'production' ? { rateLimit: { max: 20, timeWindow: '1 minute' } } : {},
-    preHandler: requireRole('cashier'),
+    preHandler: [requireRole('steward'), requirePermission('cost.view')],
   }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
@@ -94,7 +95,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // POST /invoices/:branchId — manual DRAFT (cashier+)
-  fastify.post('/invoices/:branchId', { preHandler: requireRole('cashier') }, async (request, reply) => {
+  fastify.post('/invoices/:branchId', { preHandler: [requireRole('steward'), requirePermission('cost.view')] }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const user = getUser(request);
@@ -109,7 +110,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // GET /invoices/:branchId/check-duplicate?invoiceNumber=...&excludeId=... (cashier+)
-  fastify.get('/invoices/:branchId/check-duplicate', { preHandler: requireRole('cashier') }, async (request, reply) => {
+  fastify.get('/invoices/:branchId/check-duplicate', { preHandler: [requireRole('steward'), requirePermission('cost.view')] }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const user = getUser(request);
@@ -148,7 +149,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // GET /invoices/:branchId — history, newest first (cashier+)
-  fastify.get('/invoices/:branchId', { preHandler: requireRole('cashier') }, async (request, reply) => {
+  fastify.get('/invoices/:branchId', { preHandler: [requireRole('steward'), requirePermission('cost.view')] }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const user = getUser(request);
@@ -173,14 +174,14 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   }
 
   // GET /invoices/detail/:id (cashier+)
-  fastify.get('/invoices/detail/:id', { preHandler: requireRole('cashier') }, async (request, reply) => {
+  fastify.get('/invoices/detail/:id', { preHandler: [requireRole('steward'), requirePermission('cost.view')] }, async (request, reply) => {
     const id = await authorizeInvoice(request, reply, getUser(request));
     if (!id) return;
     try { return await getInvoiceDetail(id); } catch (err) { return sendInvoiceError(reply, err); }
   });
 
   // GET /invoices/detail/:id/file — original upload (cashier+)
-  fastify.get('/invoices/detail/:id/file', { preHandler: requireRole('cashier') }, async (request, reply) => {
+  fastify.get('/invoices/detail/:id/file', { preHandler: [requireRole('steward'), requirePermission('cost.view')] }, async (request, reply) => {
     const id = await authorizeInvoice(request, reply, getUser(request));
     if (!id) return;
     try {
@@ -198,7 +199,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // PUT /invoices/detail/:id — edit header + lines while DRAFT/REVIEWED; back to DRAFT (cashier+)
-  fastify.put('/invoices/detail/:id', { preHandler: requireRole('cashier') }, async (request, reply) => {
+  fastify.put('/invoices/detail/:id', { preHandler: [requireRole('steward'), requirePermission('cost.view')] }, async (request, reply) => {
     const user = getUser(request);
     const id = await authorizeInvoice(request, reply, user);
     if (!id) return;
@@ -208,7 +209,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // POST /invoices/detail/:id/review — DRAFT → REVIEWED (manager+)
-  fastify.post('/invoices/detail/:id/review', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.post('/invoices/detail/:id/review', { preHandler: [requireRole('steward'), requirePermission('cost.view'), requirePermission('invoices.approve')] }, async (request, reply) => {
     const user = getUser(request);
     const id = await authorizeInvoice(request, reply, user);
     if (!id) return;
@@ -216,7 +217,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // POST /invoices/detail/:id/approve — DRAFT|REVIEWED → APPROVED; stock, prices, accounting (manager+)
-  fastify.post('/invoices/detail/:id/approve', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.post('/invoices/detail/:id/approve', { preHandler: [requireRole('steward'), requirePermission('cost.view'), requirePermission('invoices.approve')] }, async (request, reply) => {
     const user = getUser(request);
     const id = await authorizeInvoice(request, reply, user);
     if (!id) return;
@@ -224,7 +225,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // POST /invoices/detail/:id/reject {reason} — DRAFT|REVIEWED → REJECTED (manager+)
-  fastify.post('/invoices/detail/:id/reject', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.post('/invoices/detail/:id/reject', { preHandler: [requireRole('steward'), requirePermission('cost.view'), requirePermission('invoices.approve')] }, async (request, reply) => {
     const user = getUser(request);
     const id = await authorizeInvoice(request, reply, user);
     if (!id) return;
@@ -234,7 +235,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // DELETE /invoices/detail/:id — delete a supplier invoice (manager+)
-  fastify.delete('/invoices/detail/:id', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.delete('/invoices/detail/:id', { preHandler: [requireRole('steward'), requirePermission('cost.view'), requirePermission('invoices.approve')] }, async (request, reply) => {
     const user = getUser(request);
     const id = await authorizeInvoice(request, reply, user);
     if (!id) return;
@@ -247,7 +248,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // POST /invoices/detail/:id/reverse — undo an APPROVED invoice: stock taken back, reversing vouchers, scheme credit removed (manager+)
-  fastify.post('/invoices/detail/:id/reverse', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.post('/invoices/detail/:id/reverse', { preHandler: [requireRole('steward'), requirePermission('cost.view'), requirePermission('invoices.approve')] }, async (request, reply) => {
     const body = RejectSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: 'A reason of at least 5 characters is required' });
     const user = getUser(request);
@@ -261,7 +262,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   });
 
   // DELETE /invoices/:branchId/all — delete all supplier invoices for this branch (manager+)
-  fastify.delete('/invoices/:branchId/all', { preHandler: requireRole('manager') }, async (request, reply) => {
+  fastify.delete('/invoices/:branchId/all', { preHandler: [requireRole('steward'), requirePermission('cost.view'), requirePermission('invoices.approve')] }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
     const user = getUser(request);

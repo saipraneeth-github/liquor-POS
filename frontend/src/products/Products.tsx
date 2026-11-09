@@ -7,7 +7,7 @@ import {
   type LiquorCategoryKey,
 } from '../components/category-icons';
 import { api } from '../api/client';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, isManagerLike, userCan } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { ProtectedButton } from '../components/ui';
 import { SalePrices } from './SalePrices';
@@ -38,7 +38,9 @@ interface Product {
 
 export function Products() {
   const { user } = useAuth();
-  const isManager = user?.role === 'manager' || user?.role === 'owner';
+  const isManager = isManagerLike(user);
+  const canEditPrices = userCan(user, 'prices.edit');   // MRP and every sale type's price
+  const canSeeCost = userCan(user, 'cost.view');        // buying prices and margins
   const branchId = user?.branchId;
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -318,11 +320,11 @@ export function Products() {
                 <th className="py-2 px-3">Product</th>
                 <th className="py-2 px-3">Category</th>
                 <th className="py-2 px-3">Barcode</th>
-                <th className="py-2 px-3 text-right">Cost Price</th>
+                {canSeeCost && <th className="py-2 px-3 text-right">Cost Price</th>}
                 <th className="py-2 px-3 text-right">MRP</th>
-                <th className="py-2 px-3 text-right">Margin</th>
+                {canSeeCost && <th className="py-2 px-3 text-right">Margin</th>}
                 <th className="py-2 px-3 text-right">Stock</th>
-                {isManager && <th className="py-2 px-3"></th>}
+                {canEditPrices && <th className="py-2 px-3"></th>}
               </tr>
             </thead>
             <tbody>
@@ -369,7 +371,7 @@ export function Products() {
                     <CategoryBadge categoryName={p.categoryName} productName={p.name} />
                   </td>
                   <td className="py-2 px-3 font-mono text-xs text-gray-600 dark:text-gray-400">{p.barcode || '—'}</td>
-                  <td className="py-2 px-3 text-right">
+                  {canSeeCost && <td className="py-2 px-3 text-right">
                     {p.costPrice ? (
                       <div>
                         <span className="font-mono font-semibold text-gray-900 dark:text-gray-100">
@@ -384,9 +386,9 @@ export function Products() {
                     ) : (
                       <span className="text-gray-400 text-xs">—</span>
                     )}
-                  </td>
+                  </td>}
                   <td className="py-2 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">₹{parseFloat(p.mrp).toFixed(2)}</td>
-                  <td className="py-2 px-3 text-right">
+                  {canSeeCost && <td className="py-2 px-3 text-right">
                     {p.costPrice && p.mrp ? (() => {
                       const cost = parseFloat(p.costPrice);
                       const mrp = parseFloat(p.mrp);
@@ -399,15 +401,15 @@ export function Products() {
                         </span>
                       );
                     })() : <span className="text-gray-400 text-xs">—</span>}
-                  </td>
+                  </td>}
                   <td className="py-2 px-3 text-right font-mono text-gray-700 dark:text-gray-300">
                     {stockMap[p.id] !== undefined ? stockMap[p.id] : '—'}
                   </td>
-                  {isManager && (
+                  {canEditPrices && (
                     <td className="py-2 px-3 text-right">
                       <ProtectedButton
                         variant="secondary"
-                        minRole="manager"
+                        permission="prices.edit"
                         className="px-2 py-1 text-xs"
                         onClick={() => handleOpenMrp(p)}
                       >
@@ -422,7 +424,7 @@ export function Products() {
         )}
       </div>
 
-      {isManager && branchId && <SalePrices branchId={branchId} />}
+      {canEditPrices && branchId && <SalePrices branchId={branchId} />}
 
       {isManager && (
         <details className="card mgr-only bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded shadow p-4">
@@ -507,7 +509,7 @@ export function Products() {
                 />
               </label>
 
-              <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npCost">
+              {canSeeCost && <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npCost">
                 Cost price (₹)
                 <input
                   id="npCost"
@@ -516,7 +518,7 @@ export function Products() {
                   value={npCost}
                   onChange={(e) => setNpCost(e.target.value)}
                 />
-              </label>
+              </label>}
 
               <label className="field flex flex-col gap-1 text-xs font-medium text-gray-700 dark:text-gray-300" htmlFor="npBarcode">
                 Barcode
