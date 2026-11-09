@@ -177,7 +177,16 @@ export function POS() {
         fetch(`/api/v1/sale-types/${branchId}/prices`, { headers }),
         fetch(`/api/v1/sale-types/${branchId}/stock`, { headers }),
       ]);
-      if (t.ok) setSaleTypes(await t.json());
+      if (t.ok) {
+        const types: SaleType[] = await t.json();
+        setSaleTypes(types);
+        setSaleTypeId((cur) => {
+          if (!cur) return '';
+          if (types.some((x) => x.id === cur)) return cur;
+          try { localStorage.removeItem(`lc_pos_sale_type:${branchId}`); } catch { /* private mode */ }
+          return '';
+        });
+      }
       if (p.ok) {
         const m = await p.json() as { products: { id: string; prices: Record<string, string> }[] };
         setTypePrices(Object.fromEntries(m.products.map((x) => [x.id, x.prices])));
