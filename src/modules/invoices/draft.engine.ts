@@ -3,7 +3,7 @@ import { calculatePrecisionLine } from './precision-calc.engine.js';
  * draft.engine.ts — PURE: extracted lines + catalog → draft invoice lines (matched, cases converted, validated).
  */
 import { Decimal } from 'decimal.js';
-import { matchLine, type CatalogProduct, type MatchResult } from './match.engine.js';
+import { matchLine, extractVolumeMl, type CatalogProduct, type MatchResult } from './match.engine.js';
 import { validateLine, AMOUNT_TOLERANCE } from './validate.engine.js';
 import type { ExtractedLine } from './extraction/types.js';
 import { MAX_MONEY } from './extraction/numbers.js';
@@ -120,6 +120,10 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       productId: match.productId,
       matchStatus: match.status,
       flags,
+      volumeMl: line.volumeMl ?? null,
+      catalogVolumeMl: product ? (product.volumeMl ?? extractVolumeMl(product.name)) : null,
+      packQuantity: line.packQuantity ?? null,
+      catalogPackQuantity: product?.packQuantity ?? null,
     });
 
     return {

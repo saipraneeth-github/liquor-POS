@@ -7,6 +7,8 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { showToast } from '../lib/toast';
 import { businessDate } from '../lib/business-day';
+import ChallanTotals from './ChallanTotals';
+import { StockSplit } from './StockSplit';
 
 interface BrandMappingRow {
   id: string;
@@ -111,7 +113,7 @@ interface InvoiceHeader {
   netInvoiceValue?: string | null;
   totalInvoiceAmount?: string | null;
   retailerCreditBalance?: string | null;
-  status: 'DRAFT' | 'REVIEWED' | 'APPROVED' | 'REJECTED';
+  status: 'DRAFT' | 'REVIEWED' | 'APPROVED' | 'REJECTED' | 'REVERSED';
   source: string;
   notes?: string;
   extractionWarnings?: string[];
@@ -882,6 +884,14 @@ export function Inventory() {
       invoiceNumber: inv.invoiceNumber || undefined,
       invoiceDate: inv.invoiceDate || undefined,
       totalAmount: inv.totalAmount,
+      // Depot-challan figures (edited in the Challan totals panel); '' clears a figure
+      ...((inv.extractionMeta as { engine?: string } | null | undefined)?.engine === 'icdc-extractor'
+        ? Object.fromEntries(
+            (['linesBasicTotal', 'mrpRoundingOff', 'netInvoiceValue', 'turnoverTax', 'specialExciseCess', 'tcsAmount',
+              'challanAmount', 'previousCredit', 'subTotal', 'retailerCreditBalance'] as const)
+              .map((k) => [k, inv[k] === undefined ? undefined : (inv[k] === null || String(inv[k]).trim() === '' ? null : String(inv[k]))]),
+          )
+        : {}),
       items: activeInvoice.items.map((it) => ({
         ...(it.id ? { id: it.id } : {}),
         productId: it.productId || null,
@@ -1021,6 +1031,35 @@ export function Inventory() {
       loadInvoices();
     } catch (err: any) {
       showToast('Failed to delete invoice: ' + err.message, 'error');
+    }
+  };
+
+  // An approved invoice is never deleted: it is reversed (stock taken back out, reversing vouchers posted, trail kept)
+  const [reverseTarget, setReverseTarget] = useState<{ id: string; number: string } | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const [reversing, setReversing] = useState(false);
+
+  const handleReverseInvoice = async () => {
+    if (!reverseTarget) return;
+    if (reverseReason.trim().length < 5) {
+      showToast('Give a reason of at least 5 characters.', 'error');
+      return;
+    }
+    setReversing(true);
+    try {
+      await api.post(`/invoices/detail/${reverseTarget.id}/reverse`, { reason: reverseReason.trim() });
+      showToast(`Invoice ${reverseTarget.number || ''} reversed — stock and books restored.`, 'success');
+      if (activeInvoice?.invoice.id === reverseTarget.id) {
+        setActiveInvoice(null);
+        setWizardStep(1);
+      }
+      setReverseTarget(null);
+      setReverseReason('');
+      loadInvoices();
+    } catch (err: any) {
+      showToast('Could not reverse: ' + err.message, 'error');
+    } finally {
+      setReversing(false);
     }
   };
 
@@ -1543,16 +1582,28 @@ export function Inventory() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <ProtectedButton
-                    variant="danger"
-                    minRole="manager"
-                    confirmMessage={`Are you sure you want to delete invoice ${activeInvoice.invoice.invoiceNumber || 'draft'}? This action cannot be undone.`}
-                    confirmLabel="Delete"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg font-medium cursor-pointer transition-colors"
-                    onClick={() => handleDeleteInvoice(activeInvoice.invoice.id, activeInvoice.invoice.invoiceNumber)}
-                  >
-                    <Trash2 size={14} /> Delete Bill
-                  </ProtectedButton>
+                  {activeInvoice.invoice.status === 'APPROVED' ? (
+                    <ProtectedButton
+                      type="button"
+                      minRole="manager"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg font-medium cursor-pointer transition-colors"
+                      onClick={() => { setReverseReason(''); setReverseTarget({ id: activeInvoice.invoice.id, number: activeInvoice.invoice.invoiceNumber }); }}
+                      title="An approved invoice cannot be deleted. Reversing takes the stock back out and posts reversing entries."
+                    >
+                      Reverse invoice
+                    </ProtectedButton>
+                  ) : (
+                    <ProtectedButton
+                      variant="danger"
+                      minRole="manager"
+                      confirmMessage={`Are you sure you want to delete invoice ${activeInvoice.invoice.invoiceNumber || 'draft'}? This action cannot be undone.`}
+                      confirmLabel="Delete"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg font-medium cursor-pointer transition-colors"
+                      onClick={() => handleDeleteInvoice(activeInvoice.invoice.id, activeInvoice.invoice.invoiceNumber)}
+                    >
+                      <Trash2 size={14} /> Delete Bill
+                    </ProtectedButton>
+                  )}
                   <button
                     type="button"
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg font-medium cursor-pointer transition-colors"
@@ -1656,85 +1707,6 @@ export function Inventory() {
                   />
                 </div>
               </div>
-
-              {/* Compact Invoice Reconciliation Bar */}
-              {(() => {
-                const wholesaleBasic = activeInvoice.invoice.linesBasicTotal
-                  ? parseFloat(activeInvoice.invoice.linesBasicTotal)
-                  : parseFloat(draftLinesCostTotal);
-                const mrpRounding = activeInvoice.invoice.mrpRoundingOff
-                  ? parseFloat(activeInvoice.invoice.mrpRoundingOff)
-                  : 0;
-                const docTotal = parseFloat(activeInvoice.invoice.totalAmount || '0');
-                const diff = docTotal - (wholesaleBasic + mrpRounding);
-                const isReconciled = Math.abs(diff) < 0.05;
-                const hasDepotLedger = !!(activeInvoice.invoice.previousCredit || activeInvoice.invoice.challanAmount || activeInvoice.invoice.retailerCreditBalance);
-
-                return (
-                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
-                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <div className="flex flex-wrap items-center gap-4">
-                        <div>
-                          <span className="text-gray-500 dark:text-slate-400">Lines Cost:</span>{' '}
-                          <b className="font-mono text-gray-900 dark:text-gray-100">₹{wholesaleBasic.toFixed(2)}</b>
-                        </div>
-                        {Math.abs(mrpRounding) > 0.001 && (
-                          <div>
-                            <span className="text-gray-500 dark:text-slate-400">Rounding:</span>{' '}
-                            <b className="font-mono text-blue-600 dark:text-blue-400">{mrpRounding >= 0 ? '+' : ''}₹{mrpRounding.toFixed(2)}</b>
-                          </div>
-                        )}
-                        <div>
-                          <span className="text-gray-500 dark:text-slate-400">Document Total:</span>{' '}
-                          <b className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">₹{docTotal.toFixed(2)}</b>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        {isReconciled ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
-                            ✓ Reconciled
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800">
-                            Diff: ₹{diff.toFixed(2)}
-                          </span>
-                        )}
-                        {hasDepotLedger && (
-                          <button
-                            type="button"
-                            onClick={() => setShowExciseBreakdown((v) => !v)}
-                            className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium cursor-pointer"
-                          >
-                            {showExciseBreakdown ? 'Hide Details ▴' : 'Excise Details ▾'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {showExciseBreakdown && hasDepotLedger && (
-                      <div className="mt-3 pt-3 border-t dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                        <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
-                          <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Opening Credit</span>
-                          <span className="font-mono font-bold">₹{parseFloat(activeInvoice.invoice.previousCredit || '0').toFixed(2)}</span>
-                        </div>
-                        <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
-                          <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Challan Paid</span>
-                          <span className="font-mono font-bold text-emerald-600">+₹{parseFloat(activeInvoice.invoice.challanAmount || '0').toFixed(2)}</span>
-                        </div>
-                        <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
-                          <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Total Deducted</span>
-                          <span className="font-mono font-bold text-rose-600">-₹{parseFloat(activeInvoice.invoice.totalInvoiceAmount || activeInvoice.invoice.totalAmount || '0').toFixed(2)}</span>
-                        </div>
-                        <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
-                          <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Retailer Balance</span>
-                          <span className="font-mono font-bold text-indigo-900 dark:text-indigo-200">₹{parseFloat(activeInvoice.invoice.retailerCreditBalance || '0').toFixed(2)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
 
               {/* Items */}
               <div>
@@ -1992,6 +1964,95 @@ export function Inventory() {
                   </table>
                 </div>
               </div>
+
+              {/* Challan totals sit after the products: e-challan / DD, previous credit, sub total, rounding, taxes, balance.
+                  Invoices that are not depot challans keep the compact reconciliation bar. */}
+              {(activeInvoice.invoice.extractionMeta as { engine?: string } | null | undefined)?.engine === 'icdc-extractor' ? (
+                <ChallanTotals
+                  figures={activeInvoice.invoice}
+                  linesSum={parseFloat(draftLinesCostTotal)}
+                  editable={activeInvoice.invoice.status === 'DRAFT' || activeInvoice.invoice.status === 'REVIEWED'}
+                  onChange={(field, value) =>
+                    setActiveInvoice({ ...activeInvoice, invoice: { ...activeInvoice.invoice, [field]: value } })
+                  }
+                />
+              ) : (() => {
+                const wholesaleBasic = activeInvoice.invoice.linesBasicTotal
+                  ? parseFloat(activeInvoice.invoice.linesBasicTotal)
+                  : parseFloat(draftLinesCostTotal);
+                const mrpRounding = activeInvoice.invoice.mrpRoundingOff
+                  ? parseFloat(activeInvoice.invoice.mrpRoundingOff)
+                  : 0;
+                const docTotal = parseFloat(activeInvoice.invoice.totalAmount || '0');
+                const diff = docTotal - (wholesaleBasic + mrpRounding);
+                const isReconciled = Math.abs(diff) < 0.05;
+                const hasDepotLedger = !!(activeInvoice.invoice.previousCredit || activeInvoice.invoice.challanAmount || activeInvoice.invoice.retailerCreditBalance);
+
+                return (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div>
+                          <span className="text-gray-500 dark:text-slate-400">Lines Cost:</span>{' '}
+                          <b className="font-mono text-gray-900 dark:text-gray-100">₹{wholesaleBasic.toFixed(2)}</b>
+                        </div>
+                        {Math.abs(mrpRounding) > 0.001 && (
+                          <div>
+                            <span className="text-gray-500 dark:text-slate-400">Rounding:</span>{' '}
+                            <b className="font-mono text-blue-600 dark:text-blue-400">{mrpRounding >= 0 ? '+' : ''}₹{mrpRounding.toFixed(2)}</b>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-gray-500 dark:text-slate-400">Document Total:</span>{' '}
+                          <b className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">₹{docTotal.toFixed(2)}</b>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {isReconciled ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800">
+                            ✓ Reconciled
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800">
+                            Diff: ₹{diff.toFixed(2)}
+                          </span>
+                        )}
+                        {hasDepotLedger && (
+                          <button
+                            type="button"
+                            onClick={() => setShowExciseBreakdown((v) => !v)}
+                            className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium cursor-pointer"
+                          >
+                            {showExciseBreakdown ? 'Hide Details ▴' : 'Excise Details ▾'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {showExciseBreakdown && hasDepotLedger && (
+                      <div className="mt-3 pt-3 border-t dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                        <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
+                          <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Opening Credit</span>
+                          <span className="font-mono font-bold">₹{parseFloat(activeInvoice.invoice.previousCredit || '0').toFixed(2)}</span>
+                        </div>
+                        <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
+                          <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Challan Paid</span>
+                          <span className="font-mono font-bold text-emerald-600">+₹{parseFloat(activeInvoice.invoice.challanAmount || '0').toFixed(2)}</span>
+                        </div>
+                        <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
+                          <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Total Deducted</span>
+                          <span className="font-mono font-bold text-rose-600">-₹{parseFloat(activeInvoice.invoice.totalInvoiceAmount || activeInvoice.invoice.totalAmount || '0').toFixed(2)}</span>
+                        </div>
+                        <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/50">
+                          <span className="text-gray-500 dark:text-slate-400 text-[10px] block">Retailer Balance</span>
+                          <span className="font-mono font-bold text-indigo-900 dark:text-indigo-200">₹{parseFloat(activeInvoice.invoice.retailerCreditBalance || '0').toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Step 2 Actions Bar */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t">
@@ -2324,6 +2385,8 @@ export function Inventory() {
                               ? 'bg-blue-100 text-blue-800'
                               : inv.status === 'REJECTED'
                               ? 'bg-red-100 text-red-800'
+                              : inv.status === 'REVERSED'
+                              ? 'bg-gray-200 text-gray-700'
                               : 'bg-amber-100 text-amber-800'
                           }`}
                         >
@@ -2333,6 +2396,8 @@ export function Inventory() {
                             ? 'Reviewed'
                             : inv.status === 'REJECTED'
                             ? 'Cancelled'
+                            : inv.status === 'REVERSED'
+                            ? 'Reversed'
                             : 'Draft'}
                         </span>
                       </td>
@@ -2356,17 +2421,29 @@ export function Inventory() {
                           >
                             Open Bill
                           </button>
-                          <ProtectedButton
-                            variant="ghost"
-                            minRole="manager"
-                            title="Delete bill"
-                            confirmMessage={`Delete invoice ${inv.invoiceNumber || 'draft'}? This action cannot be undone.`}
-                            confirmLabel="Delete"
-                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer"
-                            onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
-                          >
-                            <Trash2 size={16} />
-                          </ProtectedButton>
+                          {inv.status === 'APPROVED' ? (
+                            <ProtectedButton
+                              type="button"
+                              minRole="manager"
+                              title="Reverse this invoice: takes the stock back out and posts reversing entries"
+                              className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded font-semibold text-xs cursor-pointer"
+                              onClick={() => { setReverseReason(''); setReverseTarget({ id: inv.id, number: inv.invoiceNumber }); }}
+                            >
+                              Reverse
+                            </ProtectedButton>
+                          ) : inv.status === 'REVERSED' ? null : (
+                            <ProtectedButton
+                              variant="ghost"
+                              minRole="manager"
+                              title="Delete bill"
+                              confirmMessage={`Delete invoice ${inv.invoiceNumber || 'draft'}? This action cannot be undone.`}
+                              confirmLabel="Delete"
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer"
+                              onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                            >
+                              <Trash2 size={16} />
+                            </ProtectedButton>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2383,6 +2460,9 @@ export function Inventory() {
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'stock' && (
         <div className="space-y-5">
+          {isManager && branchId && (
+            <StockSplit branchId={branchId} stockRows={stockRows.map((r) => ({ productId: r.productId, name: r.name, brand: r.brand, volumeMl: r.volumeMl }))} />
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" id="stockStats">
             {[
               { k: 'all', label: 'All Products', val: stockRows.length, cls: 'text-gray-900 dark:text-gray-100' },
@@ -2941,6 +3021,42 @@ export function Inventory() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reverse an approved invoice */}
+      {reverseTarget && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="reverseTitle" id="reverseModal">
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold mb-1" id="reverseTitle">Reverse invoice {reverseTarget.number}</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              The bottles this invoice added are taken back out of stock (refused if some were already sold), reversing entries are
+              posted for the purchase and the e-challan payment, and supplier-scheme credit is removed. Nothing is deleted — the
+              original entries stay in the books. The invoice number can be uploaded again.
+            </p>
+            <label className="block text-sm font-medium mb-4">
+              Reason
+              <textarea
+                className="mt-1 w-full p-2 border rounded bg-white dark:bg-gray-900"
+                rows={3}
+                value={reverseReason}
+                onChange={(e) => setReverseReason(e.target.value)}
+                placeholder="e.g. Uploaded against the wrong depot"
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200" onClick={() => setReverseTarget(null)}>Cancel</button>
+              <button
+                type="button"
+                id="reverseSubmit"
+                className="px-4 py-2 rounded bg-amber-600 hover:bg-amber-700 text-white font-medium disabled:opacity-50"
+                disabled={reversing || reverseReason.trim().length < 5}
+                onClick={handleReverseInvoice}
+              >
+                {reversing ? 'Reversing…' : 'Reverse invoice'}
+              </button>
+            </div>
           </div>
         </div>
       )}

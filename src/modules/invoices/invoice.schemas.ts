@@ -41,6 +41,9 @@ export const InvoiceInputSchema = z.object({
   invoiceNumber: InvoiceNumber.optional(),
   invoiceDate: DATE.nullable().optional(),
   totalAmount: MONEY.optional(),
+  /** "Invoice Value" printed under the item table (wholesale total of the lines). */
+  linesBasicTotal: MONEY.nullable().optional(),
+  mrpRoundingOff: MONEY.nullable().optional(),
   specialExciseCess: MONEY.nullable().optional(),
   turnoverTax: MONEY.nullable().optional(),
   tcsAmount: MONEY.nullable().optional(),

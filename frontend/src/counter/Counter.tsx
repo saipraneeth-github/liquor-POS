@@ -13,6 +13,8 @@ interface CounterLine {
   closingSplit?: { cases: number; loose: number };
   openingBottles: number;
   inwardBottles: number;
+  /** Net bottles moved between sale-type counters that day (+ in, − out). */
+  transferBottles?: number;
   closingBottles: number;
   soldBottles: number;
   posSoldBottles?: number;
@@ -28,6 +30,8 @@ interface CounterSheet {
   status: 'DRAFT' | 'POSTED';
   postedAt?: string;
   totalRevenue: string;
+  saleTypeId?: string | null;
+  saleTypeName?: string | null;
   lines: CounterLine[];
 }
 
@@ -35,6 +39,14 @@ interface RecentSheet {
   id: string;
   sheetDate: string;
   status: string;
+  saleTypeId?: string | null;
+}
+
+interface SaleType {
+  id: string;
+  code: string;
+  name: string;
+  isDefault: boolean;
 }
 
 export function Counter() {
@@ -50,6 +62,13 @@ export function Counter() {
   const [loading, setLoading] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [dirty, setDirty] = useState(false);
+
+  // Sale types (Walk-in, Janata, ...): each has its own counter and its own sheet. '' = the default type.
+  const [saleTypes, setSaleTypes] = useState<SaleType[]>([]);
+  const [saleTypeId, setSaleTypeId] = useState('');
+  const [moveModal, setMoveModal] = useState<{ productId: string; from: string; to: string; quantity: string } | null>(null);
+  const idOf = (t: SaleType) => (t.isDefault ? '' : t.id);
+  const sheetOf = (rows: RecentSheet[]) => rows.find((r) => (r.saleTypeId ?? '') === saleTypeId);
 
   // Local overrides for live input
   const [closingCounts, setClosingCounts] = useState<Record<string, string>>({});
@@ -106,20 +125,26 @@ export function Counter() {
 
 
   useEffect(() => {
+    if (!branchId) return;
+    api.get<SaleType[]>('/sale-types/' + branchId).then(setSaleTypes).catch(() => {});
+  }, [branchId]);
+
+  useEffect(() => {
     if (!branchId || !sheetDate) return;
     let active = true;
     setLoading(true);
     api.get<RecentSheet[]>(`/counter-sheets/${branchId}?date=${sheetDate}`)
       .then(async (rows) => {
         if (!active) return;
-        if (rows.length > 0) {
-          if (!sheet || sheet.sheetDate !== sheetDate) {
-            await openSheetById(rows[0].id, true);
+        const mine = sheetOf(rows);
+        if (mine) {
+          if (!sheet || sheet.sheetDate !== sheetDate || (sheet.saleTypeId ?? '') !== saleTypeId) {
+            await openSheetById(mine.id, true);
           }
         } else if (sheetDate === todayStr) {
           // Automatically create/load today's sheet so user never gets stuck at "Pick a date"
           try {
-            const sh = await api.post<CounterSheet>('/counter-sheets/' + branchId, { sheetDate });
+            const sh = await api.post<CounterSheet>('/counter-sheets/' + branchId, { sheetDate, ...(saleTypeId ? { saleTypeId } : {}) });
             if (active) {
               loadSheet(sh);
               loadRecent();
@@ -139,7 +164,7 @@ export function Counter() {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [branchId, sheetDate]);
+  }, [branchId, sheetDate, saleTypeId]);
 
 
   const loadSheet = (sh: CounterSheet) => {
@@ -157,7 +182,7 @@ export function Counter() {
     setInwardCounts(initialInward);
     const initialApprovals: Record<string, boolean> = {};
     for (const l of sh.lines) {
-      if (l.adjustmentApprovedById || (isManager && l.closingBottles > l.openingBottles + l.inwardBottles)) {
+      if (l.adjustmentApprovedById || (isManager && l.closingBottles > l.openingBottles + l.inwardBottles + (l.transferBottles ?? 0))) {
         initialApprovals[l.productId] = true;
       }
     }
@@ -181,12 +206,13 @@ export function Counter() {
     setLoading(true);
     try {
       const rows = await api.get<RecentSheet[]>(`/counter-sheets/${branchId}?date=${sheetDate}`);
-      if (!rows.length) {
+      const mine = sheetOf(rows);
+      if (!mine) {
         showToast(`No sheet for ${sheetDate}. Use "Create sheet".`, 'info');
         setSheet(null);
         return;
       }
-      await openSheetById(rows[0].id);
+      await openSheetById(mine.id);
     } catch (e: any) {
       showToast('Error loading sheet: ' + e.message, 'error');
     } finally {
@@ -205,7 +231,7 @@ export function Counter() {
     }
     setLoading(true);
     try {
-      const sh = await api.post<CounterSheet>('/counter-sheets/' + branchId, { sheetDate });
+      const sh = await api.post<CounterSheet>('/counter-sheets/' + branchId, { sheetDate, ...(saleTypeId ? { saleTypeId } : {}) });
       loadSheet(sh);
       showToast('Counter sheet created for ' + sheetDate + ' — auto-updated with sales', 'success');
       loadRecent();
@@ -299,7 +325,7 @@ export function Counter() {
         }
       }
 
-      const available = l.openingBottles + (linePayload.inwardBottles ?? l.inwardBottles);
+      const available = l.openingBottles + (linePayload.inwardBottles ?? l.inwardBottles) + (l.transferBottles ?? 0);
       const isSurplus = closing > available;
       if (approvals[l.productId] || l.adjustmentApprovedById || (isManager && isSurplus)) {
         linePayload.approveAdjustment = true;
@@ -386,7 +412,7 @@ export function Counter() {
     const inward = parseInt(rawInward, 10);
 
     const isInvalid = isNaN(closing) || isNaN(inward);
-    const available = l.openingBottles + inward;
+    const available = l.openingBottles + inward + (l.transferBottles ?? 0);
     const sold = isInvalid ? 0 : available - closing;
     const rate = parseFloat(l.sellingRate);
     const revenue = sold > 0 ? sold * rate : 0;
@@ -474,7 +500,34 @@ export function Counter() {
     return true;
   });
 
+  const submitMove = async () => {
+    if (!moveModal || !branchId) return;
+    const quantity = parseInt(moveModal.quantity, 10);
+    if (!moveModal.productId || isNaN(quantity) || quantity <= 0) {
+      showToast('Pick a product and a whole number of bottles.', 'error');
+      return;
+    }
+    if (moveModal.from === moveModal.to) {
+      showToast('Choose two different sale types.', 'error');
+      return;
+    }
+    try {
+      await api.post(`/sale-types/${branchId}/transfer`, {
+        productId: moveModal.productId,
+        fromSaleTypeId: moveModal.from || null,
+        toSaleTypeId: moveModal.to || null,
+        quantity,
+      });
+      showToast(`Moved ${quantity} bottle(s).`, 'success');
+      setMoveModal(null);
+      if (sheet?.id) await openSheetById(sheet.id, true);
+    } catch (e: any) {
+      showToast('Could not move stock: ' + e.message, 'error');
+    }
+  };
+
   const isDraft = sheet?.status === 'DRAFT';
+  const typeLabel = saleTypes.find((t) => idOf(t) === saleTypeId)?.name ?? 'Walk-in';
   const postedDate = sheet?.postedAt ? sheet.postedAt.slice(0, 10) : null;
   const isPostedToday = postedDate === todayStr || sheet?.sheetDate === todayStr;
   const canRevertToDraft = !isDraft && isManager && isPostedToday;
@@ -490,6 +543,41 @@ export function Counter() {
       </div>
 
       <div className="card pad p-4 bg-white rounded shadow mb-4 flex flex-col gap-3">
+        {saleTypes.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Sale type">
+            <span className="text-xs font-semibold text-gray-500 mr-1">Counter:</span>
+            {saleTypes.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={idOf(t) === saleTypeId}
+                id={`counterType-${t.code}`}
+                className={`px-3 py-1.5 rounded-full text-sm font-semibold border transition cursor-pointer ${
+                  idOf(t) === saleTypeId ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+                onClick={() => {
+                  if (dirty && !window.confirm('You have unsaved counts on this sheet. Switch counter anyway?')) return;
+                  setSheet(null);
+                  setSaleTypeId(idOf(t));
+                }}
+              >
+                {t.name}
+              </button>
+            ))}
+            {isManager && (
+              <button
+                type="button"
+                id="counterMoveBtn"
+                className="ml-auto px-3 py-1.5 rounded border bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm font-semibold cursor-pointer"
+                onClick={() => setMoveModal({ productId: '', from: '', to: saleTypes.find((t) => !t.isDefault) ? idOf(saleTypes.find((t) => !t.isDefault)!) : '', quantity: '' })}
+                title="Move bottles between the Walk-in and Janata counters"
+              >
+                Move stock between counters
+              </button>
+            )}
+          </div>
+        )}
         <div className="row end flex flex-wrap items-end gap-3">
           <label className="field flex flex-col gap-1 text-sm font-medium" htmlFor="counterDate" style={{ width: '200px' }}>
             Sheet date
@@ -549,7 +637,10 @@ export function Counter() {
           <div>
             <div className="pad row between p-4 flex justify-between items-center border-b">
               <div>
-                <div className="h2 text-lg font-bold">Counter Stock Sheet for {sheet.sheetDate}</div>
+                <div className="h2 text-lg font-bold">
+                  Counter Stock Sheet for {sheet.sheetDate}
+                  {saleTypes.length > 1 && <span className="ml-2 text-sm font-semibold text-purple-700">· {typeLabel}</span>}
+                </div>
                 <div className="muted small text-xs text-gray-500">
                   {sheet.lines.length} {sheet.lines.length === 1 ? 'product' : 'products'}
                   {sheet.postedAt ? ` · posted ${new Date(sheet.postedAt).toLocaleString('en-IN')}` : ''}
@@ -782,6 +873,7 @@ export function Counter() {
                     <th className="py-2 px-3">Product</th>
                     <th className="py-2 px-3 text-right">Opening</th>
                     <th className="py-2 px-3 text-right">Inward</th>
+                    {saleTypes.length > 1 && <th className="py-2 px-3 text-right" title="Bottles moved between the Walk-in and Janata counters today">Moved</th>}
                     <th className="py-2 px-3 text-right">
                       {isAdmin ? 'Physical Stock Present' : 'Closing'}
                     </th>
@@ -840,6 +932,11 @@ export function Counter() {
                           l.liveInward
                         )}
                       </td>
+                      {saleTypes.length > 1 && (
+                        <td className="py-2 px-3 text-right font-mono text-indigo-700">
+                          {l.transferBottles ? `${l.transferBottles > 0 ? '+' : ''}${l.transferBottles}` : '—'}
+                        </td>
+                      )}
                       <td className="py-2 px-3 text-right font-mono">
                         {isDraft ? (
                           <div className="flex flex-col items-end gap-1">
@@ -1027,6 +1124,61 @@ export function Counter() {
           </div>
         )}
       </div>
+
+      {moveModal && (
+        <div id="moveModal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="moveTitle">
+          <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex justify-between items-start mb-3">
+              <h3 className="text-lg font-bold" id="moveTitle">Move stock between counters</h3>
+              <button type="button" aria-label="Close" className="text-gray-500 hover:text-gray-800" onClick={() => setMoveModal(null)}><X size={18} /></button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">The shop's total stock does not change. The target counter needs a price for the product.</p>
+            <label className="block text-sm font-medium mb-3">
+              Product
+              <select
+                className="mt-1 w-full p-2 border rounded bg-white dark:bg-gray-900"
+                value={moveModal.productId}
+                onChange={(e) => setMoveModal({ ...moveModal, productId: e.target.value })}
+              >
+                <option value="">Select a product…</option>
+                {(sheet?.lines ?? []).map((l) => (
+                  <option key={l.productId} value={l.productId}>{l.productName}</option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              {(['from', 'to'] as const).map((side) => (
+                <label key={side} className="block text-sm font-medium">
+                  {side === 'from' ? 'From' : 'To'}
+                  <select
+                    className="mt-1 w-full p-2 border rounded bg-white dark:bg-gray-900"
+                    value={moveModal[side]}
+                    onChange={(e) => setMoveModal({ ...moveModal, [side]: e.target.value })}
+                  >
+                    {saleTypes.map((t) => (
+                      <option key={t.id} value={idOf(t)}>{t.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+            <label className="block text-sm font-medium mb-4">
+              Bottles
+              <input
+                className="mt-1 w-full p-2 border rounded font-mono bg-white dark:bg-gray-900"
+                type="number"
+                min="1"
+                value={moveModal.quantity}
+                onChange={(e) => setMoveModal({ ...moveModal, quantity: e.target.value })}
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200" onClick={() => setMoveModal(null)}>Cancel</button>
+              <button type="button" id="moveSubmit" className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white font-medium" onClick={submitMove}>Move</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmModal && (
         <div id="modal" className="fixed inset-0 bg-black/50 flex justify-center overflow-y-auto [&>*]:my-auto p-4 z-50">

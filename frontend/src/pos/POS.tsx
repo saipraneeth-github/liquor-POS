@@ -33,7 +33,9 @@ type Product = {
   servings?: Serving[]; // peg / glass / bottle rates (bar items)
 };
 
-type CartItem = Product & { qty: number; servingId?: string; servingLabel?: string; price: string };
+type SaleType = { id: string; code: string; name: string; isDefault: boolean };
+
+type CartItem = Product &{ qty: number; servingId?: string; servingLabel?: string; price: string };
 
 const cartKey = (c: { id: string; servingId?: string }) => c.id + '|' + (c.servingId ?? '');
 
@@ -46,6 +48,7 @@ type QueuedBill = {
     items: { productId: string; servingId?: string; quantity: number }[];
     customerGstin?: string;
     customerId?: string;
+    saleTypeId?: string;
     paymentMode: 'CASH' | 'CARD' | 'UPI' | 'CREDIT';
     discount: string;
     clientRef: string;
@@ -85,7 +88,7 @@ export function POS() {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<LiquorCategoryKey>('ALL');
   const [stockFilter, setStockFilter] = useState<PosStockFilter>('ALL');
-  const [products, setProducts] = useState<Product[]>([]);
+  const [rawProducts, setRawProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -144,7 +147,7 @@ export function POS() {
       });
       if (r.ok) {
         const data = await r.json();
-        setProducts(data || []);
+        setRawProducts(data || []);
       }
     } catch {
       /* offline — products not available */
@@ -156,6 +159,58 @@ export function POS() {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  // ── Sale types (Walk-in, Janata, ...): each has its own price list and its own counter of bottles ──
+  const [saleTypes, setSaleTypes] = useState<SaleType[]>([]);
+  const [saleTypeId, setSaleTypeId] = useState<string>(() => {
+    try { return localStorage.getItem(`lc_pos_sale_type:${(user as any)?.branchId ?? ''}`) ?? ''; } catch { return ''; }
+  });
+  const [typePrices, setTypePrices] = useState<Record<string, Record<string, string>>>({});   // productId → saleTypeId → price
+  const [counters, setCounters] = useState<Record<string, Record<string, number>>>({});       // productId → saleTypeId → bottles
+
+  const loadSaleTypes = useCallback(async () => {
+    if (!branchId) return;
+    const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
+    try {
+      const [t, p, s] = await Promise.all([
+        fetch(`/api/v1/sale-types/${branchId}`, { headers }),
+        fetch(`/api/v1/sale-types/${branchId}/prices`, { headers }),
+        fetch(`/api/v1/sale-types/${branchId}/stock`, { headers }),
+      ]);
+      if (t.ok) setSaleTypes(await t.json());
+      if (p.ok) {
+        const m = await p.json() as { products: { id: string; prices: Record<string, string> }[] };
+        setTypePrices(Object.fromEntries(m.products.map((x) => [x.id, x.prices])));
+      }
+      if (s.ok) {
+        const c = await s.json() as { products: { productId: string; counters: Record<string, number> }[] };
+        setCounters(Object.fromEntries(c.products.map((x) => [x.productId, x.counters])));
+      }
+    } catch {
+      /* offline — the default type keeps working from the cached catalog */
+    }
+  }, [branchId]);
+
+  useEffect(() => {
+    loadSaleTypes();
+    window.addEventListener('app:stock_updated', loadSaleTypes);
+    return () => window.removeEventListener('app:stock_updated', loadSaleTypes);
+  }, [loadSaleTypes]);
+
+  const activeType = saleTypes.find((t) => (t.isDefault ? '' : t.id) === saleTypeId) ?? saleTypes.find((t) => t.isDefault);
+
+  /** What the cashier can sell under the chosen type: its price, and only the bottles in its own counter. */
+  const products = useMemo<Product[]>(() => {
+    if (!activeType || saleTypes.length < 2) return rawProducts;
+    return rawProducts.flatMap((p) => {
+      const q = counters[p.id]?.[activeType.id];
+      const stock = p.trackStock === false || q === undefined ? {} : { currentStock: q, stockQuantity: q };
+      if (activeType.isDefault) return [{ ...p, ...stock }];
+      const price = typePrices[p.id]?.[activeType.id];
+      if (!price || p.menuType === 'BAR' || p.menuType === 'KITCHEN') return [];    // no price = not sold under this type
+      return [{ ...p, ...stock, mrp: price, servings: [] }];
+    });
+  }, [rawProducts, activeType, saleTypes.length, counters, typePrices]);
 
   // Listen to global stock updates (e.g. from table billing, invoice inward, or counter sheets)
   useEffect(() => {
@@ -505,6 +560,7 @@ export function POS() {
         paymentMode,
         discount: discountVal.toFixed(2),
         clientRef,
+        ...(activeType && !activeType.isDefault ? { saleTypeId: activeType.id } : {}),
         ...(paymentMode === 'CREDIT' && creditCustomer ? { customerId: creditCustomer.id } : {}),
         ...(buyerGstin.trim() ? { customerGstin: buyerGstin.trim().toUpperCase() } : {}),
       };
@@ -597,6 +653,38 @@ export function POS() {
 
       {/* Product search + catalog */}
       <div className="md:flex-1 flex flex-col min-w-0 h-[68dvh] md:h-auto shrink-0 md:shrink">
+        {saleTypes.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2 mb-3" role="tablist" aria-label="Sale type" id="posSaleTypes">
+            <span className="text-xs font-semibold text-gray-500">Sell as:</span>
+            {saleTypes.map((t) => {
+              const selected = activeType?.id === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  id={`posType-${t.code}`}
+                  className={`px-3.5 py-1.5 rounded-full text-sm font-semibold border transition cursor-pointer ${
+                    selected ? 'bg-purple-600 text-white border-purple-600 shadow-xs' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-50'
+                  }`}
+                  onClick={() => {
+                    if (selected) return;
+                    if (cart.length > 0) {
+                      showToast('Finish or clear the current bill before switching sale type — prices differ.', 'error');
+                      return;
+                    }
+                    const next = t.isDefault ? '' : t.id;
+                    setSaleTypeId(next);
+                    try { localStorage.setItem(`lc_pos_sale_type:${branchId}`, next); } catch { /* private mode */ }
+                  }}
+                >
+                  {t.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="flex items-center gap-2 mb-3">
           <div className="relative flex-1">
             <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" aria-hidden="true" />

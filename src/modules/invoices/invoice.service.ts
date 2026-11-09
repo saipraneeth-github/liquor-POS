@@ -15,7 +15,8 @@ import type { JwtPayload } from '../auth/auth.service.js';
 import { extractInvoice } from './extraction/index.js';
 import { MAX_MONEY } from './extraction/numbers.js';
 import { buildDraftLines, DEFAULT_TAX_RATE, type CatalogEntry, type DraftLine } from './draft.engine.js';
-import { matchLine } from './match.engine.js';
+import { matchLine, extractVolumeMl } from './match.engine.js';
+import { reconcileTotalsBlock } from './totals.engine.js';
 import {
   PLACEHOLDER_PREFIX, isPlaceholderNumber, validateInvoice, validateLine,
   formatInvoiceDate, formatDuplicateInvoiceMessage, normalizeInvoiceNumber,
@@ -85,6 +86,7 @@ export async function findLiveDuplicate(
     eq(supplierInvoices.branchId, branchId),
     eq(sql`lower(trim(${supplierInvoices.invoiceNumber}))`, trimmed.toLowerCase()),
     ne(supplierInvoices.status, 'REJECTED'),
+    isNull(supplierInvoices.reversedAt),     // a reversed invoice's number may be uploaded again
   ];
   if (excludeId) conds.push(ne(supplierInvoices.id, excludeId));
   const [row] = await exec
@@ -240,15 +242,32 @@ export async function createDraftFromUpload(input: UploadInput) {
   const invoiceDate = f.invoiceDate ?? extraction.header.invoiceDate ?? null;
   const usedOcr = extraction.kind === 'IMAGE' || (extraction.meta.ocrPages ?? 0) > 0;
   const headerFromOcr = usedOcr && (!f.invoiceNumber || !f.invoiceDate || !f.supplierName);
+  // A challan's printed total includes MRP rounding off, so it is not comparable to the sum of the lines; the
+  // challan is verified by its own chain of printed figures instead (totals.engine.ts).
+  const isIcdc = extraction.meta.engine === 'icdc-extractor';
   const inv = validateInvoice({
-    invoiceNumber, invoiceDate, supplierName, capturedTotal: extraction.table.capturedTotal,
+    invoiceNumber, invoiceDate, supplierName, capturedTotal: isIcdc ? null : extraction.table.capturedTotal,
     lineTotals: lines.map((l) => l.lineCostTotal), duplicateFile: !!dupFile, headerFromOcr,
   });
-  const warnings = [...new Set([...extraction.warnings, ...inv.warnings])];
+  const totals = isIcdc ? reconcileTotalsBlock({
+    linesSum: inv.computedTotal,
+    invoiceValue: extraction.meta.linesBasicTotal ?? null,
+    mrpRoundingOff: extraction.meta.mrpRoundingOff ?? null,
+    netInvoiceValue: extraction.meta.netInvoiceValue ?? null,
+    turnoverTax: extraction.meta.turnoverTax ?? null,
+    specialExciseCess: extraction.meta.specialCess ?? null,
+    tcsAmount: extraction.meta.tcsAmount ?? null,
+    previousCredit: extraction.meta.previousCredit ?? null,
+    challanAmount: extraction.meta.challanAmount ?? null,
+    subTotal: extraction.meta.subTotal ?? null,
+    retailerCreditBalance: extraction.meta.retailerCreditBalance ?? null,
+  }) : null;
+  const warnings = [...new Set([...extraction.warnings, ...inv.warnings, ...(totals?.warnings ?? [])])];
   const filename = sanitizeFilename(input.filename);
   const meta = {
     ...extraction.meta,
     computedTotal: inv.computedTotal,
+    ...(totals ? { totalsChecks: totals.checks } : {}),
     ...(dupFile ? { duplicateOfInvoiceId: dupFile.invoiceId } : {}),
   };
 
@@ -279,7 +298,10 @@ export async function createDraftFromUpload(input: UploadInput) {
 export function linesFromInput(items: LineInput[], catalog: CatalogEntry[]): DraftLine[] {
   const byId = new Map(catalog.map((p) => [p.id, p]));
   return items.map((item, idx) => {
-    const auto = item.productId === undefined ? matchLine({ description: item.rawDescription, barcode: item.barcode }, catalog) : null;
+    // Same rules as the upload path: pass the brand code (kept in `barcode` on stored lines) and the ml
+    const auto = item.productId === undefined
+      ? matchLine({ description: item.rawDescription, barcode: item.barcode, sku: item.barcode, volumeMl: item.volumeMl }, catalog)
+      : null;
     const productId = item.productId !== undefined ? item.productId : auto!.productId;
     const status = item.productId ? 'MANUAL' : item.productId === null ? 'UNMATCHED' : auto!.status;
     const product = productId ? byId.get(productId) ?? null : null;
@@ -287,6 +309,8 @@ export function linesFromInput(items: LineInput[], catalog: CatalogEntry[]): Dra
     const v = validateLine({
       quantity: item.quantity, costPrice: item.costPrice, mrp: item.mrp, extractedAmount: item.extractedAmount ?? null,
       catalogMrp: product?.mrp ?? null, productId, matchStatus: status, flags: auto?.flags ?? [],
+      volumeMl: item.volumeMl ?? null, catalogVolumeMl: product ? (product.volumeMl ?? extractVolumeMl(product.name)) : null,
+      packQuantity: item.packQuantity ?? null, catalogPackQuantity: product?.packQuantity ?? null,
     });
     const cpDec = new Decimal(item.costPrice);
     const costPriceStr = cpDec.decimalPlaces() <= 2 ? cpDec.toFixed(2) : cpDec.toFixed(6);
@@ -350,6 +374,11 @@ export async function createManualDraft(branchId: string, user: JwtPayload, inpu
 export async function deleteInvoice(invoiceId: string, _user: JwtPayload): Promise<void> {
   const [inv] = await db.select().from(supplierInvoices).where(eq(supplierInvoices.id, invoiceId)).limit(1);
   if (!inv) throw new NotFoundError('Invoice not found');
+  // An approved invoice has already moved stock and posted to the books: deleting it would erase the vouchers but keep
+  // the stock. It is reversed instead (reverse action), which keeps the full trail.
+  if (inv.status === 'APPROVED' || inv.status === 'REVERSED') {
+    throw new ConflictError(`An ${inv.status.toLowerCase()} invoice cannot be deleted${inv.status === 'APPROVED' ? ' — reverse it instead' : ''}`);
+  }
 
   await db.transaction(async (tx) => {
     const vouchers = await tx.select({ id: journalVouchers.id }).from(journalVouchers)
@@ -364,8 +393,13 @@ export async function deleteInvoice(invoiceId: string, _user: JwtPayload): Promi
   });
 }
 
-export async function deleteAllInvoices(branchId: string): Promise<number> {
-  const invs = await db.select({ id: supplierInvoices.id }).from(supplierInvoices).where(eq(supplierInvoices.branchId, branchId));
+/**
+ * Deletes a branch's invoices. `onlyUnposted` keeps APPROVED / REVERSED ones (they are in the books); the full store
+ * reset (clearCompleteInventory) deliberately deletes everything.
+ */
+export async function deleteAllInvoices(branchId: string, opts: { onlyUnposted?: boolean } = {}): Promise<number> {
+  const invs = await db.select({ id: supplierInvoices.id }).from(supplierInvoices)
+    .where(and(eq(supplierInvoices.branchId, branchId), opts.onlyUnposted ? sql`${supplierInvoices.status} NOT IN ('APPROVED', 'REVERSED')` : undefined));
   if (invs.length === 0) return 0;
 
   for (const inv of invs) {

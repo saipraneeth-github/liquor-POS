@@ -11,7 +11,7 @@ import {
   DuplicateInvoiceError, createDraftFromUpload, createManualDraft, deleteAllInvoices, deleteInvoice, findLiveDuplicate, formatInvoiceDate, getInvoiceAttachment, getInvoiceBranchId,
   getInvoiceDetail, listInvoices,
 } from './invoice.service.js';
-import { approveInvoice, rejectInvoice, reviewInvoice, updateDraft } from './invoice-workflow.service.js';
+import { approveInvoice, rejectInvoice, reverseInvoice, reviewInvoice, updateDraft } from './invoice-workflow.service.js';
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const ALLOWED_DOWNLOAD_TYPES = new Set([
@@ -246,6 +246,20 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // POST /invoices/detail/:id/reverse — undo an APPROVED invoice: stock taken back, reversing vouchers, scheme credit removed (manager+)
+  fastify.post('/invoices/detail/:id/reverse', { preHandler: requireRole('manager') }, async (request, reply) => {
+    const body = RejectSchema.safeParse(request.body);
+    if (!body.success) return reply.code(400).send({ error: 'A reason of at least 5 characters is required' });
+    const user = getUser(request);
+    const id = await authorizeInvoice(request, reply, user);
+    if (!id) return;
+    try {
+      return await reverseInvoice(id, user, body.data.reason);
+    } catch (err) {
+      return sendInvoiceError(reply, err);
+    }
+  });
+
   // DELETE /invoices/:branchId/all — delete all supplier invoices for this branch (manager+)
   fastify.delete('/invoices/:branchId/all', { preHandler: requireRole('manager') }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
@@ -253,7 +267,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
     const user = getUser(request);
     if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
     try {
-      const deletedCount = await deleteAllInvoices(params.data.branchId);
+      const deletedCount = await deleteAllInvoices(params.data.branchId, { onlyUnposted: true });
       return reply.code(200).send({ success: true, deletedCount, message: `Deleted ${deletedCount} invoice(s)` });
     } catch (err) {
       return sendInvoiceError(reply, err);

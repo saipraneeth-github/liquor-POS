@@ -60,7 +60,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        Browser SPA (preview.html)                            │
+│                        Browser SPA (React app)                                │
 │  Role-Aware Nav · POS Cart · Per-User Offline Queue (localStorage) · A11y    │
 └──────────────────────────────────────┬───────────────────────────────────────┘
                                        │ HTTPS / JSON + Multipart (/api/v1/*)

@@ -10,6 +10,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { ProtectedButton } from '../components/ui';
+import { SalePrices } from './SalePrices';
 
 interface Category {
   id: string;
@@ -420,6 +421,8 @@ export function Products() {
           </table>
         )}
       </div>
+
+      {isManager && branchId && <SalePrices branchId={branchId} />}
 
       {isManager && (
         <details className="card mgr-only bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded shadow p-4">

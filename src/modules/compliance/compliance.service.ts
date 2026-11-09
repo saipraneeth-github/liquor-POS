@@ -181,6 +181,8 @@ export async function recordBreakage(branchId: string, input: BreakageInput, use
         eq(stock.branchId, branchId),
         eq(stock.productId, input.productId),
         gte(stock.quantity, input.quantity),
+        // breakage comes out of the default counter; it may not eat into other sale types' counters
+        sql`${stock.quantity} - ${input.quantity} >= coalesce((SELECT sum(sbt.quantity) FROM stock_by_type sbt WHERE sbt.branch_id = ${stock.branchId} AND sbt.product_id = ${stock.productId}), 0)`,
       ))
       .returning({ quantity: stock.quantity });
 

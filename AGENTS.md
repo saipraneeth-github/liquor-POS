@@ -65,7 +65,7 @@ tests/
 frontend/                  The React web app (Vite). Built into dist/frontend and served by the API at /
 ```
 
-Modules: `auth`, `users`, `branches`, `syndicates`, `products`, `billing`, `stock` (engine only),
+Modules: `saletypes`, `auth`, `users`, `branches`, `syndicates`, `products`, `billing`, `stock` (engine only),
 `inventory`, `closing`, `tables`, `kot`, `terminals`, `shifts`, `counters`, `customers`, `schemes`,
 `compliance`, `accounting`, `expenses`, `bank` (statement upload + reconciliation).
 
@@ -73,7 +73,7 @@ Modules: `auth`, `users`, `branches`, `syndicates`, `products`, `billing`, `stoc
 - Keep the **engine / service / routes** split. New business rules go in an `*.engine.ts` as pure
   functions with unit tests; services orchestrate DB work inside `db.transaction(...)`; routes stay thin.
 - Cross-module side effects go through **domain events** (`bill.paid`, `bill.voided`,
-  `supplierInvoice.approved`, `credit.repayment`, `expense.recorded`), not direct imports. Accounting
+  `supplierInvoice.approved`, `supplierInvoice.reversed`, `credit.repayment`, `expense.recorded`), not direct imports. Accounting
   (`modules/accounting/posting.service.ts`) subscribes and posts balanced vouchers in the same transaction;
   a failing handler rolls the business operation back.
 
@@ -84,9 +84,10 @@ Modules: `auth`, `users`, `branches`, `syndicates`, `products`, `billing`, `stoc
 - Stock: `stock` (unique per branch+product) + `stock_audit`; `breakage_logs`; `excise_quotas`
 - Sales: `bills` (`OPEN | PAID | VOIDED`; payment `CASH | CARD | UPI | CREDIT`; `customerId`, `shiftSessionId`, unique `clientRef`) → `bill_items`; `bill_counters` (per branch/year sequence)
 - Registers: `terminals` → `shift_sessions` (one OPEN per cashier and per terminal, enforced by partial unique indexes)
-- Counter-sheet sales: `daily_counter_sheets` (`DRAFT → POSTED`) → `daily_counter_sheet_lines` (Sold = Opening + Inward − Closing)
+- Counter-sheet sales: `daily_counter_sheets` (`DRAFT → POSTED`; one per branch, day **and sale type**) → `daily_counter_sheet_lines` (Sold = Opening + Inward + Transfer − Closing)
+- Sale types: `sale_types` (per business: `WALK_IN` = default, `JANATA`, ...; `branch_sale_types` switches them per shop) · `product_prices` (price per product per non-default type; no row = not sold there) · `stock_by_type` (explicit counter of a non-default type). The default type is priced by `products.mrp` and its stock is `stock.quantity − Σ stock_by_type`. Rows that reference a sale type (`bills`, `stock_audit`, `price_audit`, `daily_counter_sheets`) store NULL for the default type.
 - Closing: `daily_closings` (cash/card/upi/credit split, discrepancy)
-- Purchases: `supplier_invoices` (`DRAFT → REVIEWED → APPROVED | REJECTED`, unique per branch+supplier+number) → `supplier_invoice_items`
+- Purchases: `supplier_invoices` (`DRAFT → REVIEWED → APPROVED | REJECTED | REVERSED`, unique per branch+supplier+number) → `supplier_invoice_items`
 - Khata: `customers` (`creditLimit`, `currentCredit`) → `credit_transactions` (`PURCHASE | REPAYMENT | ADJUSTMENT`, `balanceAfter`, unique `clientRef`)
 - Schemes: `schemes` → `scheme_purchases`, `scheme_slabs`
 - Bar: `tables` → `table_sessions` → `kot_orders` (KITCHEN | BAR) → `kot_items`
@@ -120,10 +121,11 @@ Login: `POST /api/v1/auth/login {email, password}` → `{ token }`. Send as `Aut
 | Products | `GET /products` (steward+; `costPrice` omitted for stewards) · `GET /products/barcode/:barcode` (cashier) · `POST /products` · `PATCH /products/:id/mrp` (manager) | |
 | Billing | `POST /bills` (201; 200 on `clientRef` replay) · `GET /bills?branchId=&date=&status=&limit=&offset=` · `GET /bills/:id` (cashier) · `POST /bills/:id/void` (manager) | |
 | Registers | `GET/POST /terminals/:branchId` · `PATCH /terminals/:id` (manager) · `POST /shifts/open` · `GET /shifts/current` · `POST /shifts/:id/close` (cashier) · `GET /shifts` (manager) | |
-| Counter sheets | `POST /counter-sheets/:branchId` · `GET /counter-sheets/:branchId?date=` · `GET /counter-sheets/sheet/:id` · `PUT /counter-sheets/sheet/:id/lines` (cashier) · `POST /counter-sheets/sheet/:id/post` (manager) | |
+| Sale types | `GET /sale-types/:branchId` (steward) · `POST /sale-types/:branchId` · `PATCH /sale-types/:branchId/:id` · `PUT /sale-types/:branchId/prices` · `POST /sale-types/:branchId/transfer` (manager) · `GET /sale-types/:branchId/prices` · `GET /sale-types/:branchId/stock` (cashier) | |
+| Counter sheets | `POST /counter-sheets/:branchId` (`saleTypeId?`) · `GET /counter-sheets/:branchId?date=&saleTypeId=` · `GET /counter-sheets/sheet/:id` · `PUT /counter-sheets/sheet/:id/lines` (cashier) · `POST /counter-sheets/sheet/:id/post` (manager) | |
 | Closing | `POST/GET /closing` | manager |
-| Inventory | `POST /inventory/invoices/parse` · `POST /inventory/invoices/approve` · `GET /inventory/indent/:branchId` (manager) · `GET /inventory/stock/:branchId` (cashier) | |
-| Supplier invoices | `POST /invoices/:branchId/upload` (multipart) · `POST /invoices/:branchId` · `GET /invoices/:branchId` · `GET /invoices/detail/:id` · `GET /invoices/detail/:id/file` · `PUT /invoices/detail/:id` (cashier) · `POST /invoices/detail/:id/review` · `POST /invoices/detail/:id/approve` · `POST /invoices/detail/:id/reject` (manager) | |
+| Inventory | `GET /inventory/indent/:branchId` (manager) · `GET /inventory/stock/:branchId` (cashier) | |
+| Supplier invoices | `POST /invoices/:branchId/upload` (multipart) · `POST /invoices/:branchId` · `GET /invoices/:branchId` · `GET /invoices/detail/:id` · `GET /invoices/detail/:id/file` · `PUT /invoices/detail/:id` (cashier) · `POST /invoices/detail/:id/review` · `POST /invoices/detail/:id/approve` · `POST /invoices/detail/:id/reject` · `POST /invoices/detail/:id/reverse` (manager) | |
 | Khata | `GET/POST /customers/:branchId` · `GET /customers/:id/statement` · `POST /customers/:id/repayments` (cashier; credit fields manager) · `PATCH /customers/:id` · `GET /customers/:branchId/outstanding` (manager) | |
 | Schemes | `GET/POST /schemes/:branchId` · `GET /schemes/:branchId/alerts` · `POST /schemes/:schemeId/purchase` · `GET/POST /schemes/:schemeId/slabs` · `GET /schemes/:schemeId/payout` | manager |
 | Compliance | `GET/POST /compliance/quotas/:branchId` · `GET /compliance/lifting/:branchId` · `POST /compliance/breakage/:branchId` (cashier) · `GET /compliance/breakage/:branchId` · `GET /compliance/stock-audit/:branchId` (manager) | |
@@ -166,6 +168,17 @@ Schema change: edit `schema.ts` → `npm run db:generate` (needs any `DATABASE_U
 - Windows PowerShell 5.1 `Get-Content` mis-displays UTF-8 (box-drawing comments look like `â”€`); the files are fine — use `-Encoding utf8`.
 - `.agents/` and `README.md` describe generic AI tooling, not this app; ignore them for project context.
 
+### Sale types (Walk-in, Janata, ...) (`src/modules/saletypes/`)
+
+- A sale type is a **price list plus its own counter**. `POST /bills` takes `saleTypeId` (omitted = default/Walk-in); the price comes from the DB (`products.mrp` for the default type, `product_prices` for the others — missing price → 422, pegs/servings only under the default type).
+- **Stock.** `stock` stays the shop total, so billing, invoices, KOT, breakage keep working untouched. `stock_by_type` holds the explicit counters of non-default types; the default counter is the remainder. Every write respects that: a Janata sale takes from its own counter *and* the total (guarded UPDATEs); a Walk-in sale / breakage / invoice reversal must leave `Σ stock_by_type` alone (the guard is in the SQL). Bottles move between counters with `POST /sale-types/:branchId/transfer` (two `TYPE_TRANSFER` audit rows; the shop total does not change; the target type needs a price first). Supplier invoices are received into the default counter.
+- **Counter sheets are per type.** `stock_audit.sale_type_id` says which counter moved, so opening / sold / closing are computed per counter. `Transfer` on a sheet line is the net bottles moved in/out that day (not a sale). Posting a Janata sheet corrects `stock_by_type` and the total together.
+- **Accounting for counter sheets.** Posting a sheet books the bottles that left without a POS bill: `unbilled = sold on sheet − billed through POS (same type, same day) − breakage/damage`, at the counter's own rate: `Dr CASH / Cr SALES / Cr OUTPUT_GST` (`COUNTER_SHEET` voucher). Un-posting reverses it (original kept as `COUNTER_SHEET_SUPERSEDED`, reversal as `COUNTER_SHEET_VOID`).
+- Prices are edited in one place (Products → "Prices by sale type"), audited in `price_audit` (`sale_type_id`).
+
+### Approved invoices are reversed, never deleted
+
+`DELETE /invoices/detail/:id` refuses APPROVED / REVERSED invoices. `POST /invoices/detail/:id/reverse {reason}` takes the received bottles back out of the default counter (refused if already sold), posts exact reversing vouchers for the purchase and the e-challan payment (`SUPPLIER_INVOICE_REVERSAL`, `SUPPLIER_CHALLAN_REVERSAL`), removes supplier-scheme credit and sets `REVERSED`; the number can then be uploaded again. Purchase vouchers post **no Input GST** (liquor has no creditable input tax): `Dr PURCHASES` at the full line cost. The one-step `/inventory/invoices/approve` and `/parse` endpoints were removed — zero-cost free-goods lines (which only that path accepted) have no entry route yet.
 ### Bank statement reconciliation (`src/modules/bank/`)
 
 Works with **any bank**: no per-bank templates. `bank.engine.ts` (pure, unit-tested on synthetic statements in several layouts) finds

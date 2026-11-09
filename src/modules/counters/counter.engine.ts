@@ -24,6 +24,8 @@ export interface CounterLineInput {
   inward:  number;
   closing: number;
   rate:    string;
+  /** Net bottles moved between sale-type counters that day (+ in, − out). Not a sale: it changes what is available. */
+  transfer?: number;
 }
 
 export interface CounterLineResult {
@@ -37,17 +39,20 @@ function assertCount(value: number, label: string): void {
 }
 
 /** True when the closing count exceeds what was available (opening + inward). */
-export function violatesInvariant(line: Pick<CounterLineInput, 'opening' | 'inward' | 'closing'>): boolean {
-  return line.closing > line.opening + line.inward;
+export function violatesInvariant(line: Pick<CounterLineInput, 'opening' | 'inward' | 'closing' | 'transfer'>): boolean {
+  return line.closing > line.opening + line.inward + (line.transfer ?? 0);
 }
 
 export function computeLine(line: CounterLineInput, opts: { allowAdjustment?: boolean } = {}): CounterLineResult {
   assertCount(line.opening, 'opening');
   assertCount(line.inward, 'inward');
   assertCount(line.closing, 'closing');
+  const transfer = line.transfer ?? 0;
+  if (!Number.isInteger(transfer)) throw new Error('transfer must be a whole number');
   if (!/^\d+(\.\d{1,2})?$/.test(line.rate)) throw new Error(`Invalid rate: ${line.rate}`);
 
-  const available = line.opening + line.inward;
+  const available = line.opening + line.inward + transfer;
+  if (available < 0) throw new Error(`More bottles were moved out (${-transfer}) than were available (${line.opening + line.inward})`);
   if (line.closing > available) {
     if (!opts.allowAdjustment) {
       throw new CounterInvariantError(

@@ -4,6 +4,7 @@ import {
   products,
   stock,
   stockAudit,
+  stockByType,
   supplierInvoices,
   supplierInvoiceItems,
   priceAudit,
@@ -16,108 +17,10 @@ import {
   categories,
 } from '../../db/schema.js';
 import { deleteAllInvoices } from '../invoices/invoice.service.js';
-import { eq, and, or, isNull, gte, inArray, ne, sql, ilike } from 'drizzle-orm';
-import {
-  parseAndValidateInvoice,
-  type RawExtractedInvoice,
-} from './invoice-parser.engine.js';
+import { eq, and, or, isNull, gte, inArray, sql, ilike } from 'drizzle-orm';
 import { estimateIndent, type IndentEstimationResult } from '../stock/indent.engine.js';
 import { emitDomainEvent, type Tx } from '../../lib/domain-events.js';
-import { BusinessRuleError, ConflictError } from '../../lib/errors.js';
-import type { JwtPayload } from '../auth/auth.service.js';
-
-export async function parseInvoice(rawInvoice: RawExtractedInvoice) {
-  // Load current product catalog references
-  const allProducts = await db
-    .select({
-      id: products.id,
-      barcode: products.barcode,
-      name: products.name,
-      volumeMl: products.volumeMl,
-      currentMrp: products.mrp,
-    })
-    .from(products);
-
-  return parseAndValidateInvoice(rawInvoice, allProducts);
-}
-
-export interface ApproveInvoiceInput {
-  branchId: string;
-  supplierName: string;
-  invoiceNumber: string;
-  invoiceDate?: string;
-  totalAmount: string;
-  notes?: string;
-  items: Array<{
-    productId: string;
-    rawDescription: string;
-    quantity: number;
-    costPrice: string;
-    mrp: string;
-    taxRate?: string;
-  }>;
-}
-
-// ─── APPROVE SUPPLIER INVOICE (atomic) ───────────────────────────────────────
-
-export async function approveInwardInvoice(input: ApproveInvoiceInput, user: JwtPayload) {
-  if (input.items.length === 0) throw new BusinessRuleError('Invoice must contain at least one item');
-
-  return await db.transaction(async (tx) => {
-    // 0. Reject double-approval of the same supplier invoice (would double the stock)
-    const [dupe] = await tx
-      .select({ id: supplierInvoices.id })
-      .from(supplierInvoices)
-      .where(and(
-        eq(supplierInvoices.branchId, input.branchId),
-        eq(supplierInvoices.supplierName, input.supplierName),
-        eq(supplierInvoices.invoiceNumber, input.invoiceNumber),
-        ne(supplierInvoices.status, 'REJECTED'),
-      ))
-      .limit(1);
-    if (dupe) throw new ConflictError(`Invoice ${input.invoiceNumber} from ${input.supplierName} already recorded`);
-
-    // 1. All referenced products must exist (single query)
-    const productMap = await loadInvoiceProducts(tx, input.items.map((i) => i.productId));
-
-    // 2. Create supplier invoice record
-    const [invoice] = await tx
-      .insert(supplierInvoices)
-      .values({
-        branchId: input.branchId,
-        createdById: user.sub,
-        approvedById: user.sub,
-        supplierName: input.supplierName,
-        invoiceNumber: input.invoiceNumber,
-        invoiceDate: input.invoiceDate ? new Date(input.invoiceDate) : new Date(),
-        totalAmount: new Decimal(input.totalAmount).toFixed(2),
-        status: 'APPROVED',
-        notes: input.notes,
-        approvedAt: new Date(),
-      })
-      .returning();
-
-    // 3. Line items (decimal-safe line totals)
-    const insertedItems = await tx
-      .insert(supplierInvoiceItems)
-      .values(input.items.map((item) => ({
-        invoiceId: invoice.id,
-        productId: item.productId,
-        rawDescription: item.rawDescription,
-        quantity: item.quantity,
-        costPrice: new Decimal(item.costPrice).toFixed(2),
-        mrp: new Decimal(item.mrp).toFixed(2),
-        taxRate: new Decimal(item.taxRate ?? '18.00').toFixed(2),
-        lineCostTotal: new Decimal(item.costPrice).mul(item.quantity).toFixed(2),
-      })))
-      .returning();
-
-    // 4-6. Stock, audit, prices, domain event
-    await applyApprovedInvoice(tx, { invoice, items: insertedItems, userId: user.sub, productMap });
-
-    return invoice;
-  });
-}
+import { BusinessRuleError } from '../../lib/errors.js';
 
 // ─── SHARED APPROVAL EFFECTS (direct approval + invoice upload workflow) ────────
 
@@ -127,6 +30,7 @@ export type InvoiceProductMap = Map<string, {
   id: string;
   mrp: string;
   packQuantity: number | null;
+  volumeMl?: number | null;
   costPrice?: string | null;
   previousCostPrice?: string | null;
 }>;
@@ -139,6 +43,7 @@ export async function loadInvoiceProducts(tx: Tx, productIds: string[]): Promise
       id: products.id,
       mrp: products.mrp,
       packQuantity: products.packQuantity,
+      volumeMl: products.volumeMl,
       costPrice: products.costPrice,
       previousCostPrice: products.previousCostPrice,
     })
@@ -199,7 +104,9 @@ export async function applyApprovedInvoice(
     });
 
     const product = productMap.get(productId)!;
-    const packSize = product.packQuantity && product.packQuantity > 0 ? product.packQuantity : 12;
+    // The pack size the supplier actually delivered (printed on the invoice line) wins over the catalog's
+    const packSize = item.packQuantity && item.packQuantity > 0 ? item.packQuantity
+      : product.packQuantity && product.packQuantity > 0 ? product.packQuantity : 12;
     totalCases = totalCases.plus(new Decimal(item.quantity).div(packSize));
     totalValue = totalValue.plus(item.lineCostTotal);
 
@@ -407,6 +314,7 @@ export async function clearCompleteInventory(branchId: string): Promise<{ delete
   const deletedStock = await db.transaction(async (tx) => {
     await tx.delete(stockAudit).where(eq(stockAudit.branchId, branchId));
     await tx.delete(breakageLogs).where(eq(breakageLogs.branchId, branchId));
+    await tx.delete(stockByType).where(eq(stockByType.branchId, branchId));   // the other counters' bottles go with the stock
     const deleted = await tx.delete(stock).where(eq(stock.branchId, branchId)).returning({ id: stock.id });
 
     await tx.update(products).set({

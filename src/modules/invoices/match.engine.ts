@@ -43,7 +43,7 @@ export interface MatchResult {
   /** Line flags raised by matching, e.g. VOLUME_DIFFERS. */
   flags: string[];
   /** Best alternatives (for the review UI). */
-  candidates: Array<{ productId: string; name: string; confidence: number }>;
+  candidates: Array<{ productId: string; name: string; confidence: number; volumeMl?: number | null }>;
 }
 
 // Words that say little about WHICH product it is
@@ -139,64 +139,92 @@ function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
 
+/** Catalog volume: the column, else an "NNNml" in the product name. */
+function catalogVolume(p: CatalogProduct): number | null {
+  return p.volumeMl ?? extractVolumeMl(p.name);
+}
+
+function candidateOf(p: CatalogProduct, confidence: number) {
+  return { productId: p.id, name: p.name, confidence, volumeMl: catalogVolume(p) };
+}
+
+/**
+ * Matching rules (every path that matches an invoice line — upload, new line, manual draft — must pass the brand
+ * code and volume it has, so the same rules apply everywhere):
+ *  1. Brand code (sku / excise code) + volume is the hard key. The same code exists in several sizes, so a code
+ *     with a different (or unknown) volume NEVER auto-matches.
+ *  2. A name match can only auto-MATCH when the volume is known on both sides and equal. An unknown volume or a
+ *     one-digit "typo" volume (650/750, 275/375 are real sizes!) is at most SUGGESTED — a person must confirm.
+ *  3. Two catalog products with the same code and volume are ambiguous → nothing is picked.
+ */
 export function matchLine(line: MatchInput, catalog: CatalogProduct[]): MatchResult {
   const active = catalog.filter((p) => p.isActive !== false);
-  const barcode = line.barcode?.replace(/\s/g, '');
-  if (barcode) {
-    const p = active.find((c) => c.barcode && c.barcode === barcode);
-    if (p) return { productId: p.id, status: 'MATCHED', method: 'BARCODE', confidence: 1, flags: [], candidates: [] };
-  }
   // Prefer volume from the description; fall back to the structured volumeMl field
   // (e.g. the Qty/Size(ml) column in Telangana ICDC invoices where the brand name has no ml suffix).
   const lineVol = extractVolumeMl(line.description) ?? line.volumeMl ?? null;
+  const barcode = line.barcode?.replace(/\s/g, '');
+  if (barcode) {
+    const hits = active.filter((c) => c.barcode && c.barcode === barcode);
+    // A real barcode identifies one pack; if the volumes are both known and differ it is not this product
+    const p = hits.find((c) => {
+      const v = catalogVolume(c);
+      return lineVol === null || v === null || v === lineVol;
+    });
+    if (p && hits.length === 1) return { productId: p.id, status: 'MATCHED', method: 'BARCODE', confidence: 1, flags: [], candidates: [] };
+  }
   const sku = line.sku?.trim().toLowerCase();
   if (sku) {
+    const exactSku = active.filter((c) => c.sku && c.sku.trim().toLowerCase() === sku);
     const skuMatches = active.filter(
       (c) =>
         (c.sku && c.sku.trim().toLowerCase() === sku) ||
         (c.exciseCode && c.exciseCode.trim().toLowerCase() === sku),
     );
-    if (lineVol) {
-      // Hard rule: along with brand number (exciseCode), you also MUST verify ML!
-      // Same brand number can have different ML (e.g. 180ml vs 750ml).
-      const volMatch = skuMatches.find((c) => c.volumeMl === lineVol);
-      if (volMatch) {
-        return { productId: volMatch.id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
+    if (skuMatches.length > 0) {
+      const all = skuMatches.map((p) => candidateOf(p, 0.5));
+      if (lineVol) {
+        // Hard rule: along with brand number (exciseCode), you also MUST verify ML!
+        // Same brand number can have different ML (e.g. 180ml vs 750ml).
+        const volMatches = skuMatches.filter((c) => catalogVolume(c) === lineVol);
+        if (volMatches.length === 1) {
+          return { productId: volMatches[0].id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
+        }
+        if (volMatches.length > 1) {
+          return { productId: null, status: 'UNMATCHED', method: null, confidence: 0, flags: ['AMBIGUOUS_MATCH'], candidates: volMatches.map((p) => candidateOf(p, 0.9)) };
+        }
+        // Brand code matched but volume differs: DO NOT match a different ML!
+        return { productId: null, status: 'UNMATCHED', method: null, confidence: 0, flags: ['VOLUME_DIFFERS'], candidates: all };
       }
-      // If brand code matched but volume differs, DO NOT match a different ML!
-      if (skuMatches.length > 0) {
-        return {
-          productId: null,
-          status: 'UNMATCHED',
-          method: null,
-          confidence: 0,
-          flags: ['VOLUME_DIFFERS'],
-          candidates: skuMatches.map((p) => ({ productId: p.id, name: p.name, confidence: 0.5 })),
-        };
+      // No volume on the line: only an exact product SKU (a unique key) may match on its own; a brand code alone
+      // cannot say which size it is.
+      if (exactSku.length === 1) {
+        return { productId: exactSku[0].id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
       }
-    } else if (skuMatches.length === 1) {
-      return { productId: skuMatches[0].id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
+      return { productId: null, status: 'UNMATCHED', method: null, confidence: 0, flags: ['VOLUME_MISSING'], candidates: all };
     }
   }
   const scored = active.map((p) => {
     const base = nameScore(line.description, p);
-    const vol = compareVolumes(lineVol, p.volumeMl ?? extractVolumeMl(p.name));
+    const vol = compareVolumes(lineVol, catalogVolume(p));
     let factor = 1;
     if (vol === 'unknown') factor = 0.95;
-    else if (vol === 'ocr') factor = base >= 0.9 ? 0.92 : 0.6;   // tolerate a misread digit only when the name is a strong match
+    else if (vol === 'ocr') factor = base >= 0.9 ? 0.92 : 0.6;   // a misread digit is possible in free text — suggest only
     else if (vol === 'diff') factor = 0.5;
     return { p, vol, confidence: round3(base * factor) };
   }).sort((a, b) => b.confidence - a.confidence);
 
   const candidates = scored.slice(0, 3).filter((s) => s.confidence > 0.3)
-    .map((s) => ({ productId: s.p.id, name: s.p.name, confidence: s.confidence }));
+    .map((s) => candidateOf(s.p, s.confidence));
   const best = scored[0];
   if (!best || best.confidence < SUGGESTED_THRESHOLD) {
     return { productId: null, status: 'UNMATCHED', method: null, confidence: best ? best.confidence : 0, flags: [], candidates };
   }
   const flags: string[] = [];
   if (best.vol === 'ocr') flags.push('VOLUME_DIFFERS');
+  if (best.vol === 'unknown') flags.push('VOLUME_UNVERIFIED');
   let status: MatchResult['status'] = best.confidence >= MATCHED_THRESHOLD ? 'MATCHED' : 'SUGGESTED';
+  // Only a name match whose volume is known and equal may be auto-confirmed
+  if (status === 'MATCHED' && best.vol !== 'same') status = 'SUGGESTED';
   // Ambiguous: a runner-up almost as good → a person must choose
   const second = scored[1];
   if (status === 'MATCHED' && second && best.confidence - second.confidence < 0.05) status = 'SUGGESTED';

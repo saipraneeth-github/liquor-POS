@@ -5,18 +5,19 @@
  * APPROVED and REJECTED invoices are immutable.
  */
 import { Decimal } from 'decimal.js';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/client.js';
-import { products, supplierInvoiceItems, supplierInvoices } from '../../db/schema.js';
-import type { Tx } from '../../lib/domain-events.js';
+import { products, schemePurchases, schemes, stock, stockAudit, supplierInvoiceItems, supplierInvoices } from '../../db/schema.js';
+import { emitDomainEvent, type Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import { applyApprovedInvoice, loadInvoiceProducts } from '../inventory/inventory.service.js';
 import type { DraftLine } from './draft.engine.js';
 import { DEFAULT_TAX_RATE } from './draft.engine.js';
-import { matchLine } from './match.engine.js';
+import { matchLine, extractVolumeMl } from './match.engine.js';
+import { BLOCKING_TOTALS_WARNINGS, reconcileTotalsBlock } from './totals.engine.js';
 import {
-  EXTRACTION_FLAGS, PROVENANCE_FLAGS, isPlaceholderNumber, validateInvoice, validateLine,
+  BLOCKING_LINE_FLAGS, EXTRACTION_FLAGS, PROVENANCE_FLAGS, isPlaceholderNumber, validateInvoice, validateLine,
 } from './validate.engine.js';
 import type { InvoiceInput } from './invoice.schemas.js';
 import {
@@ -50,6 +51,7 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
       const refIds = [...new Set(input.items.map((i) => i.productId).filter((p): p is string => !!p))];
       const refRows = refIds.length ? await tx.select({
         id: products.id, name: products.name, mrp: products.mrp, sku: products.sku, costPrice: products.costPrice, volumeMl: products.volumeMl,
+        packQuantity: products.packQuantity,
       }).from(products).where(inArray(products.id, refIds)) : [];
       const refMap = new Map(refRows.map((p) => [p.id, p]));
       const missing = refIds.filter((p) => !refMap.has(p));
@@ -65,7 +67,8 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
         let confidence: string | null;
         let carried: string[] = prev ? (prev.flags ?? []).filter((f) => (PROVENANCE_FLAGS as readonly string[]).includes(f)) : [];
         if (item.productId === undefined && !prev) {
-          const auto = matchLine({ description: item.rawDescription, barcode: item.barcode }, catalog);
+          // Same rules as the upload path: brand code (stored in arcode) + ml, never the name alone
+          const auto = matchLine({ description: item.rawDescription, barcode: item.barcode, sku: item.barcode, volumeMl: item.volumeMl }, catalog);
           productId = auto.productId; status = auto.status; method = auto.method;
           confidence = auto.confidence > 0 ? auto.confidence.toFixed(3) : null;
           carried.push(...auto.flags);
@@ -103,6 +106,8 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
         const v = validateLine({
           ...next, extractedAmount: item.extractedAmount ?? prev?.extractedAmount ?? null,
           catalogMrp: product?.mrp ?? null, productId, matchStatus: status, flags: carried,
+          volumeMl: lineVol, catalogVolumeMl: product ? (product.volumeMl ?? extractVolumeMl(product.name)) : null,
+          packQuantity: next.packQuantity, catalogPackQuantity: product?.packQuantity ?? null,
         });
         const derived = new Decimal(costPrice).mul(item.quantity).toFixed(4);
         const roundingAdj = new Decimal(v.lineCostTotal).minus(new Decimal(derived)).toFixed(4);
@@ -141,8 +146,27 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
       const prevWarnings = current.extractionWarnings ?? [];
       const sticky = prevWarnings.filter((w) => ['OCR_USED', 'PDF_PAGES_TRUNCATED', 'DUPLICATE_FILE'].includes(w)
         || (w === 'HEADER_FROM_OCR' && !(input.invoiceNumber && input.invoiceDate)));
+      // A depot challan is verified by the chain of its own printed figures (totals.engine.ts), not by comparing the
+      // sum of the lines with the net value (which includes MRP rounding off).
+      const prevMeta = (current.extractionMeta ?? {}) as Record<string, unknown>;
+      const isIcdc = prevMeta.engine === 'icdc-extractor';
+      const pick = <T>(inp: T | undefined, cur: T): T => (inp !== undefined ? inp : cur);
+      const invoiceValue = pick(input.linesBasicTotal, (prevMeta.linesBasicTotal as string | undefined) ?? null);
+      const mrpRoundingOff = pick(input.mrpRoundingOff, (prevMeta.mrpRoundingOff as string | undefined) ?? null);
+      const netInvoiceValue = pick(input.netInvoiceValue, current.netInvoiceValue);
+      const turnoverTax = pick(input.turnoverTax, current.turnoverTax);
+      const specialExciseCess = pick(input.specialExciseCess, current.specialExciseCess);
+      const tcsAmount = pick(input.tcsAmount, current.tcsAmount);
+      const previousCredit = pick(input.previousCredit, current.previousCredit);
+      const challanAmount = pick(input.challanAmount, current.challanAmount);
+      const subTotal = pick(input.subTotal, current.subTotal);
+      const retailerCreditBalance = pick(input.retailerCreditBalance, current.retailerCreditBalance);
+      const totals = isIcdc ? reconcileTotalsBlock({
+        linesSum: computed, invoiceValue, mrpRoundingOff, netInvoiceValue, turnoverTax, specialExciseCess, tcsAmount,
+        previousCredit, challanAmount, subTotal, retailerCreditBalance,
+      }) : null;
       const inv = validateInvoice({
-        invoiceNumber, invoiceDate, supplierName: input.supplierName, capturedTotal: totalAmount, lineTotals: lines.map((l) => l.lineCostTotal),
+        invoiceNumber, invoiceDate, supplierName: input.supplierName, capturedTotal: isIcdc ? null : totalAmount, lineTotals: lines.map((l) => l.lineCostTotal),
       });
 
       const updated = await tx.update(supplierInvoices).set({
@@ -150,22 +174,27 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
         invoiceNumber,
         invoiceDate: invoiceDate ? new Date(invoiceDate) : null,
         totalAmount,
-        specialExciseCess: input.specialExciseCess !== undefined ? input.specialExciseCess : current.specialExciseCess,
-        turnoverTax: input.turnoverTax !== undefined ? input.turnoverTax : current.turnoverTax,
-        tcsAmount: input.tcsAmount !== undefined ? input.tcsAmount : current.tcsAmount,
-        challanAmount: input.challanAmount !== undefined ? input.challanAmount : current.challanAmount,
+        linesBasicTotal: invoiceValue ?? current.linesBasicTotal,
+        mrpRoundingOff: mrpRoundingOff ?? current.mrpRoundingOff,
+        specialExciseCess,
+        turnoverTax,
+        tcsAmount,
+        challanAmount,
         challanNumber: input.challanNumber !== undefined ? input.challanNumber : current.challanNumber,
-        previousCredit: input.previousCredit !== undefined ? input.previousCredit : current.previousCredit,
-        subTotal: input.subTotal !== undefined ? input.subTotal : current.subTotal,
-        netInvoiceValue: input.netInvoiceValue !== undefined ? input.netInvoiceValue : current.netInvoiceValue,
+        previousCredit,
+        subTotal,
+        netInvoiceValue,
         totalInvoiceAmount: input.totalInvoiceAmount !== undefined ? input.totalInvoiceAmount : current.totalInvoiceAmount,
-        retailerCreditBalance: input.retailerCreditBalance !== undefined ? input.retailerCreditBalance : current.retailerCreditBalance,
+        retailerCreditBalance,
         notes: input.notes !== undefined ? input.notes : current.notes,
         status: 'DRAFT',
         reviewedById: null,
         reviewedAt: null,
-        extractionWarnings: [...new Set([...sticky, ...inv.warnings])],
-        extractionMeta: { ...(current.extractionMeta ?? {}), computedTotal: computed, editedById: user.sub, editedAt: new Date().toISOString() },
+        extractionWarnings: [...new Set([...sticky, ...inv.warnings, ...(totals?.warnings ?? [])])],
+        extractionMeta: {
+          ...prevMeta, computedTotal: computed, editedById: user.sub, editedAt: new Date().toISOString(),
+          ...(isIcdc ? { linesBasicTotal: invoiceValue, mrpRoundingOff, totalsChecks: totals!.checks } : {}),
+        },
       }).where(and(eq(supplierInvoices.id, id), inArray(supplierInvoices.status, [...EDITABLE]))).returning({ id: supplierInvoices.id });
       if (updated.length === 0) throw await statusError(tx, id, 'edited');
 
@@ -189,8 +218,19 @@ function lineProblems(items: ItemRow[], requireConfirmedMatch: boolean): string[
     if (i.quantity <= 0) problems.push(`line ${n}: quantity must be positive`);
     if (!new Decimal(i.costPrice).gt(0)) problems.push(`line ${n}: cost must be positive`);
     if (!new Decimal(i.mrp).gt(0)) problems.push(`line ${n}: MRP must be positive`);
+    if ((i.flags ?? []).some((f) => (BLOCKING_LINE_FLAGS as readonly string[]).includes(f))) {
+      problems.push(`line ${n}: the selected product is a different bottle size (ml) than the invoice line`);
+    }
   }
   return problems;
+}
+
+/** A depot challan whose printed figures do not add up must not post to stock or the books. */
+function assertTotalsReconcile(warnings: string[] | null): void {
+  const failed = (warnings ?? []).filter((w) => (BLOCKING_TOTALS_WARNINGS as readonly string[]).includes(w));
+  if (failed.length) {
+    throw new BusinessRuleError(`Invoice totals do not reconcile (${failed.join(', ')}). Correct the lines or the figures to match the printed challan.`);
+  }
 }
 
 export async function reviewInvoice(id: string, user: JwtPayload) {
@@ -198,8 +238,9 @@ export async function reviewInvoice(id: string, user: JwtPayload) {
     const [row] = await tx.update(supplierInvoices)
       .set({ status: 'REVIEWED', reviewedById: user.sub, reviewedAt: new Date() })
       .where(and(eq(supplierInvoices.id, id), eq(supplierInvoices.status, 'DRAFT')))
-      .returning({ id: supplierInvoices.id });
+      .returning({ id: supplierInvoices.id, extractionWarnings: supplierInvoices.extractionWarnings });
     if (!row) throw await statusError(tx, id, 'reviewed');
+    assertTotalsReconcile(row.extractionWarnings);
     const items = await tx.select().from(supplierInvoiceItems).where(eq(supplierInvoiceItems.invoiceId, id));
     if (items.length === 0) throw new BusinessRuleError('Invoice has no lines');
     const problems = lineProblems(items, false);
@@ -218,11 +259,17 @@ export async function approveInvoice(id: string, user: JwtPayload) {
     if (!invoice) throw await statusError(tx, id, 'approved');
     if (isPlaceholderNumber(invoice.invoiceNumber)) throw new BusinessRuleError('Enter the real supplier invoice number before approving');
     if (!invoice.supplierName.trim()) throw new BusinessRuleError('Enter the supplier name before approving');
+    assertTotalsReconcile(invoice.extractionWarnings);
     const items = await tx.select().from(supplierInvoiceItems).where(eq(supplierInvoiceItems.invoiceId, id));
     if (items.length === 0) throw new BusinessRuleError('Invoice has no lines');
     const problems = lineProblems(items, true);
     if (problems.length) throw new BusinessRuleError(`Cannot approve: ${problems.join('; ')}`);
     const productMap = await loadInvoiceProducts(tx, items.map((i) => i.productId!));
+    // Authoritative re-check against the live catalog: stock must go to the same bottle size the invoice delivered
+    const wrongSize = items
+      .filter((i) => !!i.volumeMl && !!productMap.get(i.productId!)?.volumeMl && i.volumeMl !== productMap.get(i.productId!)!.volumeMl)
+      .map((i) => `line ${i.lineNumber ?? '?'}: invoice ${i.volumeMl}ml but product is ${productMap.get(i.productId!)!.volumeMl}ml`);
+    if (wrongSize.length) throw new BusinessRuleError(`Cannot approve: ${wrongSize.join('; ')}`);
     await applyApprovedInvoice(tx, { invoice, items, userId: user.sub, productMap });
   });
   return getInvoiceDetail(id);
@@ -234,5 +281,64 @@ export async function rejectInvoice(id: string, user: JwtPayload, reason: string
     .where(and(eq(supplierInvoices.id, id), inArray(supplierInvoices.status, [...EDITABLE])))
     .returning({ id: supplierInvoices.id });
   if (!row) throw await statusError(db, id, 'rejected');
+  return getInvoiceDetail(id);
+}
+
+/**
+ * Reverses an APPROVED invoice — the only way to undo one (approved invoices cannot be deleted):
+ *  - the bottles it received are taken back out of the default counter (refused when some were already sold);
+ *  - exact reversing vouchers are posted for the purchase and the e-challan payment (the originals stay);
+ *  - the supplier-scheme progress it added is taken back;
+ *  - the invoice is marked REVERSED and its number can be uploaded again.
+ * Product cost / MRP changes made at approval are left as they are (the next invoice sets them again).
+ */
+export async function reverseInvoice(id: string, user: JwtPayload, reason: string) {
+  await db.transaction(async (tx) => {
+    const [invoice] = await tx.update(supplierInvoices)
+      .set({ status: 'REVERSED', reversedById: user.sub, reversedAt: new Date(), reversalReason: reason })
+      .where(and(eq(supplierInvoices.id, id), eq(supplierInvoices.status, 'APPROVED')))
+      .returning();
+    if (!invoice) throw await statusError(tx, id, 'reversed');
+
+    const items = await tx.select().from(supplierInvoiceItems).where(eq(supplierInvoiceItems.invoiceId, id));
+    const received = new Map<string, number>();
+    for (const i of items) if (i.productId) received.set(i.productId, (received.get(i.productId) ?? 0) + i.quantity);
+    const names = new Map((await tx.select({ id: products.id, name: products.name }).from(products)
+      .where(inArray(products.id, [...received.keys()]))).map((p) => [p.id, p.name]));
+
+    for (const [productId, qty] of [...received].sort(([a], [b]) => a.localeCompare(b))) {
+      const taken = await tx.update(stock)
+        .set({ quantity: sql`${stock.quantity} - ${qty}` })
+        .where(and(
+          eq(stock.branchId, invoice.branchId),
+          eq(stock.productId, productId),
+          // only the default counter's bottles can go back to the supplier
+          sql`${stock.quantity} - ${qty} >= coalesce((SELECT sum(sbt.quantity) FROM stock_by_type sbt WHERE sbt.branch_id = ${stock.branchId} AND sbt.product_id = ${stock.productId}), 0)`,
+        ))
+        .returning({ productId: stock.productId });
+      if (taken.length === 0) {
+        throw new BusinessRuleError(`Cannot reverse: ${qty} × ${names.get(productId) ?? productId} were received, but not that many are left — the rest has already been sold or moved`);
+      }
+    }
+    if (received.size > 0) {
+      await tx.insert(stockAudit).values([...received].map(([productId, qty]) => ({
+        branchId: invoice.branchId, productId, userId: user.sub, changeQty: -qty, reason: 'VOID_REVERSAL' as const, referenceId: invoice.id,
+      })));
+    }
+
+    // Supplier-scheme progress credited at approval
+    const credited = await tx.select().from(schemePurchases).where(eq(schemePurchases.referenceId, id));
+    for (const p of credited) {
+      const [scheme] = await tx.select().from(schemes).where(eq(schemes.id, p.schemeId)).limit(1);
+      if (!scheme) continue;
+      const inc = scheme.targetType === 'QTY' ? p.qty : p.value;
+      await tx.update(schemes)
+        .set({ currentValue: sql`greatest(0, ${schemes.currentValue} - ${inc})` })
+        .where(eq(schemes.id, scheme.id));
+    }
+    if (credited.length > 0) await tx.delete(schemePurchases).where(eq(schemePurchases.referenceId, id));
+
+    await emitDomainEvent('supplierInvoice.reversed', { invoice, items, reversedById: user.sub }, tx);
+  });
   return getInvoiceDetail(id);
 }

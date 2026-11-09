@@ -27,6 +27,10 @@ async function stockOf(productId: string, branchId = ctx.branchId) {
 // ─── INVENTORY ────────────────────────────────────────────────────────────────
 
 describe('supplier invoice approval', () => {
+  /** Draft → approve through the real workflow (the old one-step endpoint was removed). */
+  const draft = (headers: Record<string, string>, body: Record<string, unknown>) => inject('POST', `/invoices/${ctx.branchId}`, headers, body);
+  const approve = (id: string) => inject('POST', `/invoices/detail/${id}/approve`, ctx.auth('manager'));
+
   it('adds stock atomically, audits, records MRP change in price_audit and emits the event', async () => {
     const { onDomainEvent } = await import('../../src/lib/domain-events.js');
     const events: number[] = [];
@@ -34,42 +38,42 @@ describe('supplier invoice approval', () => {
 
     const [whisky, beer] = ctx.products;
     const before = { w: await stockOf(whisky.id), b: await stockOf(beer.id) };
-    const res = await inject('POST', '/inventory/invoices/approve', ctx.auth('manager'), {
-      branchId: ctx.branchId, supplierName: 'Acme', invoiceNumber: 'INV-1', totalAmount: '10000.00',
+    const created = await draft(ctx.auth('manager'), {
+      supplierName: 'Acme', invoiceNumber: 'INV-1', totalAmount: '8460.00',
       items: [
         { productId: whisky.id, rawDescription: 'Whisky', quantity: 6, costPrice: '810.00', mrp: '1050.00' },
         { productId: beer.id, rawDescription: 'Beer', quantity: 24, costPrice: '150.10', mrp: '200.00' },
-        { productId: beer.id, rawDescription: 'Beer (free)', quantity: 12, costPrice: '0.00', mrp: '200.00' },
       ],
     });
+    expect(created.statusCode).toBe(201);
+    const id = created.json().invoice.id as string;
+    const res = await approve(id);
     off();
-    expect(res.statusCode).toBe(201);
-    expect(events).toEqual([3]);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(events).toEqual([2]);
     expect(await stockOf(whisky.id)).toBe(before.w + 6);
-    expect(await stockOf(beer.id)).toBe(before.b + 36);
+    expect(await stockOf(beer.id)).toBe(before.b + 24);
 
-    const audits = await ctx.db.select().from(ctx.schema.stockAudit).where(eq(ctx.schema.stockAudit.referenceId, res.json().id));
-    expect(audits.map((a) => a.reason)).toEqual(['PURCHASE', 'PURCHASE', 'PURCHASE']);
+    const audits = await ctx.db.select().from(ctx.schema.stockAudit).where(eq(ctx.schema.stockAudit.referenceId, id));
+    expect(audits.map((a) => a.reason)).toEqual(['PURCHASE', 'PURCHASE']);
 
     const prices = await ctx.db.select().from(ctx.schema.priceAudit).where(eq(ctx.schema.priceAudit.productId, whisky.id));
     expect(prices).toHaveLength(1);
     expect(prices[0]).toMatchObject({ oldMrp: '1000.00', newMrp: '1050.00' });
     expect(await ctx.db.select().from(ctx.schema.priceAudit).where(eq(ctx.schema.priceAudit.productId, beer.id))).toHaveLength(0);
 
-    const items = await ctx.db.select().from(ctx.schema.supplierInvoiceItems).where(eq(ctx.schema.supplierInvoiceItems.invoiceId, res.json().id));
+    const items = await ctx.db.select().from(ctx.schema.supplierInvoiceItems).where(eq(ctx.schema.supplierInvoiceItems.invoiceId, id));
     expect(items.find((i) => i.quantity === 24)!.lineCostTotal).toBe('3602.40');
   });
 
-  it('rejects a duplicate invoice (409), unknown products (422), bad decimals (400), foreign branch (403)', async () => {
-    const base = { branchId: ctx.branchId, supplierName: 'Acme', totalAmount: '1.00' };
+  it('rejects a duplicate invoice number (409), bad decimals (400), foreign branch (403)', async () => {
+    const base = { supplierName: 'Acme', totalAmount: '1.00' };
     const item = { productId: ctx.products[0].id, rawDescription: 'W', quantity: 1, costPrice: '1.00', mrp: '1050.00' };
-    expect((await inject('POST', '/inventory/invoices/approve', ctx.auth('manager'), { ...base, invoiceNumber: 'INV-1', items: [item] })).statusCode).toBe(409);
-    expect((await inject('POST', '/inventory/invoices/approve', ctx.auth('manager'), { ...base, invoiceNumber: 'INV-2', items: [{ ...item, productId: '00000000-0000-4000-8000-000000000000' }] })).statusCode).toBe(422);
-    expect((await inject('POST', '/inventory/invoices/approve', ctx.auth('manager'), { ...base, invoiceNumber: 'INV-3', items: [{ ...item, costPrice: 'abc' }] })).statusCode).toBe(400);
-    expect((await inject('POST', '/inventory/invoices/approve', otherManager(), { ...base, invoiceNumber: 'INV-4', items: [item] })).statusCode).toBe(403);
+    expect((await draft(ctx.auth('manager'), { ...base, invoiceNumber: 'INV-1', items: [item] })).statusCode).toBe(409);
+    expect((await draft(ctx.auth('manager'), { ...base, invoiceNumber: 'INV-3', items: [{ ...item, costPrice: 'abc' }] })).statusCode).toBe(400);
+    expect((await draft(otherManager(), { ...base, invoiceNumber: 'INV-4', items: [item] })).statusCode).toBe(403);
   });
 });
-
 // ─── PRODUCTS ─────────────────────────────────────────────────────────────────
 
 describe('products', () => {

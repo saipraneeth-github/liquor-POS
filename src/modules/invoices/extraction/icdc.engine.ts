@@ -220,166 +220,105 @@ export interface IcdcTotalsResult {
   retailerCreditBalance: string | null;
 }
 
+const MONEY_STRICT = /^(?:Rs\.?\s*)?\d{1,3}(?:,\d{2,3})*\.\d{2}$|^(?:Rs\.?\s*)?\d+\.\d{2}$/;
+const MONEY_ANY = /^(?:Rs\.?\s*)?\d{1,3}(?:,\d{2,3})*(?:\.\d{1,2})?$|^(?:Rs\.?\s*)?\d+(?:\.\d{1,2})?$/;
+const ROW_TOLERANCE = 2.5;
+
+/** Money printed inside a label's own text after the label ("TCS (2%): 8,811.00", "Rs.1,016,903.89"). */
+function moneyAfter(str: string, labelRe: RegExp): string | null {
+  const m = str.match(labelRe);
+  if (!m) return null;
+  const tail = str.slice((m.index ?? 0) + m[0].length);
+  const t = tail.match(/(?:Rs\.?\s*)?(\d[\d,]*(?:\.\d{1,2})?)\s*$/i);
+  return t ? parseMoney(t[1]) : null;
+}
+
+/**
+ * Reads one figure of the totals block: the amount printed on the SAME ROW as the label (same page, same baseline).
+ * Never "the nearest number within N points" — rows are only ~8pt apart, so that grabs a neighbour's amount.
+ */
+function valueOnRow(items: PagePositionedItem[], labelRe: RegExp, opts: { integer?: boolean } = {}): string | null {
+  const pattern = opts.integer ? MONEY_ANY : MONEY_STRICT;
+  for (const h of items.filter((i) => labelRe.test(i.str))) {
+    const own = moneyAfter(h.str, labelRe);
+    if (own) return own;
+    const same = items
+      .filter((i) => i !== h && i.page === h.page && Math.abs(i.y - h.y) <= ROW_TOLERANCE && i.x > h.x && pattern.test(i.str.trim()))
+      .sort((a, b) => a.x - b.x);
+    for (const c of same) {
+      const pm = parseMoney(c.str.trim());
+      if (pm) return pm;
+    }
+  }
+  return null;
+}
+
+/** Fallback: label and amount in the same extracted text line. */
+function valueInLines(lines: string[], labelRe: RegExp): string | null {
+  for (const l of lines) {
+    const m = l.match(new RegExp(labelRe.source + '\\s*[:\\-]?\\s*(?:Rs\\.?\\s*)?(\\d[\\d,]*(?:\\.\\d{1,2})?)', 'i'));
+    if (m) {
+      const pm = parseMoney(m[1]);
+      if (pm) return pm;
+    }
+  }
+  return null;
+}
+
+/**
+ * "Invoice Value", "MRP Rounding Off" and "Net Invoice Value" are printed as a three-row block whose labels wrap
+ * ("Net" / "Invoice" / "Value:") so the amounts do NOT sit on the label's baseline. They are identified by the
+ * arithmetic that must hold between them: invoiceValue + roundingOff = net.
+ */
+function invoiceValueBlock(items: PagePositionedItem[], net: string | null): { invoiceValue: string; roundingOff: string; net: string } | null {
+  let best: { invoiceValue: string; roundingOff: string; net: string; dist: number } | null = null;
+  for (const label of items.filter((i) => /Rounding/i.test(i.str))) {
+    const cands = items
+      .filter((i) => i.page === label.page && Math.abs(i.y - label.y) <= 75 && i.x > label.x + 30 && MONEY_STRICT.test(i.str.trim()))
+      .sort((a, b) => b.y - a.y || a.x - b.x)
+      .map((i) => ({ it: i, v: new Decimal(parseMoney(i.str.trim()) ?? 'NaN') }))
+      .filter((c) => !c.v.isNaN());
+    for (let a = 0; a < cands.length; a++) {
+      for (let b = a + 1; b < cands.length; b++) {
+        for (let c = b + 1; c < cands.length; c++) {
+          const sum = cands[a].v.plus(cands[b].v);
+          if (cands[a].v.gt(0) && sum.minus(cands[c].v).abs().lte('0.05') && (net === null || cands[c].v.minus(net).abs().lte('0.05'))) {
+            const dist = Math.abs(cands[b].it.y - label.y);
+            if (!best || dist < best.dist) {
+              best = { invoiceValue: cands[a].v.toFixed(2), roundingOff: cands[b].v.toFixed(2), net: cands[c].v.toFixed(2), dist };
+            }
+          }
+        }
+      }
+    }
+  }
+  return best ? { invoiceValue: best.invoiceValue, roundingOff: best.roundingOff, net: best.net } : null;
+}
+
 export function extractIcdcTotals(
   items: PagePositionedItem[],
   lines: string[],
 ): IcdcTotalsResult {
-  let capturedTotal: string | null = null;
-  let specialCess: string | null = null;
-  let mrpRoundingOff: string | null = null;
-  let linesBasicTotal: string | null = null;
-  let turnoverTax: string | null = null;
-  let tcsAmount: string | null = null;
-  let challanAmount: string | null = null;
-  let challanNumber: string | null = null;
-  let previousCredit: string | null = null;
-  let subTotal: string | null = null;
-  let retailerCreditBalance: string | null = null;
+  const get = (re: RegExp, opts?: { integer?: boolean }) => valueOnRow(items, re, opts) ?? valueInLines(lines, re);
 
-  function findByLabel(pattern: RegExp): string | null {
-    const hits = items.filter((i) => pattern.test(i.str));
-    for (const h of hits) {
-      const nearby = items.filter(
-        (i) => i.page === h.page && Math.abs(i.y - h.y) <= 8 && i.x > h.x,
-      );
-      for (const n of nearby) {
-        const pm = parseMoney(n.str);
-        if (pm) return pm;
-      }
-    }
-    return null;
-  }
-  // Search items near "(-)Less this Invoice Value:" or "Net Invoice Value:"
-  const totalLabels = items.filter((i) => /Less\s*this\s*Invoice\s*Value|Net\s*Invoice\s*Value/i.test(i.str));
-  for (const totalItem of totalLabels) {
-    const nearby = items.filter(
-      (i) => i.page === totalItem.page && Math.abs(i.y - totalItem.y) <= 6 && i.x > totalItem.x,
-    );
-    for (const n of nearby) {
-      const pm = parseMoney(n.str);
-      if (pm) {
-        capturedTotal = pm;
-        break;
-      }
-    }
-    if (capturedTotal) break;
-  }
+  // "(-)Less this Invoice Value" is printed on one row with its amount: the reliable source of the net value
+  const capturedTotal = get(/\(-\)\s*Less\s*this\s*Invoice\s*Value\s*:?/i);
 
-  if (!capturedTotal) {
-    for (const l of lines) {
-      const m = l.match(/(?:Less\s*this\s*Invoice\s*Value|Net\s*Invoice\s*Value)\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
-      if (m) {
-        const pm = parseMoney(m[1]);
-        if (pm) {
-          capturedTotal = pm;
-          break;
-        }
-      }
-    }
-  }
+  const block = invoiceValueBlock(items, capturedTotal);
+  const netInvoiceValue = capturedTotal ?? block?.net ?? null;
+  const linesBasicTotal = block?.invoiceValue ?? null;
+  const mrpRoundingOff = block?.roundingOff ?? null;
 
-  // Special Excise Cess
-  const cessLabels = items.filter((i) => /Special\s*Excise\s*Cess/i.test(i.str));
-  for (const cessItem of cessLabels) {
-    const nearby = items.filter(
-      (i) => i.page === cessItem.page && Math.abs(i.y - cessItem.y) <= 6 && i.x > cessItem.x,
-    );
-    for (const n of nearby) {
-      const pm = parseMoney(n.str);
-      if (pm) {
-        specialCess = pm;
-        break;
-      }
-    }
-    if (specialCess) break;
-  }
-
-  if (!specialCess) {
-    for (const l of lines) {
-      const m = l.match(/Special\s*Excise\s*Cess\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
-      if (m) {
-        const pm = parseMoney(m[1]);
-        if (pm) {
-          specialCess = pm;
-          break;
-        }
-      }
-    }
-  }
-
-  // Invoice Value (Wholesale basic lines sum)
-  linesBasicTotal = findByLabel(/^Invoice\s*Value/i);
-  if (!linesBasicTotal) {
-    for (const l of lines) {
-      const m = l.match(/(?:^|\s)Invoice\s*Value\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
-      if (m) { const p = parseMoney(m[1]); if (p) { linesBasicTotal = p; break; } }
-    }
-  }
-
-  // MRP Rounding Off
-  mrpRoundingOff = findByLabel(/MRP\s*Rounding\s*Off|Rounding\s*Off/i);
-  if (!mrpRoundingOff) {
-    for (const l of lines) {
-      const m = l.match(/(?:MRP\s*Rounding\s*Off|Rounding\s*Off)\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
-      if (m) { const p = parseMoney(m[1]); if (p) { mrpRoundingOff = p; break; } }
-    }
-  }
-
-  // Turnover Tax
-  turnoverTax = findByLabel(/Turnover\s*Tax/i);
-  if (!turnoverTax) {
-    for (const l of lines) {
-      const m = l.match(/Turnover\s*Tax\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
-      if (m) { const p = parseMoney(m[1]); if (p) { turnoverTax = p; break; } }
-    }
-  }
-
-  // TCS
-  tcsAmount = findByLabel(/\bTCS\b/i);
-  if (!tcsAmount) {
-    for (const l of lines) {
-      const m = l.match(/\bTCS\b(?:\s*\(\d+%\))?\s*[:\-]?\s*([₹Rs.\s]*[\d,]+\.\d{2})/i);
-      if (m) { const p = parseMoney(m[1]); if (p) { tcsAmount = p; break; } }
-    }
-  }
-
-  // e-challan / DD Amount
-  challanAmount = findByLabel(/e-challan\s*\/\s*DD\s*Amount/i);
-  if (!challanAmount) {
-    for (const l of lines) {
-      const m = l.match(/e-challan\s*\/\s*DD\s*Amount\s*[:\-]?\s*([₹Rs.\s]*[\d,]+(?:\.\d{2})?)/i);
-      if (m) { const p = parseMoney(m[1]); if (p) { challanAmount = p; break; } }
-    }
-  }
-
-  // Previous Credit
-  previousCredit = findByLabel(/Previous\s*Credit/i);
-  if (!previousCredit) {
-    for (const l of lines) {
-      const m = l.match(/Previous\s*Credit\s*[:\-]?\s*([₹Rs.\s]*[\d,]+(?:\.\d{2})?)/i);
-      if (m) { const p = parseMoney(m[1]); if (p) { previousCredit = p; break; } }
-    }
-  }
-
-  // Sub Total
-  subTotal = findByLabel(/Sub\s*Total/i);
-  if (!subTotal) {
-    for (const l of lines) {
-      const m = l.match(/Sub\s*Total\s*[:\-]?\s*([₹Rs.\s]*[\d,]+(?:\.\d{2})?)/i);
-      if (m) { const p = parseMoney(m[1]); if (p) { subTotal = p; break; } }
-    }
-  }
-
-  // Retailer Credit Balance / Amount Credited (to Licensee Account)
-  retailerCreditBalance = findByLabel(/Retailer\s*Credit\s*Balance|Amount\s*Credited\s*\([^)]+\)/i);
-  if (!retailerCreditBalance) {
-    for (const l of lines) {
-      const m = l.match(/(?:Retailer\s*Credit\s*Balance|Amount\s*Credited\s*\([^)]+\))\s*[:\-]?\s*([₹Rs.\s]*[\d,]+(?:\.\d{2})?)/i);
-      if (m) { const p = parseMoney(m[1]); if (p) { retailerCreditBalance = p; break; } }
-    }
-  }
+  const specialCess = get(/Special\s*Excise\s*Cess\s*:?/i);
+  const turnoverTax = get(/Turnover\s*Tax\s*:?/i);
+  const tcsAmount = get(/^\s*TCS\b(?:\s*\(\d+(?:\.\d+)?%\))?\s*:?/i);
+  const challanAmount = get(/e-challan\s*\/\s*DD\s*Amount\s*:?/i, { integer: true });
+  const previousCredit = get(/Previous\s*Credit\s*:?/i, { integer: true });
+  const subTotal = get(/Sub\s*Total\s*:?/i, { integer: true });
+  const retailerCreditBalance = get(/(?:Retailer\s*Credit\s*Balance|Amount\s*Credited\s*\([^)]+\))\s*:?\s*(?:Rs\.?)?/i, { integer: true });
 
   // No.e-challan/DD
+  let challanNumber: string | null = null;
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     if (/No\.?\s*e-challan\s*\/\s*DD/i.test(l)) {
@@ -397,15 +336,13 @@ export function extractIcdcTotals(
     }
   }
 
-  const netInvoiceValue = capturedTotal;
-
-  // Calculate totalInvoiceAmount = netInvoiceValue + turnoverTax + specialCess + tcsAmount
+  // Total payable to the depot for this challan = net + turnover tax + special excise cess + TCS
   let totalInvoiceAmount: string | null = null;
   if (netInvoiceValue) {
     let tot = new Decimal(netInvoiceValue);
-    if (turnoverTax) tot = tot.plus(new Decimal(turnoverTax));
-    if (specialCess) tot = tot.plus(new Decimal(specialCess));
-    if (tcsAmount) tot = tot.plus(new Decimal(tcsAmount));
+    if (turnoverTax) tot = tot.plus(turnoverTax);
+    if (specialCess) tot = tot.plus(specialCess);
+    if (tcsAmount) tot = tot.plus(tcsAmount);
     totalInvoiceAmount = tot.toFixed(2);
   }
 
@@ -436,7 +373,22 @@ interface Anchor {
   items: PagePositionedItem[];
 }
 
-const HEADER_WORDS = /^(?:Type|Brand|Name|Product|Pack|Qty|Size|Number|Rate|Total|Unit|Delivered|S\.?No\.?|Sl\.?No\.?)$/i;
+/**
+ * Brand name hygiene: HTML-entity leftovers ("JACOB #039;S" → "JACOB'S") and the page-footer / totals-header text
+ * that sits under the last row of a page ("… WHISKY IMFL/FL Particulars (Cases/Btls) Invoice Qty …").
+ */
+export function cleanBrandName(raw: string): string {
+  return raw
+    .replace(/&amp;/gi, '&')
+    .replace(/&?#0*39;/g, "'")
+    .replace(/\s*\bIMFL\/FL\b.*$/i, '')
+    .replace(/\s*\b(?:Particulars|Invoice\s*Qty|Breakage\s*Qty|Shortage\s*Qty|Reverted\s*Qty)\b.*$/i, '')
+    .replace(/\s*\(Cases\/Btls\).*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const HEADER_WORDS =/^(?:Type|Brand|Name|Product|Pack|Qty|Size|Number|Rate|Total|Unit|Delivered|S\.?No\.?|Sl\.?No\.?)$/i;
 
 /**
  * Extracts line items from ICDC document pages by anchor clustering and column reconstruction.
@@ -526,7 +478,7 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
       if (i1.page !== i2.page) return i1.page - i2.page;
       return i2.y - i1.y || i1.x - i2.x;
     });
-    const brandName = nameItems.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim();
+    const brandName = cleanBrandName(nameItems.map((i) => i.str).join(' '));
 
     // Pack Size: x between [235, 280] (condensed) or [295, 335] (standard)
     const packMinX = isCondensed ? 235 : 295;
@@ -596,7 +548,8 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
     lines.push({
       lineNumber: a.slNo,
       description: brandName,
-      barcode: sku || null,
+      // The 4-digit excise brand code is NOT a barcode (one code covers several sizes); it travels as `sku`
+      barcode: null,
       sku,
       quantity: bottles,
       cases,

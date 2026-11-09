@@ -9,10 +9,13 @@ import {
   assertBalanced,
   billPaidLines,
   billVoidedLines,
+  counterSheetSalesLines,
   creditRepaymentLines,
   expenseLines,
   supplierInvoiceLines,
   supplierChallanPaymentLines,
+  reverseLines,
+  type CounterSheetSaleLine,
   type PostingLine,
 } from './ledger.engine.js';
 import { Decimal } from 'decimal.js';
@@ -20,7 +23,8 @@ import { Decimal } from 'decimal.js';
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
 export type VoucherType = 'SALES' | 'PURCHASE' | 'PAYMENT' | 'RECEIPT' | 'JOURNAL' | 'CONTRA';
-export type SourceType = 'BILL' | 'BILL_VOID' | 'SUPPLIER_INVOICE' | 'SUPPLIER_CHALLAN' | 'EXPENSE' | 'CREDIT_REPAYMENT' | 'BANK_LINE' | 'MANUAL';
+export type SourceType = 'BILL' | 'BILL_VOID' | 'SUPPLIER_INVOICE' | 'SUPPLIER_CHALLAN' | 'SUPPLIER_INVOICE_REVERSAL' | 'SUPPLIER_CHALLAN_REVERSAL'
+  | 'COUNTER_SHEET' | 'COUNTER_SHEET_SUPERSEDED' | 'COUNTER_SHEET_VOID' | 'EXPENSE' | 'CREDIT_REPAYMENT' | 'BANK_LINE' | 'MANUAL';
 
 export interface VoucherHeader {
   branchId: string;
@@ -191,6 +195,74 @@ export async function postSupplierInvoiceApproved({ invoice, items }: DomainEven
   }, supplierInvoiceLines(items, invoice.mrpRoundingOff, invoice.specialExciseCess, invoice.tcsAmount, invoice.turnoverTax));
 }
 
+/**
+ * An approved supplier invoice was reversed: exact reversing vouchers for the purchase and for the e-challan payment
+ * that came with it. The originals are never deleted — the books keep the full trail.
+ */
+export async function postSupplierInvoiceReversed({ invoice, reversedById }: DomainEventMap['supplierInvoice.reversed'], tx: Tx) {
+  const header = (sourceType: SourceType, voucherType: VoucherType, narration: string): VoucherHeader => ({
+    branchId: invoice.branchId, voucherDate: businessDateOf(), voucherType, narration,
+    sourceType, sourceId: invoice.id, createdById: reversedById ?? null,
+  });
+  const challan = await findSourceVoucherLines(tx, 'SUPPLIER_CHALLAN', invoice.id);
+  if (challan) {
+    await postByCode(tx, header('SUPPLIER_CHALLAN_REVERSAL', 'JOURNAL', `Reversal of e-challan payment for invoice ${invoice.invoiceNumber} (${invoice.supplierName})`), reverseLines(challan));
+  }
+  const purchase = await findSourceVoucherLines(tx, 'SUPPLIER_INVOICE', invoice.id);
+  if (purchase) {
+    await postByCode(tx, header('SUPPLIER_INVOICE_REVERSAL', 'JOURNAL', `Reversal of purchase invoice ${invoice.invoiceNumber} from ${invoice.supplierName}`), reverseLines(purchase));
+  }
+}
+
+// ─── COUNTER SHEETS ──────────────────────────────────────────────────────────
+
+export interface CounterSheetSalesInput {
+  branchId: string;
+  sheetId: string;
+  sheetDate: string;
+  typeName: string;
+  userId: string | null;
+  lines: CounterSheetSaleLine[];
+}
+
+/** Sales found by a counter sheet that no POS bill covered: one SALES voucher per sheet (idempotent). */
+export async function postCounterSheetSales(tx: Tx, input: CounterSheetSalesInput) {
+  const lines = counterSheetSalesLines(input.lines);
+  return postByCode(tx, {
+    branchId:    input.branchId,
+    voucherDate: input.sheetDate,
+    voucherType: 'SALES',
+    narration:   `Counter sheet ${input.sheetDate} (${input.typeName}): sales not billed through the POS`,
+    sourceType:  'COUNTER_SHEET',
+    sourceId:    input.sheetId,
+    createdById: input.userId,
+  }, lines);
+}
+
+/**
+ * The sheet went back to draft: reverse its voucher. The original and the reversal are kept (no deletion), but moved off
+ * the (sourceType, sourceId) key so that posting the corrected sheet again creates a fresh voucher.
+ */
+export async function reverseCounterSheetSales(tx: Tx, input: { branchId: string; sheetId: string; sheetDate: string; userId: string | null }) {
+  const [original] = await tx.select().from(journalVouchers)
+    .where(and(eq(journalVouchers.sourceType, 'COUNTER_SHEET'), eq(journalVouchers.sourceId, input.sheetId))).limit(1);
+  if (!original) return null;
+  const posted = await findSourceVoucherLines(tx, 'COUNTER_SHEET', input.sheetId);
+  if (!posted) return null;
+  await tx.update(journalVouchers)
+    .set({ sourceType: 'COUNTER_SHEET_SUPERSEDED', sourceId: null, narration: `${original.narration} [reversed: sheet ${input.sheetId}]` })
+    .where(eq(journalVouchers.id, original.id));
+  return postByCode(tx, {
+    branchId:    input.branchId,
+    voucherDate: businessDateOf(),
+    voucherType: 'JOURNAL',
+    narration:   `Reversal of counter sheet ${input.sheetDate} sales (sheet ${input.sheetId} reopened)`,
+    sourceType:  'COUNTER_SHEET_VOID',
+    sourceId:    null,
+    createdById: input.userId,
+  }, reverseLines(posted));
+}
+
 export async function postCreditRepayment({ customer, txn }: DomainEventMap['credit.repayment'], tx: Tx) {
   if (txn.type !== 'REPAYMENT') return null;
   return postByCode(tx, {
@@ -233,6 +305,7 @@ export function registerAccountingHandlers(): void {
     onDomainEvent('bill.paid', async (p, tx) => { await postBillPaid(p, tx); }),
     onDomainEvent('bill.voided', async (p, tx) => { await postBillVoided(p, tx); }),
     onDomainEvent('supplierInvoice.approved', async (p, tx) => { await postSupplierInvoiceApproved(p, tx); }),
+    onDomainEvent('supplierInvoice.reversed', async (p, tx) => { await postSupplierInvoiceReversed(p, tx); }),
     onDomainEvent('credit.repayment', async (p, tx) => { await postCreditRepayment(p, tx); }),
     onDomainEvent('expense.recorded', async (p, tx) => { await postExpenseRecorded(p, tx); }),
   ];

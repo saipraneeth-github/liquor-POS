@@ -155,6 +155,31 @@ export function billPaidLines(bill: BillPostingInput): PostingLine[] {
   ]);
 }
 
+export interface CounterSheetSaleLine {
+  amount: string;     // tax-inclusive revenue of the bottles (bottles × the counter's rate)
+  taxRate: string;    // GST % contained in the amount
+}
+
+/**
+ * Bottles that left a counter without a POS bill (found by the counter sheet), sold for cash:
+ *   Dr CASH             total
+ *       Cr SALES        total − tax
+ *       Cr OUTPUT_GST   tax        (back-calculated per line, like a bill)
+ */
+export function counterSheetSalesLines(lines: CounterSheetSaleLine[]): PostingLine[] {
+  if (lines.length === 0) throw new Error('No counter sheet sales to post');
+  let total = new Decimal(0);
+  let tax = new Decimal(0);
+  for (const l of lines) {
+    const amount = new Decimal(l.amount).toDecimalPlaces(2);
+    if (amount.isNegative()) throw new Error('Negative counter sheet sale');
+    const taxable = amount.div(new Decimal(l.taxRate).div(100).plus(1)).toDecimalPlaces(2);
+    total = total.plus(amount);
+    tax = tax.plus(amount.minus(taxable));
+  }
+  return buildVoucher<string>([dr('CASH', total), cr('SALES', total.minus(tax)), cr('OUTPUT_GST', tax)]);
+}
+
 /** Bill voided: exact reversal of the original sale voucher. */
 export function billVoidedLines(original: PostingLine[]): PostingLine[] {
   const reversed = reverseLines(original);
@@ -169,13 +194,16 @@ export interface SupplierInvoiceItemInput {
 
 /**
  * Supplier invoice approved (periodic inventory → PURCHASES):
- *   Dr PURCHASES          taxable value
- *   Dr INPUT_GST          GST
- *       Cr SUNDRY_CREDITORS   sum(lineCostTotal)
+ *   Dr PURCHASES                  sum(lineCostTotal)
+ *   Dr PURCHASES_EXCISE_ROUNDING  MRP rounding off   (when printed)
+ *   Dr EXCISE_TURNOVER_TAX        turnover tax       (when printed)
+ *   Dr SPECIAL_EXCISE_CESS        special excise cess(when printed)
+ *   Dr TCS_RECEIVABLE             TCS                (when printed)
+ *       Cr SUNDRY_CREDITORS       everything above (= the depot's total debit)
  *
- * ASSUMPTION: like MRP, the supplier cost price is GST-inclusive, so per line
- * taxable = round2(lineCostTotal / (1 + rate/100)) and tax = lineCostTotal - taxable.
- * The creditor is credited with the sum of line costs (not the free-typed invoice.totalAmount).
+ * No INPUT_GST: alcohol for human consumption is outside GST, so there is no creditable input tax and the whole
+ * cost is the purchase cost. (`taxRate` is still stored on the line; it is no longer used for posting.)
+ * The creditor is credited with the sum of line costs plus the printed charges (not the free-typed invoice.totalAmount).
  */
 export function supplierInvoiceLines(
   items: SupplierInvoiceItemInput[],
@@ -185,22 +213,16 @@ export function supplierInvoiceLines(
   turnoverTax?: string | null,
 ): PostingLine[] {
   if (items.length === 0) throw new Error('Supplier invoice has no items');
-  let taxable = new Decimal(0);
-  let tax = new Decimal(0);
   let total = new Decimal(0);
   for (const item of items) {
     const lineTotal = new Decimal(item.lineCostTotal).toDecimalPlaces(2);
-    const rate = new Decimal(item.taxRate);
     if (lineTotal.isNegative()) throw new Error('Negative supplier line cost');
-    const lineTaxable = lineTotal.div(rate.div(100).plus(1)).toDecimalPlaces(2);
-    taxable = taxable.plus(lineTaxable);
-    tax = tax.plus(lineTotal.minus(lineTaxable));
     total = total.plus(lineTotal);
   }
 
+  // Liquor purchases carry no creditable input tax: the whole line cost is the purchase cost.
   const lines: RawPostingLine<string>[] = [
-    dr('PURCHASES', taxable),
-    dr('INPUT_GST', tax),
+    dr('PURCHASES', total),
   ];
 
   if (mrpRoundingOff && new Decimal(mrpRoundingOff).gt(0)) {

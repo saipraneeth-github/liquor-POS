@@ -1,7 +1,7 @@
 /**
  * counter.routes.ts — daily counter sheets (sales derived from stock counts).
  *
- * POST /counter-sheets/:branchId             — cashier+ ({ sheetDate }; creates DRAFT, 409 if exists)
+ * POST /counter-sheets/:branchId             — cashier+ ({ sheetDate, saleTypeId? }; creates a DRAFT for that sale type's counter, 409 if exists)
  * GET  /counter-sheets/:branchId?date=       — cashier+ (sheets of a branch)
  * GET  /counter-sheets/sheet/:id             — cashier+ (sheet with lines + product names)
  * PUT  /counter-sheets/sheet/:id/lines       — cashier+ (DRAFT only; manager+ may approveAdjustment or change inward)
@@ -49,7 +49,7 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
     const user = getUser(request);
     if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
     try {
-      const sheet = await createSheet(user, params.data.branchId, parsed.data.sheetDate);
+      const sheet = await createSheet(user, params.data.branchId, parsed.data.sheetDate, parsed.data.saleTypeId);
       return reply.code(201).send(sheet);
     } catch (err) {
       return sendError(reply, err, 'Counter sheet creation failed');
@@ -73,7 +73,7 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
     if (!query.success) return reply.code(400).send({ error: 'Validation failed', details: query.error.flatten() });
     if (!(await assertBranchAccess(getUser(request), params.data.branchId, reply))) return;
     try {
-      return await listSheets(params.data.branchId, query.data.date);
+      return await listSheets(params.data.branchId, query.data.date, query.data.saleTypeId);
     } catch (err) {
       return sendError(reply, err, 'Counter sheet listing failed');
     }

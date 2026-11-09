@@ -6,6 +6,7 @@ import {
   billCounters,
   stock,
   stockAudit,
+  stockByType,
   branches,
   products,
   productServings,
@@ -24,6 +25,8 @@ import { emitDomainEvent, type Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import { businessDateOf, businessDayBounds, isIsoDate } from '../../lib/business-day.js';
 import type { JwtPayload } from '../auth/auth.service.js';
+import { counterQuantity, rowTypeId, unitPriceFor } from '../saletypes/saletype.engine.js';
+import { explicitSums, resolveSaleType, typePrices } from '../saletypes/saletype.service.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,7 @@ export const CreateBillSchema = z.object({
   paymentMode: z.enum(PAYMENT_MODES),
   discount:    z.string().regex(/^\d+(\.\d{1,2})?$/).optional().default('0'),
   customerId:  z.string().uuid().optional(),
+  saleTypeId:  z.string().uuid().optional(),   // Walk-in / Janata / ...; omitted = the default type
   roundOff:    z.boolean().optional(),   // overrides the branch setting for this bill
   customerGstin: z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be 15 alphanumeric characters').optional(),
   clientRef:   z.string().trim().min(1).max(64).optional(),
@@ -172,7 +176,17 @@ export async function createBill(
     }
   }
 
-  // 2. Price from DB (serving rate or MRP, tax-inclusive) — never from the client
+  // Sale type (Walk-in, Janata, ...): picks the price list and which counter the bottles come out of
+  const saleType = await resolveSaleType(db, input.branchId, input.saleTypeId);
+  const billTypeId = rowTypeId(saleType);
+  const typePriceMap = saleType.isDefault ? new Map<string, string>() : await typePrices(db, saleType.id, productIds);
+  if (!saleType.isDefault) {
+    if (items.some((i) => i.servingId)) throw new BusinessRuleError('Peg / glass servings can only be sold under the default sale type');
+    const unpriced = productRows.filter((p) => unitPriceFor(saleType, p.mrp, typePriceMap.get(p.id)) === null);
+    if (unpriced.length > 0) throw new BusinessRuleError(`No ${saleType.name} price set for: ${unpriced.map((p) => p.name).join(', ')}`);
+  }
+
+  // 2. Price from DB (serving rate, MRP or the sale type's price, tax-inclusive) — never from the client
   const calculation = calculateBill(
     items.map((item) => {
       const product = productMap.get(item.productId)!;
@@ -180,7 +194,7 @@ export async function createBill(
       return {
         productId: item.productId,
         quantity:  item.quantity,
-        unitPrice: serving?.price ?? product.mrp,
+        unitPrice: serving?.price ?? unitPriceFor(saleType, product.mrp, typePriceMap.get(item.productId))!,
         taxRate:   resolveTaxRate(product.taxRate, product.gstRate),
         servingId:    serving?.id ?? null,
         servingLabel: serving?.label ?? null,
@@ -209,7 +223,16 @@ export async function createBill(
     .select({ productId: stock.productId, quantity: stock.quantity })
     .from(stock)
     .where(and(eq(stock.branchId, input.branchId), inArray(stock.productId, unitItems.map((u) => u.productId))));
-  const shortages = checkStockAvailability(unitItems, new Map(stockEntries.map((s) => [s.productId, s.quantity])));
+  // Each counter only sees its own bottles: the default type gets the total minus the other counters' share
+  const explicitByProduct = new Map<string, Map<string, number>>();
+  if (unitItems.length > 0) {
+    const explicitRows = await db.select().from(stockByType)
+      .where(and(eq(stockByType.branchId, input.branchId), inArray(stockByType.productId, unitItems.map((u) => u.productId))));
+    for (const e of explicitRows) explicitByProduct.set(e.productId, (explicitByProduct.get(e.productId) ?? new Map()).set(e.saleTypeId, e.quantity));
+  }
+  const shortages = checkStockAvailability(unitItems, new Map(stockEntries.map((s) => [
+    s.productId, counterQuantity(saleType, s.quantity, explicitByProduct.get(s.productId) ?? new Map()),
+  ])));
   if (shortages.length > 0) {
     throw new BusinessRuleError(
       `Insufficient stock: ${shortages
@@ -268,6 +291,7 @@ export async function createBill(
         paymentMode:    input.paymentMode,
         customerId:     customer?.id ?? null,   // only validated (CREDIT) customers are linked
         shiftSessionId: shift?.id ?? null,
+        saleTypeId:     billTypeId,
         clientRef:      input.clientRef ?? null,
         paidAt:         now,
       }).returning();
@@ -298,13 +322,40 @@ export async function createBill(
           sql` `
         )} END AS integer)`;
 
+        // A non-default counter first takes the bottles out of its own explicit counter (guarded, atomic) ...
+        if (!saleType.isDefault) {
+          const typeCase = sql`CAST(CASE ${sql.join(
+            deltas.map((d) => sql`WHEN ${stockByType.productId} = ${d.productId} THEN ${-d.delta}`),
+            sql` `,
+          )} END AS integer)`;
+          const own = await tx
+            .update(stockByType)
+            .set({ quantity: sql`${stockByType.quantity} - ${typeCase}` })
+            .where(and(
+              eq(stockByType.branchId, input.branchId),
+              eq(stockByType.saleTypeId, saleType.id),
+              inArray(stockByType.productId, deltas.map((d) => d.productId)),
+              sql`${stockByType.quantity} >= ${typeCase}`,
+            ))
+            .returning({ productId: stockByType.productId });
+          const ownIds = new Set(own.map((u) => u.productId));
+          const short = deltas.find((d) => !ownIds.has(d.productId));
+          if (short) {
+            throw new BusinessRuleError(`Insufficient ${saleType.name} stock: ${productMap.get(short.productId)?.name ?? short.productId} (requested ${-short.delta})`);
+          }
+        }
+
+        // ... and every sale lowers the shop total. The default counter may not eat into the other counters' bottles.
         const updated = await tx
           .update(stock)
           .set({ quantity: sql`${stock.quantity} - ${caseSql}` })
           .where(and(
             eq(stock.branchId, input.branchId),
             inArray(stock.productId, deltas.map((d) => d.productId)),
-            sql`${stock.quantity} >= ${caseSql}`
+            sql`${stock.quantity} >= ${caseSql}`,
+            saleType.isDefault
+              ? sql`${stock.quantity} - ${caseSql} >= coalesce((SELECT sum(sbt.quantity) FROM stock_by_type sbt WHERE sbt.branch_id = ${stock.branchId} AND sbt.product_id = ${stock.productId}), 0)`
+              : undefined,
           ))
           .returning({ productId: stock.productId });
 
@@ -326,6 +377,7 @@ export async function createBill(
             changeQty:   d.delta,
             reason:      'SALE' as const,
             referenceId: bill.id,
+            saleTypeId:  billTypeId,
           })),
         );
       }
@@ -340,6 +392,9 @@ export async function createBill(
           .for('update');
         const result = row ? deductMl(row, totalMl, product.volumeMl!) : null;
         if (!result) throw new BusinessRuleError(`Insufficient stock: ${product.name} (${totalMl} ml requested)`);
+        // the peg counter is the default one: it must leave the other counters' bottles alone
+        const reserved = (await explicitSums(tx, input.branchId, [productId])).get(productId) ?? 0;
+        if (result.state.quantity < reserved) throw new BusinessRuleError(`Insufficient stock: ${product.name} (${totalMl} ml requested)`);
         await tx.update(stock)
           .set({ quantity: result.state.quantity, openMl: result.state.openMl })
           .where(and(eq(stock.branchId, input.branchId), eq(stock.productId, productId)));
@@ -455,6 +510,17 @@ export async function voidBill(
           set: { quantity: sql`${stock.quantity} + EXCLUDED.quantity` },
         });
 
+      // The bottles go back to the counter they were sold from
+      if (bill.saleTypeId) {
+        await tx
+          .insert(stockByType)
+          .values(deltas.map((delta) => ({ branchId: bill.branchId, productId: delta.productId, saleTypeId: bill.saleTypeId!, quantity: delta.delta })))
+          .onConflictDoUpdate({
+            target: [stockByType.branchId, stockByType.productId, stockByType.saleTypeId],
+            set: { quantity: sql`${stockByType.quantity} + EXCLUDED.quantity` },
+          });
+      }
+
       await tx.insert(stockAudit).values(
         deltas.map((d) => ({
           branchId:    bill.branchId,
@@ -463,6 +529,7 @@ export async function voidBill(
           changeQty:   d.delta,
           reason:      'VOID_REVERSAL' as const,
           referenceId: billId,
+          saleTypeId:  bill.saleTypeId,
         })),
       );
     }

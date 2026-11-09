@@ -52,13 +52,19 @@ describe('Telangana Excise ICDC Engine', () => {
       },
     ];
 
-    const match = matchLine({ description: 'KING FISHER PREMIUM LAGER BEER', sku: '5016' }, catalog);
+    const match = matchLine({ description: 'KING FISHER PREMIUM LAGER BEER', sku: '5016', volumeMl: 650 }, catalog);
     expect(match).toMatchObject({
       productId: 'prod-kf-5016',
       status: 'MATCHED',
       method: 'SKU',
       confidence: 1,
     });
+
+    // A brand code alone cannot say which size it is: no ml on the line → nothing is auto-matched
+    const noMl = matchLine({ description: 'KING FISHER PREMIUM LAGER BEER', sku: '5016' }, catalog);
+    expect(noMl.productId).toBeNull();
+    expect(noMl.flags).toContain('VOLUME_MISSING');
+    expect(noMl.candidates[0].productId).toBe('prod-kf-5016');
   });
 
   it('supports dual quantity conversion (cases + bottles) using pack size', () => {

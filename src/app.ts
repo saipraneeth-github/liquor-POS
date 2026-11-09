@@ -29,6 +29,7 @@ import { branchRoutes } from './modules/branches/branch.routes.js';
 import { terminalRoutes } from './modules/terminals/terminal.routes.js';
 import { shiftRoutes } from './modules/shifts/shift.routes.js';
 import { counterSheetRoutes } from './modules/counters/counter.routes.js';
+import { saleTypeRoutes } from './modules/saletypes/saletype.routes.js';
 import { customerRoutes } from './modules/customers/customer.routes.js';
 import { complianceRoutes } from './modules/compliance/compliance.routes.js';
 import { accountingRoutes } from './modules/accounting/accounting.routes.js';
@@ -170,6 +171,7 @@ export function buildApp() {
   fastify.register(terminalRoutes,     { prefix: '/api/v1' });
   fastify.register(shiftRoutes,        { prefix: '/api/v1' });
   fastify.register(counterSheetRoutes, { prefix: '/api/v1' });
+  fastify.register(saleTypeRoutes,     { prefix: '/api/v1' });
   fastify.register(customerRoutes,     { prefix: '/api/v1' });
   fastify.register(complianceRoutes,   { prefix: '/api/v1' });
   fastify.register(accountingRoutes,   { prefix: '/api/v1' });

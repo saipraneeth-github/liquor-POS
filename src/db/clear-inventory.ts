@@ -2,6 +2,7 @@ import { db } from './client.js';
 import {
   stock,
   stockAudit,
+  stockByType,
   breakageLogs,
   supplierInvoiceItems,
   supplierInvoices,
@@ -65,6 +66,7 @@ export async function clearAllInventoryAndTransactions(): Promise<void> {
     await tx.delete(stockAudit);
     await tx.delete(breakageLogs);
     await tx.delete(priceAudit);
+    await tx.delete(stockByType);
     const deletedStock = await tx.delete(stock).returning({ id: stock.id });
 
     // 9. Reset product inventory tracking columns to clean state

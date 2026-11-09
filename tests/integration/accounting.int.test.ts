@@ -180,8 +180,8 @@ describe('supplier invoice + credit repayment events', () => {
     const purchase = await voucherFor('SUPPLIER_INVOICE', invoiceId);
     expect(purchase!.voucher.voucherType).toBe('PURCHASE');
     expect(purchase!.lines.SUNDRY_CREDITORS).toEqual({ debit: '0.00', credit: '11400.00' });
-    expect(purchase!.lines.PURCHASES.debit).toBe('9742.73');
-    expect(purchase!.lines.INPUT_GST.debit).toBe('1657.27');
+    expect(purchase!.lines.PURCHASES.debit).toBe('11400.00');
+    expect(purchase!.lines.INPUT_GST).toBeUndefined();     // no creditable input tax on liquor
 
     const [customer] = await ctx.db.select().from(customers).where(eq(customers.branchId, ctx.branchId)).limit(1);
     const txnId = await ctx.db.transaction(async (tx) => {

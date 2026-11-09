@@ -82,13 +82,6 @@ describe('inventory :branchId validation', () => {
     }
   });
 
-  it('rejects non-decimal money in the raw invoice parser with 400', async () => {
-    const res = await inject('POST', '/api/v1/inventory/invoices/parse', ctx.auth('manager'), {
-      supplierName: 'S', invoiceNumber: 'I1', invoiceDate: '2026-01-01', claimedTotal: 'abc',
-      items: [{ rawDescription: 'x', quantity: 1, costPrice: '1.00', mrp: '2.00' }],
-    });
-    expect(res.statusCode).toBe(400);
-  });
 });
 
 // ─── CONSOLIDATED INVOICES ────────────────────────────────────────────────────

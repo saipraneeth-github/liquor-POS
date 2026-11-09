@@ -182,16 +182,15 @@ describe('billVoidedLines', () => {
 // ─── SUPPLIER INVOICE ─────────────────────────────────────────────────────────
 
 describe('supplierInvoiceLines', () => {
-  it('Dr PURCHASES + Dr INPUT_GST = Cr SUNDRY_CREDITORS (sum of line costs)', () => {
+  it('Dr PURCHASES (full cost, no input GST) = Cr SUNDRY_CREDITORS (sum of line costs)', () => {
     const lines = supplierInvoiceLines([
       { lineCostTotal: '9600.00', taxRate: '18.00' },
       { lineCostTotal: '1800.00', taxRate: '12.00' },
     ]);
     expectBalanced(lines);
     expect(amountOf(lines, 'SUNDRY_CREDITORS', 'credit')).toBe('11400.00');
-    // 9600/1.18 = 8135.59 ; 1800/1.12 = 1607.14
-    expect(amountOf(lines, 'PURCHASES', 'debit')).toBe('9742.73');
-    expect(amountOf(lines, 'INPUT_GST', 'debit')).toBe('1657.27');
+    expect(amountOf(lines, 'PURCHASES', 'debit')).toBe('11400.00');
+    expect(lines.some((l) => l.ledger === 'INPUT_GST')).toBe(false);
   });
 
   it('balances with odd amounts and zero tax rate', () => {

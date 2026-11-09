@@ -7,7 +7,7 @@ export const userRoleEnum = pgEnum('user_role', ['owner', 'manager', 'office_adm
 export const billStatusEnum = pgEnum('bill_status', ['OPEN', 'PAID', 'VOIDED']);
 export const taxTypeEnum = pgEnum('tax_type', ['GST', 'VAT_EXCISE']);
 export const menuTypeEnum = pgEnum('menu_type', ['RETAIL', 'KITCHEN', 'BAR']);
-export const stockReasonEnum = pgEnum('stock_reason', ['SALE', 'MANUAL_ADJUST', 'PURCHASE', 'VOID_REVERSAL', 'DAMAGE', 'BREAKAGE', 'COUNTER_SHEET', 'SCHEME_FREE_GOODS']);
+export const stockReasonEnum = pgEnum('stock_reason', ['SALE', 'MANUAL_ADJUST', 'PURCHASE', 'VOID_REVERSAL', 'DAMAGE', 'BREAKAGE', 'COUNTER_SHEET', 'SCHEME_FREE_GOODS', 'TYPE_TRANSFER']);
 
 // ─── BRANCHES ───────────────────────────────────────────────────────────────
 
@@ -134,6 +134,46 @@ export const userPagePermissions = pgTable('user_page_permissions', {
   uqUserRoute: unique('uq_user_route').on(t.userId, t.routePath),
 }));
 
+// ─── SALE TYPES (Walk-in, Janata, ...) ───────────────────────────────────────
+// A sale type is a price list + its own counter. The DEFAULT type (Walk-in) is priced by products.mrp and its stock is
+// whatever is left of stock after the explicit counters in stock_by_type. Rows that reference a sale type use NULL
+// for the default type, so everything recorded before sale types existed is default-type data.
+
+export const saleTypes = pgTable('sale_types', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  syndicateId: uuid('syndicate_id').references((): AnyPgColumn => syndicates.id),   // owning tenant; NULL = standalone shops
+  code:       text('code').notNull(),                       // 'WALK_IN', 'JANATA', ...
+  name:       text('name').notNull(),
+  sortOrder:  integer('sort_order').notNull().default(0),
+  isDefault:  boolean('is_default').notNull().default(false),
+  isActive:   boolean('is_active').notNull().default(true),
+  createdAt:  timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqTenantCode:    uniqueIndex('uq_sale_types_tenant_code').on(sql`coalesce(${t.syndicateId}, '00000000-0000-0000-0000-000000000000'::uuid)`, t.code),
+  uqTenantDefault: uniqueIndex('uq_sale_types_tenant_default').on(sql`coalesce(${t.syndicateId}, '00000000-0000-0000-0000-000000000000'::uuid)`).where(sql`is_default`),
+}));
+
+// Which sale types a shop sells under (a missing row means enabled)
+export const branchSaleTypes = pgTable('branch_sale_types', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  branchId:   uuid('branch_id').notNull().references(() => branches.id, { onDelete: 'cascade' }),
+  saleTypeId: uuid('sale_type_id').notNull().references(() => saleTypes.id, { onDelete: 'cascade' }),
+  enabled:    boolean('enabled').notNull().default(true),
+}, (t) => ({
+  uqBranchType: unique('uq_branch_sale_type').on(t.branchId, t.saleTypeId),
+}));
+
+// Tax-inclusive selling price of a product under a NON-default sale type (the default type uses products.mrp).
+// No row = the product is not sold under that type.
+export const productPrices = pgTable('product_prices', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  productId:  uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  saleTypeId: uuid('sale_type_id').notNull().references(() => saleTypes.id, { onDelete: 'cascade' }),
+  price:      numeric('price', { precision: 12, scale: 2 }).notNull(),
+  updatedAt:  timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqProductType: unique('uq_product_price_type').on(t.productId, t.saleTypeId),
+}));
 // ─── STOCK ──────────────────────────────────────────────────────────────────
 
 export const stock = pgTable('stock', {
@@ -147,6 +187,18 @@ export const stock = pgTable('stock', {
   uniqueBranchProduct: unique('uq_branch_product').on(t.branchId, t.productId),
 }));
 
+// Explicit counter of a NON-default sale type. Invariant: Σ stock_by_type.quantity <= stock.quantity for a product in a
+// branch; the default type's counter is the remainder (stock.quantity - Σ explicit).
+export const stockByType = pgTable('stock_by_type', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  branchId:   uuid('branch_id').notNull().references(() => branches.id),
+  productId:  uuid('product_id').notNull().references(() => products.id),
+  saleTypeId: uuid('sale_type_id').notNull().references(() => saleTypes.id),
+  quantity:   integer('quantity').notNull().default(0),
+}, (t) => ({
+  uqBranchProductType: unique('uq_stock_by_type').on(t.branchId, t.productId, t.saleTypeId),
+}));
+
 // ─── STOCK AUDIT ────────────────────────────────────────────────────────────
 
 export const stockAudit = pgTable('stock_audit', {
@@ -158,6 +210,7 @@ export const stockAudit = pgTable('stock_audit', {
   changeMl:    integer('change_ml').notNull().default(0),   // ml sold/restored via peg servings
   reason:      stockReasonEnum('reason').notNull(),
   referenceId: uuid('reference_id'),              // bill_id or purchase_id
+  saleTypeId:  uuid('sale_type_id').references(() => saleTypes.id),   // which counter moved; NULL = the default type
   createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
@@ -179,6 +232,7 @@ export const bills = pgTable('bills', {
   roundOff:       numeric('round_off', { precision: 12, scale: 2 }).notNull().default('0'),    // total = subtotal - discount + round_off
   shiftSessionId: uuid('shift_session_id').references((): AnyPgColumn => shiftSessions.id),  // cashier shift the bill was rung in
   clientRef:      text('client_ref').unique(),   // idempotency key for offline-queued bills
+  saleTypeId:     uuid('sale_type_id').references(() => saleTypes.id),   // NULL = the default sale type (Walk-in)
   paidAt:      timestamp('paid_at', { withTimezone: true }),
   voidedAt:    timestamp('voided_at', { withTimezone: true }),
   voidReason:  text('void_reason'),
@@ -219,6 +273,7 @@ export const priceAudit = pgTable('price_audit', {
   userId:    uuid('user_id').notNull().references(() => users.id),
   oldMrp:    numeric('old_mrp', { precision: 12, scale: 2 }),
   newMrp:    numeric('new_mrp', { precision: 12, scale: 2 }).notNull(),
+  saleTypeId: uuid('sale_type_id').references(() => saleTypes.id),   // NULL = the default type's price (products.mrp)
   changedAt: timestamp('changed_at', { withTimezone: true }).defaultNow(),
 });
 
@@ -258,7 +313,7 @@ export const dailyClosings = pgTable('daily_closings', {
 
 // ─── SUPPLIER INVOICES (PURCHASE ENTRY) ──────────────────────────────────────
 
-export const invoiceStatusEnum = pgEnum('invoice_status', ['DRAFT', 'REVIEWED', 'APPROVED', 'REJECTED']);
+export const invoiceStatusEnum = pgEnum('invoice_status', ['DRAFT', 'REVIEWED', 'APPROVED', 'REJECTED', 'REVERSED']);
 
 export const supplierInvoices = pgTable('supplier_invoices', {
   id:            uuid('id').primaryKey().defaultRandom(),
@@ -297,13 +352,17 @@ export const supplierInvoices = pgTable('supplier_invoices', {
   rejectedById:       uuid('rejected_by_id').references(() => users.id),
   rejectedAt:         timestamp('rejected_at', { withTimezone: true }),
   rejectionReason:    text('rejection_reason'),
+  // An APPROVED invoice is never deleted: it is reversed (reversing voucher + stock taken back out)
+  reversedById:       uuid('reversed_by_id').references(() => users.id),
+  reversedAt:         timestamp('reversed_at', { withTimezone: true }),
+  reversalReason:     text('reversal_reason'),
   extractionWarnings: jsonb('extraction_warnings').$type<string[]>(),
   extractionMeta:     jsonb('extraction_meta').$type<Record<string, unknown>>(),
 }, (t) => ({
   // A live (non-rejected) invoice number is unique per branch+supplier; a rejected one may be re-submitted.
   uqLiveSupplierInvoice: uniqueIndex('uq_supplier_invoice_live_number')
     .on(t.branchId, t.supplierName, t.invoiceNumber)
-    .where(sql`status <> 'REJECTED'`),
+    .where(sql`status <> 'REJECTED' AND reversed_at IS NULL`),
 }));
 
 export const supplierInvoiceItems = pgTable('supplier_invoice_items', {
@@ -511,6 +570,7 @@ export const dailyCounterSheets = pgTable('daily_counter_sheets', {
   id:           uuid('id').primaryKey().defaultRandom(),
   branchId:     uuid('branch_id').notNull().references(() => branches.id),
   sheetDate:    date('sheet_date').notNull(),
+  saleTypeId:   uuid('sale_type_id').references(() => saleTypes.id),   // one sheet per branch, day and sale type; NULL = default type
   status:       counterSheetStatusEnum('status').notNull().default('DRAFT'),
   totalRevenue: numeric('total_revenue', { precision: 14, scale: 2 }).notNull().default('0'),
   createdById:  uuid('created_by_id').notNull().references(() => users.id),
@@ -518,7 +578,7 @@ export const dailyCounterSheets = pgTable('daily_counter_sheets', {
   postedAt:     timestamp('posted_at', { withTimezone: true }),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (t) => ({
-  uqBranchDate: unique('uq_counter_sheet_branch_date').on(t.branchId, t.sheetDate),
+  uqBranchDateType: uniqueIndex('uq_counter_sheet_branch_date_type').on(t.branchId, t.sheetDate, sql`coalesce(${t.saleTypeId}, '00000000-0000-0000-0000-000000000000'::uuid)`),
 }));
 
 export const dailyCounterSheetLines = pgTable('daily_counter_sheet_lines', {
@@ -527,6 +587,7 @@ export const dailyCounterSheetLines = pgTable('daily_counter_sheet_lines', {
   productId:      uuid('product_id').notNull().references(() => products.id),
   openingBottles: integer('opening_bottles').notNull(),
   inwardBottles:  integer('inward_bottles').notNull().default(0),
+  transferBottles: integer('transfer_bottles').notNull().default(0),   // net moved between sale-type counters that day (+ in, - out)
   closingBottles: integer('closing_bottles').notNull(),
   soldBottles:    integer('sold_bottles').notNull(),
   sellingRate:    numeric('selling_rate',  { precision: 12, scale: 2 }).notNull(),
