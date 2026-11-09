@@ -986,11 +986,22 @@ export function Inventory() {
     if (isApproving) return;
     if (!activeInvoice) return;
     const totalBottles = activeInvoice.items.reduce((sum, it) => sum + (it.quantity || 0), 0);
-    const totalCost = invoiceLinesTotal(activeInvoice);
+    const linesCost = invoiceLinesTotal(activeInvoice);
+    // A depot challan posts more than its lines: MRP rounding off, turnover tax, special excise cess and TCS are added to
+    // what is owed to the depot, so say the amount that will really be booked.
+    const inv = activeInvoice.invoice;
+    const isChallan = (inv.extractionMeta as { engine?: string } | null | undefined)?.engine === 'icdc-extractor';
+    const num = (v?: string | null) => (v ? parseFloat(v) || 0 : 0);
+    const payable = isChallan && inv.netInvoiceValue
+      ? num(inv.netInvoiceValue) + num(inv.turnoverTax) + num(inv.specialExciseCess) + num(inv.tcsAmount)
+      : null;
+    const postedText = payable !== null
+      ? `This will post ₹${payable.toFixed(2)} to purchase accounts (lines ₹${linesCost} + rounding, taxes and TCS).`
+      : `This will post ₹${linesCost} to purchase accounts.`;
 
     setConfirmModal({
       title: 'Confirm Stock Inward',
-      message: `Add ${totalBottles} bottles from Bill ${activeInvoice.invoice.invoiceNumber} to your store stock? This will post ₹${totalCost} to purchase accounts.`,
+      message: `Add ${totalBottles} bottles from Bill ${activeInvoice.invoice.invoiceNumber} to your store stock? ${postedText}`,
       onOk: async () => {
         setConfirmModal(null);
         setIsApproving(true);
