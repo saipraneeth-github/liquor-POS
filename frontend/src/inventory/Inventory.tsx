@@ -386,6 +386,7 @@ export function Inventory() {
 
   const getBrandCode = (it: InvoiceItem) => {
     if (it.barcode && it.barcode.trim()) return it.barcode.trim();
+    if ((it as any).exciseCode && (it as any).exciseCode.trim()) return (it as any).exciseCode.trim();
     const m = it.rawDescription.match(/^[A-Za-z0-9_-]{3,12}/);
     return m ? m[0] : it.rawDescription.slice(0, 8);
   };

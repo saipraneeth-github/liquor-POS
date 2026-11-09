@@ -129,7 +129,7 @@ export function itemValues(invoiceId: string, lines: DraftLine[]) {
     costDifference: l.costDifference ?? null,
     costIncreasePct: l.costIncreasePct ?? null,
     lineNumber: l.lineNumber,
-    barcode: l.barcode,
+    barcode: l.barcode ?? l.sku ?? null,
     matchStatus: l.matchStatus,
     matchMethod: l.matchMethod,
     matchConfidence: l.matchConfidence,

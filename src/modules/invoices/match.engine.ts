@@ -60,7 +60,8 @@ function deOcr(tok: string): string {
 }
 
 /** Extracts a volume in ml ("750ml", "750 ml", "1L", "1.5 ltr", "75cl"). */
-export function extractVolumeMl(text: string): number | null {
+export function extractVolumeMl(text: string | null | undefined): number | null {
+  if (!text) return null;
   const m = text.toLowerCase().match(/(\d+(?:\.\d+)?)\s*(ml|ltr|lt|l|cl)\b/);
   if (!m) return null;
   const n = parseFloat(m[1]);
@@ -139,7 +140,7 @@ function round3(n: number): number {
 }
 
 export function matchLine(line: MatchInput, catalog: CatalogProduct[]): MatchResult {
-  const active = catalog.filter((p) => p.isActive);
+  const active = catalog.filter((p) => p.isActive !== false);
   const barcode = line.barcode?.replace(/\s/g, '');
   if (barcode) {
     const p = active.find((c) => c.barcode && c.barcode === barcode);

@@ -596,7 +596,7 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
     lines.push({
       lineNumber: a.slNo,
       description: brandName,
-      barcode: null,
+      barcode: sku || null,
       sku,
       quantity: bottles,
       cases,
