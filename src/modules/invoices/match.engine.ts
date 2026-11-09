@@ -30,6 +30,9 @@ export interface MatchInput {
   description: string;
   barcode?: string | null;
   sku?: string | null;
+  /** Volume in ml extracted from the invoice table (e.g. the Qty/Size(ml) column in ICDC).
+   *  Used as a fallback when the product description does not contain a volume string. */
+  volumeMl?: number | null;
 }
 
 export interface MatchResult {
@@ -142,7 +145,9 @@ export function matchLine(line: MatchInput, catalog: CatalogProduct[]): MatchRes
     const p = active.find((c) => c.barcode && c.barcode === barcode);
     if (p) return { productId: p.id, status: 'MATCHED', method: 'BARCODE', confidence: 1, flags: [], candidates: [] };
   }
-  const lineVol = extractVolumeMl(line.description);
+  // Prefer volume from the description; fall back to the structured volumeMl field
+  // (e.g. the Qty/Size(ml) column in Telangana ICDC invoices where the brand name has no ml suffix).
+  const lineVol = extractVolumeMl(line.description) ?? line.volumeMl ?? null;
   const sku = line.sku?.trim().toLowerCase();
   if (sku) {
     const skuMatches = active.filter((c) => (c.sku && c.sku.trim().toLowerCase() === sku) || (c.exciseCode && c.exciseCode.trim().toLowerCase() === sku));

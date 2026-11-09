@@ -1551,7 +1551,7 @@ export function Inventory() {
               </div>
 
               {/* Bill Details Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-xl border">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-xl border">
                 <div>
                   <label className="block text-xs font-bold text-gray-600" htmlFor="invEditSupplier">
                     Depot / Supplier
@@ -1567,6 +1567,18 @@ export function Inventory() {
                       })
                     }
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-600">
+                    Shop / Licensee Name
+                  </label>
+                  <div
+                    className="w-full mt-1 p-2 border rounded text-sm bg-gray-100 font-medium text-gray-800 truncate"
+                    title={(activeInvoice.invoice.extractionMeta?.shopName as string) || activeInvoice.invoice.shopName || shopName}
+                  >
+                    {(activeInvoice.invoice.extractionMeta?.shopName as string) || activeInvoice.invoice.shopName || shopName}
+                  </div>
                 </div>
 
                 <div>
