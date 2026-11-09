@@ -22,17 +22,24 @@ const toast = (msg: string, type: 'success' | 'error' = 'success') => {
 
 export function SalePrices({ branchId }: { branchId: string }) {
   const [matrix, setMatrix] = useState<Matrix | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});     // `${productId}|${typeId}` → typed value
   const [filter, setFilter] = useState('');
   const [newType, setNewType] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
     try {
       setMatrix(await api.get<Matrix>(`/sale-types/${branchId}/prices`));
       setEdits({});
     } catch (e: any) {
+      setLoadError(e.message ?? 'Failed to load prices');
       toast('Could not load prices: ' + e.message, 'error');
+    } finally {
+      setLoading(false);
     }
   }, [branchId]);
   useEffect(() => { void load(); }, [load]);
@@ -91,6 +98,22 @@ export function SalePrices({ branchId }: { branchId: string }) {
       toast('Could not change: ' + e.message, 'error');
     }
   };
+
+  if (loading && !matrix) {
+    return (
+      <div className="card mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded shadow p-6 text-center text-sm text-gray-500">
+        Loading sale type prices…
+      </div>
+    );
+  }
+
+  if (loadError && !matrix) {
+    return (
+      <div className="card mb-4 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-800 text-gray-900 dark:text-gray-100 rounded shadow p-4 text-center text-sm text-red-600">
+        Could not load sale type prices: {loadError}
+      </div>
+    );
+  }
 
   if (!matrix) return null;
 

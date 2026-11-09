@@ -37,11 +37,13 @@ interface Product {
 }
 
 export function Products() {
-  const { user } = useAuth();
+  const { user, activeBranchId, branches } = useAuth();
   const isManager = isManagerLike(user);
   const canEditPrices = userCan(user, 'prices.edit');   // MRP and every sale type's price
   const canSeeCost = userCan(user, 'cost.view');        // buying prices and margins
-  const branchId = user?.branchId;
+  const branchId = activeBranchId ?? user?.branchId ?? branches[0]?.id;
+
+  const [activeTab, setActiveTab] = useState<'catalog' | 'sale-prices'>('catalog');
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -232,7 +234,54 @@ export function Products() {
         </div>
       </div>
 
-      <div className="space-y-3 mb-4">
+      {/* Navigation Tabs */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700 gap-2 mb-4" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'catalog'}
+          onClick={() => setActiveTab('catalog')}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
+            activeTab === 'catalog'
+              ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+          }`}
+        >
+          All Products & MRP ({products.length})
+        </button>
+        {canEditPrices && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'sale-prices'}
+            onClick={() => setActiveTab('sale-prices')}
+            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+              activeTab === 'sale-prices'
+                ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+            }`}
+          >
+            Prices by Sale Type (Janata / Walk-in)
+            <span className="px-2 py-0.5 rounded text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold">
+              Counters
+            </span>
+          </button>
+        )}
+      </div>
+
+      {activeTab === 'sale-prices' && (
+        branchId ? (
+          <SalePrices branchId={branchId} />
+        ) : (
+          <div className="card p-6 bg-white dark:bg-gray-800 border rounded text-center text-sm text-gray-500">
+            Please select a branch from the top header to manage sale type prices.
+          </div>
+        )
+      )}
+
+      {activeTab === 'catalog' && (
+        <>
+          <div className="space-y-3 mb-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="relative w-full max-w-xs">
             <label htmlFor="prodSearch" className="sr-only">Search products</label>
@@ -556,6 +605,8 @@ export function Products() {
             </form>
           </div>
         </details>
+      )}
+        </>
       )}
 
       {editProduct && (
