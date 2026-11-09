@@ -75,7 +75,7 @@ describe('Telangana Excise ICDC Engine', () => {
   });
 
   const catalogProducts: CatalogProduct[] = TELANGANA_ICDC_PRODUCTS.map((p) => ({
-    id: `prod-${p.exciseCode}`,
+    id: `prod-${p.exciseCode}-${p.volumeMl}`,
     name: p.name,
     brand: p.brand,
     barcode: null,

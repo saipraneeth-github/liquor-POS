@@ -49,7 +49,7 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
       const catalog = await loadCatalog(tx, current.branchId);
       const refIds = [...new Set(input.items.map((i) => i.productId).filter((p): p is string => !!p))];
       const refRows = refIds.length ? await tx.select({
-        id: products.id, name: products.name, mrp: products.mrp, sku: products.sku, costPrice: products.costPrice,
+        id: products.id, name: products.name, mrp: products.mrp, sku: products.sku, costPrice: products.costPrice, volumeMl: products.volumeMl,
       }).from(products).where(inArray(products.id, refIds)) : [];
       const refMap = new Map(refRows.map((p) => [p.id, p]));
       const missing = refIds.filter((p) => !refMap.has(p));
@@ -99,6 +99,7 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
           carried = [...carried, ...keep];
         }
         const product = productId ? refMap.get(productId) ?? catalog.find((c) => c.id === productId) ?? null : null;
+        const lineVol = (item.volumeMl !== undefined && item.volumeMl !== null) ? item.volumeMl : (prev?.volumeMl ?? product?.volumeMl ?? null);
         const v = validateLine({
           ...next, extractedAmount: item.extractedAmount ?? prev?.extractedAmount ?? null,
           catalogMrp: product?.mrp ?? null, productId, matchStatus: status, flags: carried,
@@ -110,6 +111,7 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
           sku: product?.sku ?? null,
           productId, productName: product?.name ?? null, matchStatus: status, matchMethod: method, matchConfidence: confidence,
           ...next,
+          volumeMl: lineVol,
           displayCostPrice: new Decimal(costPrice).toFixed(2),
           taxRate: new Decimal(item.taxRate ?? prev?.taxRate ?? (productId ? taxByProduct.get(productId) : null) ?? DEFAULT_TAX_RATE).toFixed(2),
           extractedAmount: item.extractedAmount !== undefined ? item.extractedAmount : (prev?.extractedAmount ?? null),

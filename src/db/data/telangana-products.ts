@@ -1,7 +1,7 @@
 /**
- * telangana-products.ts — Comprehensive catalog of 84 standard Telangana State
+ * telangana-products.ts — Comprehensive catalog of Telangana State
  * Beverages Corporation Limited (TSBCL) ICDC products.
- * Auto-generated from official Telangana Excise ICDC delivery challans.
+ * Auto-generated from official Telangana Excise ICDC delivery challans with full (brandCode + volumeMl) disambiguation.
  */
 
 export interface TelanganaProductSeed {
@@ -85,6 +85,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Rum",
+    "name": "Old Monk Rum Very Old Vatted 180ml",
+    "brand": "Old Monk",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "0048",
+    "sku": "TS-0048-180",
+    "costPrice": "125.08",
+    "mrp": "170.00"
+  },
+  {
+    "category": "Rum",
     "name": "Old Monk Very Old Vatted Rum 375ml",
     "brand": "Old Monk",
     "volumeMl": 375,
@@ -93,6 +104,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-0048",
     "costPrice": "258.42",
     "mrp": "330.00"
+  },
+  {
+    "category": "Rum",
+    "name": "Old Monk Rum Very Old Vatted 750ml",
+    "brand": "Old Monk",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "0048",
+    "sku": "TS-0048-750",
+    "costPrice": "525.08",
+    "mrp": "690.00"
   },
   {
     "category": "Vodka",
@@ -107,6 +129,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Absolut Raspberri 750ml",
+    "brand": "Absolut Raspberri",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "0094",
+    "sku": "TS-0094-750",
+    "costPrice": "1966.75",
+    "mrp": "2560.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Officer's Choice Reserve Whisky 90ml",
     "brand": "Officer's Choice",
     "volumeMl": 90,
@@ -115,6 +148,61 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-0110",
     "costPrice": "58.42",
     "mrp": "80.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Officer`s Choice Reserve Whisky 180ml",
+    "brand": "Officer`s Choice Reserve",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "0110",
+    "sku": "TS-0110-180",
+    "costPrice": "108.42",
+    "mrp": "150.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Officer`s Choice Reserve Whisky 375ml",
+    "brand": "Officer`s Choice Reserve",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0110",
+    "sku": "TS-0110-375",
+    "costPrice": "225.08",
+    "mrp": "300.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Officer`s Choice Reserve Whisky 750ml",
+    "brand": "Officer`s Choice Reserve",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "0110",
+    "sku": "TS-0110-750",
+    "costPrice": "458.42",
+    "mrp": "600.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Teachers 50 Blended Scotch Whisky 180ml",
+    "brand": "Teachers 50",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "0235",
+    "sku": "TS-0235-180",
+    "costPrice": "625.08",
+    "mrp": "820.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Teachers 50 Blended Scotch Whisky 375ml",
+    "brand": "Teachers 50",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0235",
+    "sku": "TS-0235-375",
+    "costPrice": "1258.42",
+    "mrp": "1640.00"
   },
   {
     "category": "Whisky",
@@ -129,6 +217,39 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Teachers Highland Cream Blended Scotch Whisky 60ml",
+    "brand": "Teachers Highland Cream",
+    "volumeMl": 60,
+    "packQuantity": 150,
+    "exciseCode": "0239",
+    "sku": "TS-0239-60",
+    "costPrice": "150.09",
+    "mrp": "200.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Teachers Highland Cream Blended Scotch Whisky Teachers 180ml",
+    "brand": "Teachers Highland Cream",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "0239",
+    "sku": "TS-0239-180",
+    "costPrice": "441.75",
+    "mrp": "580.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Highland Cream Blended Scotch Whisky 375ml",
+    "brand": "Highland Cream",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0239",
+    "sku": "TS-0239-375",
+    "costPrice": "891.75",
+    "mrp": "1160.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Teacher's Highland Cream Blended Scotch Whisky 750ml",
     "brand": "Teacher's",
     "volumeMl": 750,
@@ -137,6 +258,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-0239",
     "costPrice": "1791.75",
     "mrp": "2240.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Ti Mansion House Gold Whisky 180ml",
+    "brand": "Ti Mansion House",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "0256",
+    "sku": "TS-0256-180",
+    "costPrice": "158.42",
+    "mrp": "210.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Ti Mansion House Gold Whisky 375ml",
+    "brand": "Ti Mansion House",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0256",
+    "sku": "TS-0256-375",
+    "costPrice": "325.08",
+    "mrp": "430.00"
   },
   {
     "category": "Whisky",
@@ -151,6 +294,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Seagram`s Imperial Blue Classic Grain Whisky 90ml",
+    "brand": "Seagram`s Imperial Blue",
+    "volumeMl": 90,
+    "packQuantity": 96,
+    "exciseCode": "0258",
+    "sku": "TS-0258-90",
+    "costPrice": "58.42",
+    "mrp": "80.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Imperial Blue Classic Grain Whisky 180ml",
     "brand": "Imperial Blue",
     "volumeMl": 180,
@@ -159,6 +313,61 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-0258",
     "costPrice": "125.08",
     "mrp": "160.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Imperial Blue Classic Grain Whisky 375ml",
+    "brand": "Seagram`s Imperial Blue",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0258",
+    "sku": "TS-0258-375",
+    "costPrice": "258.42",
+    "mrp": "340.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Imperial Blue Classic Grain Whisky 750ml",
+    "brand": "Seagram`s Imperial Blue",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "0258",
+    "sku": "TS-0258-750",
+    "costPrice": "525.08",
+    "mrp": "690.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Royal Stag Blended Whisky 90ml",
+    "brand": "Seagram`s Royal Stag",
+    "volumeMl": 90,
+    "packQuantity": 96,
+    "exciseCode": "0259",
+    "sku": "TS-0259-90",
+    "costPrice": "75.08",
+    "mrp": "100.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Royal Stag Blended Whisky 375ml",
+    "brand": "Seagram`s Royal Stag",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0259",
+    "sku": "TS-0259-375",
+    "costPrice": "308.42",
+    "mrp": "410.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Royal Stag Blended Whisky 1000ml",
+    "brand": "Seagram`s Royal Stag",
+    "volumeMl": 1000,
+    "packQuantity": 9,
+    "exciseCode": "0259",
+    "sku": "TS-0259-1000",
+    "costPrice": "825.11",
+    "mrp": "1080.00"
   },
   {
     "category": "Whisky",
@@ -217,6 +426,39 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Seagram`s Blenders Pride Select Pr. Whisky 90ml",
+    "brand": "Seagram`s Blenders Pride",
+    "volumeMl": 90,
+    "packQuantity": 96,
+    "exciseCode": "0475",
+    "sku": "TS-0475-90",
+    "costPrice": "125.08",
+    "mrp": "170.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Blenders Pride Select Pr. Whisky 180ml",
+    "brand": "Seagram`s Blenders Pride",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "0475",
+    "sku": "TS-0475-180",
+    "costPrice": "250.08",
+    "mrp": "330.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Blenders Pride Select Pr. Whisky 375ml",
+    "brand": "Seagram`s Blenders Pride",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0475",
+    "sku": "TS-0475-375",
+    "costPrice": "508.42",
+    "mrp": "670.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Blenders Pride Select Premium Whisky 750ml",
     "brand": "Blenders Pride",
     "volumeMl": 750,
@@ -225,6 +467,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-0475",
     "costPrice": "1025.08",
     "mrp": "1290.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Blenders Pride Select Pr. Whisky 1000ml",
+    "brand": "Seagram`s Blenders Pride",
+    "volumeMl": 1000,
+    "packQuantity": 9,
+    "exciseCode": "0475",
+    "sku": "TS-0475-1000",
+    "costPrice": "1333.44",
+    "mrp": "1740.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Blenders Pride Select Pr. Whisky 2000ml",
+    "brand": "Seagram`s Blenders Pride",
+    "volumeMl": 2000,
+    "packQuantity": 4,
+    "exciseCode": "0475",
+    "sku": "TS-0475-2000",
+    "costPrice": "10634.00",
+    "mrp": "13830.00"
   },
   {
     "category": "Whisky",
@@ -250,6 +514,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "8pm Premium Black Whisky Jim Beam 375ml",
+    "brand": "8pm Premium Black",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0546",
+    "sku": "TS-0546-375",
+    "costPrice": "308.42",
+    "mrp": "410.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Kentucky Straight Bourbon Whiskey 750ml",
     "brand": "Kentucky Straight",
     "volumeMl": 750,
@@ -271,6 +546,39 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "mrp": "340.00"
   },
   {
+    "category": "Whisky",
+    "name": "Antiquity Blue Ultra Pre Mium Whisky 375ml",
+    "brand": "Antiquity Blue Ultra",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0596",
+    "sku": "TS-0596-375",
+    "costPrice": "550.08",
+    "mrp": "720.00"
+  },
+  {
+    "category": "Brandy",
+    "name": "Ti Mansion House Xo Bran Dy 90ml",
+    "brand": "Ti Mansion House",
+    "volumeMl": 90,
+    "packQuantity": 96,
+    "exciseCode": "0605",
+    "sku": "TS-0605-90",
+    "costPrice": "58.42",
+    "mrp": "80.00"
+  },
+  {
+    "category": "Brandy",
+    "name": "Ti Mansion House Xo Bran Dy 180ml",
+    "brand": "Ti Mansion House",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "0605",
+    "sku": "TS-0605-180",
+    "costPrice": "116.75",
+    "mrp": "160.00"
+  },
+  {
     "category": "Brandy",
     "name": "Mansion House XO Brandy 375ml",
     "brand": "Mansion House",
@@ -280,6 +588,39 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-0605",
     "costPrice": "250.08",
     "mrp": "320.00"
+  },
+  {
+    "category": "Brandy",
+    "name": "Ti Mansion House Xo Bran Dy 750ml",
+    "brand": "Ti Mansion House",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "0605",
+    "sku": "TS-0605-750",
+    "costPrice": "500.08",
+    "mrp": "660.00"
+  },
+  {
+    "category": "Brandy",
+    "name": "Ti Mansion House Xo Bran Dy 1000ml",
+    "brand": "Ti Mansion House",
+    "volumeMl": 1000,
+    "packQuantity": 9,
+    "exciseCode": "0605",
+    "sku": "TS-0605-1000",
+    "costPrice": "683.44",
+    "mrp": "890.00"
+  },
+  {
+    "category": "Brandy",
+    "name": "Ti Mansion House Xo Bran Dy 2000ml",
+    "brand": "Ti Mansion House",
+    "volumeMl": 2000,
+    "packQuantity": 4,
+    "exciseCode": "0605",
+    "sku": "TS-0605-2000",
+    "costPrice": "1375.25",
+    "mrp": "1790.00"
   },
   {
     "category": "Whisky",
@@ -305,6 +646,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Deccan Blue Whisky 1000ml",
+    "brand": "Deccan Blue",
+    "volumeMl": 1000,
+    "packQuantity": 9,
+    "exciseCode": "0778",
+    "sku": "TS-0778-1000",
+    "costPrice": "433.22",
+    "mrp": "570.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Oaksmith International Blended Whisky 180ml",
     "brand": "Oaksmith",
     "volumeMl": 180,
@@ -316,6 +668,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Oaksmith International Blended Whisky 375ml",
+    "brand": "Oaksmith International",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0797",
+    "sku": "TS-0797-375",
+    "costPrice": "375.08",
+    "mrp": "490.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Oaksmith International Blended Whisky 750ml",
+    "brand": "Oaksmith International",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "0797",
+    "sku": "TS-0797-750",
+    "costPrice": "758.42",
+    "mrp": "990.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Oaksmith Gold International Blended Whisky 180ml",
     "brand": "Oaksmith",
     "volumeMl": 180,
@@ -324,6 +698,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-0798",
     "costPrice": "275.08",
     "mrp": "350.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Oaksmith Gold International Blended Whisky 375ml",
+    "brand": "Oaksmith Gold International",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "0798",
+    "sku": "TS-0798-375",
+    "costPrice": "558.42",
+    "mrp": "730.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Oaksmith Gold International Blended Whisky 750ml",
+    "brand": "Oaksmith Gold International",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "0798",
+    "sku": "TS-0798-750",
+    "costPrice": "1125.08",
+    "mrp": "1470.00"
   },
   {
     "category": "Whisky",
@@ -403,6 +799,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "mrp": "180.00"
   },
   {
+    "category": "Vodka",
+    "name": "Oasis London High Tripple Distilled English Vodka Green Apple Flavoured 375ml",
+    "brand": "Oasis London High",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "1123",
+    "sku": "TS-1123-375",
+    "costPrice": "291.75",
+    "mrp": "380.00"
+  },
+  {
+    "category": "Vodka",
+    "name": "High Tripple Distilled English Vodka Green Apple Flavoured 750ml",
+    "brand": "High Tripple Distilled",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "1123",
+    "sku": "TS-1123-750",
+    "costPrice": "591.75",
+    "mrp": "770.00"
+  },
+  {
     "category": "Whisky",
     "name": "Lucifer's Gold Whisky 700ml",
     "brand": "Lucifer's Gold",
@@ -412,6 +830,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-1165",
     "costPrice": "2366.83",
     "mrp": "2960.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Royal Challenge Blended Whisky 180ml",
+    "brand": "Royal Challenge",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "1233",
+    "sku": "TS-1233-180",
+    "costPrice": "150.08",
+    "mrp": "200.00"
   },
   {
     "category": "Whisky",
@@ -503,6 +932,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Royal Green Supreme Blended Whisky 750ml",
+    "brand": "Royal Green Supreme",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "1560",
+    "sku": "TS-1560-750",
+    "costPrice": "625.08",
+    "mrp": "820.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Johnnie Walker Blonde Blended Scotch Whisky 200ml",
     "brand": "Johnnie Walker",
     "volumeMl": 200,
@@ -536,6 +976,50 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Seagram`s 100 Pipers Exquisite Blended Scotch Whisky 375ml",
+    "brand": "Seagram`s 100 Pipers",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "1713",
+    "sku": "TS-1713-375",
+    "costPrice": "825.08",
+    "mrp": "1080.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s 100 Pipers Exquisite Blended Scotch Whisky 750ml",
+    "brand": "Seagram`s 100 Pipers",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "1713",
+    "sku": "TS-1713-750",
+    "costPrice": "1658.42",
+    "mrp": "2160.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Iconiq White Select International Grain Whisky 180ml",
+    "brand": "Iconiq White Select",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "1756",
+    "sku": "TS-1756-180",
+    "costPrice": "125.08",
+    "mrp": "170.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Iconiq White Select International Grain Whisky 375ml",
+    "brand": "Iconiq White Select",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "1756",
+    "sku": "TS-1756-375",
+    "costPrice": "258.42",
+    "mrp": "340.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Iconiq White Select International Grain Whisky 750ml",
     "brand": "Iconiq White",
     "volumeMl": 750,
@@ -558,6 +1042,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Ballantine`s Finest Blended Scotch Whisky 375ml",
+    "brand": "Ballantine`s Finest",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "1904",
+    "sku": "TS-1904-375",
+    "costPrice": "1058.42",
+    "mrp": "1380.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Ballantine's Finest Blended Scotch Whisky 750ml",
     "brand": "Ballantine's Finest",
     "volumeMl": 750,
@@ -566,6 +1061,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-1904",
     "costPrice": "2125.08",
     "mrp": "2660.00"
+  },
+  {
+    "category": "Vodka",
+    "name": "Smirnoff Triple Distilled Vodka 180ml",
+    "brand": "Smirnoff Triple Distilled",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "1940",
+    "sku": "TS-1940-180",
+    "costPrice": "225.08",
+    "mrp": "300.00"
   },
   {
     "category": "Vodka",
@@ -588,6 +1094,39 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-2031",
     "costPrice": "78.83",
     "mrp": "100.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "King Palace Deluxe Whisky 1000ml",
+    "brand": "King Palace Deluxe",
+    "volumeMl": 1000,
+    "packQuantity": 9,
+    "exciseCode": "2031",
+    "sku": "TS-2031-1000",
+    "costPrice": "425.33",
+    "mrp": "560.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Xclamation Reserve Whisky 180ml",
+    "brand": "Seagram`s Xclamation Reserve",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "2073",
+    "sku": "TS-2073-180",
+    "costPrice": "216.75",
+    "mrp": "290.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Xclamation Reserve Whisky 375ml",
+    "brand": "Seagram`s Xclamation Reserve",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "2073",
+    "sku": "TS-2073-375",
+    "costPrice": "441.75",
+    "mrp": "580.00"
   },
   {
     "category": "Whisky",
@@ -645,6 +1184,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "mrp": "190.00"
   },
   {
+    "category": "Vodka",
+    "name": "Magic Moments Jamun Spicymint Vivid Flavoured Vodka 375ml",
+    "brand": "Magic Moments Jamun",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "2129",
+    "sku": "TS-2129-375",
+    "costPrice": "308.42",
+    "mrp": "410.00"
+  },
+  {
+    "category": "Vodka",
+    "name": "Magic Moments Jamun Spicymint Vivid Flavoured Vodka 750ml",
+    "brand": "Magic Moments Jamun",
+    "volumeMl": 750,
+    "packQuantity": 12,
+    "exciseCode": "2129",
+    "sku": "TS-2129-750",
+    "costPrice": "625.08",
+    "mrp": "820.00"
+  },
+  {
     "category": "Whisky",
     "name": "Jameson Triple Triple Irish Whiskey 750ml",
     "brand": "Jameson",
@@ -654,6 +1215,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-2190",
     "costPrice": "2966.75",
     "mrp": "3710.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Blenders Pride Four Elements Rare Whisky 180ml",
+    "brand": "Blenders Pride Four",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "2195",
+    "sku": "TS-2195-180",
+    "costPrice": "266.75",
+    "mrp": "350.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram`s Blenders Pride Four Elements Rare Whisky 375ml",
+    "brand": "Seagram`s Blenders Pride",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "2195",
+    "sku": "TS-2195-375",
+    "costPrice": "550.08",
+    "mrp": "720.00"
   },
   {
     "category": "Whisky",
@@ -734,6 +1317,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Beer",
+    "name": "Budweiser King Of Beers 330ml",
+    "brand": "Budweiser King Of",
+    "volumeMl": 330,
+    "packQuantity": 24,
+    "exciseCode": "5019",
+    "sku": "TS-5019-330",
+    "costPrice": "100.08",
+    "mrp": "140.00"
+  },
+  {
+    "category": "Beer",
+    "name": "Budweiser King Of Beers 500ml",
+    "brand": "Budweiser King Of",
+    "volumeMl": 500,
+    "packQuantity": 24,
+    "exciseCode": "5019",
+    "sku": "TS-5019-500",
+    "costPrice": "141.75",
+    "mrp": "190.00"
+  },
+  {
+    "category": "Beer",
     "name": "Budweiser King of Beers 650ml",
     "brand": "Budweiser",
     "volumeMl": 650,
@@ -767,6 +1372,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Beer",
+    "name": "Kingfisher Ultra Lager Beer 330ml",
+    "brand": "Kingfisher Ultra",
+    "volumeMl": 330,
+    "packQuantity": 24,
+    "exciseCode": "5029",
+    "sku": "TS-5029-330",
+    "costPrice": "100.08",
+    "mrp": "140.00"
+  },
+  {
+    "category": "Beer",
+    "name": "Kingfisher Ultra Lager Beer 500ml",
+    "brand": "Kingfisher Ultra",
+    "volumeMl": 500,
+    "packQuantity": 24,
+    "exciseCode": "5029",
+    "sku": "TS-5029-500",
+    "costPrice": "141.75",
+    "mrp": "190.00"
+  },
+  {
+    "category": "Beer",
     "name": "Kingfisher Ultra Lager Beer 650ml",
     "brand": "Kingfisher",
     "volumeMl": 650,
@@ -789,6 +1416,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Beer",
+    "name": "Budweiser Magnum Premium Strong Beer 330ml",
+    "brand": "Budweiser Magnum Premium",
+    "volumeMl": 330,
+    "packQuantity": 24,
+    "exciseCode": "5031",
+    "sku": "TS-5031-330",
+    "costPrice": "108.42",
+    "mrp": "150.00"
+  },
+  {
+    "category": "Beer",
     "name": "Budweiser Magnum Premium Strong Beer 500ml",
     "brand": "Budweiser",
     "volumeMl": 500,
@@ -800,6 +1438,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Beer",
+    "name": "Budweiser Magnum Premium Strong Beer 650ml",
+    "brand": "Budweiser Magnum Premium",
+    "volumeMl": 650,
+    "packQuantity": 12,
+    "exciseCode": "5031",
+    "sku": "TS-5031-650",
+    "costPrice": "191.75",
+    "mrp": "250.00"
+  },
+  {
+    "category": "Beer",
     "name": "Tuborg Strong Export Beer 650ml",
     "brand": "Tuborg",
     "volumeMl": 650,
@@ -808,6 +1457,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-5102",
     "costPrice": "133.42",
     "mrp": "170.00"
+  },
+  {
+    "category": "Beer",
+    "name": "Corona Extra Premium Mild Beer 330ml",
+    "brand": "Corona Extra Premium",
+    "volumeMl": 330,
+    "packQuantity": 24,
+    "exciseCode": "5116",
+    "sku": "TS-5116-330",
+    "costPrice": "191.75",
+    "mrp": "250.00"
   },
   {
     "category": "Beer",
@@ -833,6 +1493,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Beer",
+    "name": "Hoegaarden Belgian Witbier 500ml",
+    "brand": "Hoegaarden Belgian Witbier",
+    "volumeMl": 500,
+    "packQuantity": 24,
+    "exciseCode": "5117",
+    "sku": "TS-5117-500",
+    "costPrice": "275.08",
+    "mrp": "360.00"
+  },
+  {
+    "category": "Beer",
     "name": "Bavik Super Pils Belgian Beer 330ml",
     "brand": "Bavik",
     "volumeMl": 330,
@@ -841,6 +1512,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-5187",
     "costPrice": "341.75",
     "mrp": "430.00"
+  },
+  {
+    "category": "Beer",
+    "name": "Heineken Original Premium Malt Lager Beer 330ml",
+    "brand": "Heineken Ori",
+    "volumeMl": 330,
+    "packQuantity": 24,
+    "exciseCode": "5196",
+    "sku": "TS-5196-330",
+    "costPrice": "125.08",
+    "mrp": "170.00"
   },
   {
     "category": "Beer",
@@ -899,6 +1581,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Beer",
+    "name": "Heineken Lager Beer 330ml",
+    "brand": "Heineken",
+    "volumeMl": 330,
+    "packQuantity": 24,
+    "exciseCode": "6561",
+    "sku": "TS-6561-330",
+    "costPrice": "125.08",
+    "mrp": "170.00"
+  },
+  {
+    "category": "Beer",
     "name": "Heineken Lager Beer 650ml",
     "brand": "Heineken",
     "volumeMl": 650,
@@ -921,6 +1614,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
   },
   {
     "category": "Whisky",
+    "name": "Black White Blended Scotch Whisky 375ml",
+    "brand": "Black White",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "7154",
+    "sku": "TS-7154-375",
+    "costPrice": "800.08",
+    "mrp": "1050.00"
+  },
+  {
+    "category": "Whisky",
     "name": "Black Dog Centenary Black Reserve Scotch Whisky 180ml",
     "brand": "Black Dog",
     "volumeMl": 180,
@@ -940,6 +1644,28 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-7292",
     "costPrice": "2391.75",
     "mrp": "2990.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram S Blenders Pride Res.collection Whisky 180ml",
+    "brand": "Seagram S Blenders",
+    "volumeMl": 180,
+    "packQuantity": 48,
+    "exciseCode": "7355",
+    "sku": "TS-7355-180",
+    "costPrice": "291.75",
+    "mrp": "380.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Seagram S Blenders Pride Res.collection Whisky 375ml",
+    "brand": "Seagram S Blenders",
+    "volumeMl": 375,
+    "packQuantity": 24,
+    "exciseCode": "7355",
+    "sku": "TS-7355-375",
+    "costPrice": "591.75",
+    "mrp": "770.00"
   },
   {
     "category": "Whisky",
@@ -973,6 +1699,17 @@ export const TELANGANA_ICDC_PRODUCTS: TelanganaProductSeed[] = [
     "sku": "TS-8031",
     "costPrice": "608.43",
     "mrp": "770.00"
+  },
+  {
+    "category": "Whisky",
+    "name": "Johnnie Walker Red Label Blended Scotch Whisky 200ml",
+    "brand": "Johnnie Walker Red",
+    "volumeMl": 200,
+    "packQuantity": 24,
+    "exciseCode": "9099",
+    "sku": "TS-9099-200",
+    "costPrice": "616.75",
+    "mrp": "810.00"
   },
   {
     "category": "Whisky",

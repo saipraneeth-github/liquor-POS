@@ -116,6 +116,7 @@ export function itemValues(invoiceId: string, lines: DraftLine[]) {
     casesDelivered: l.casesDelivered ?? 0,
     bottlesDelivered: l.bottlesDelivered ?? 0,
     packQuantity: l.packQuantity ?? 12,
+    volumeMl: l.volumeMl ?? null,
     quantity: l.quantity,
     caseRate: l.caseRate ?? null,
     costPrice: l.costPrice,
@@ -282,6 +283,7 @@ export function linesFromInput(items: LineInput[], catalog: CatalogEntry[]): Dra
     const productId = item.productId !== undefined ? item.productId : auto!.productId;
     const status = item.productId ? 'MANUAL' : item.productId === null ? 'UNMATCHED' : auto!.status;
     const product = productId ? byId.get(productId) ?? null : null;
+    const vol = item.volumeMl ?? product?.volumeMl ?? null;
     const v = validateLine({
       quantity: item.quantity, costPrice: item.costPrice, mrp: item.mrp, extractedAmount: item.extractedAmount ?? null,
       catalogMrp: product?.mrp ?? null, productId, matchStatus: status, flags: auto?.flags ?? [],
@@ -303,6 +305,7 @@ export function linesFromInput(items: LineInput[], catalog: CatalogEntry[]): Dra
       casesDelivered: item.casesDelivered ?? 0,
       bottlesDelivered: item.bottlesDelivered ?? 0,
       packQuantity: item.packQuantity ?? 12,
+      volumeMl: vol,
       quantity: item.quantity,
       caseRate: item.caseRate ?? null,
       costPrice: costPriceStr,

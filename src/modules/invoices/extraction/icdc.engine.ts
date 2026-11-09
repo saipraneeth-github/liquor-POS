@@ -528,9 +528,9 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
     });
     const brandName = nameItems.map((i) => i.str).join(' ').replace(/\s+/g, ' ').trim();
 
-    // Pack Size: x between [235, 280] (condensed) or [295, 365] (standard)
+    // Pack Size: x between [235, 280] (condensed) or [295, 335] (standard)
     const packMinX = isCondensed ? 235 : 295;
-    const packMaxX = isCondensed ? 280 : 365;
+    const packMaxX = isCondensed ? 280 : 335;
     const packItems = a.items.filter((i) => i.x >= packMinX && i.x <= packMaxX);
     packItems.sort((i1, i2) => i2.y - i1.y || i1.x - i2.x);
     const packStr = packItems.map((i) => i.str).join(' ');
@@ -542,8 +542,8 @@ export function extractIcdcTable(items: PagePositionedItem[]): TableResult {
       if (bcMatch) packQuantity = parseInt(bcMatch[1], 10);
     }
 
-    // Cases: x between [275, 305] (condensed) or [345, 395] (standard)
-    const caseMinX = isCondensed ? 275 : 345;
+    // Cases: x between [275, 305] (condensed) or [335, 395] (standard)
+    const caseMinX = isCondensed ? 275 : 335;
     const caseMaxX = isCondensed ? 305 : 395;
     const caseItem = a.items.find((i) => i.x >= caseMinX && i.x <= caseMaxX && /^\d+$/.test(i.str));
     const cases = caseItem ? parseInt(caseItem.str, 10) : null;

@@ -433,6 +433,7 @@ export async function getBrandCodeMappings(branchId?: string) {
     .select({
       id: brandCodeMappings.id,
       brandCode: brandCodeMappings.brandCode,
+      volumeMl: brandCodeMappings.volumeMl,
       productId: brandCodeMappings.productId,
       productName: brandCodeMappings.productName,
       categoryName: brandCodeMappings.categoryName,
@@ -449,17 +450,36 @@ export async function getBrandCodeMappings(branchId?: string) {
 
 export async function upsertBrandCodeMapping(input: {
   brandCode: string;
+  volumeMl?: number | null;
   productId?: string;
   productName?: string;
   categoryName?: string;
   branchId?: string;
+  packQuantity?: number | null;
+  mrp?: string | null;
+  costPrice?: string | null;
 }) {
   const trimmedCode = input.brandCode.trim();
+  const vol = input.volumeMl ?? null;
   let prodId = input.productId;
 
   if (!prodId) {
-    const nameToSearch = input.productName?.trim() || trimmedCode;
-    const [found] = await db.select({ id: products.id }).from(products).where(eq(products.name, nameToSearch)).limit(1);
+    let nameToSearch = input.productName?.trim() || trimmedCode;
+    if (vol && !nameToSearch.toLowerCase().includes(`${vol}ml`)) {
+      nameToSearch = `${nameToSearch} ${vol}ml`;
+    }
+
+    const [found] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(
+        or(
+          eq(products.name, nameToSearch),
+          and(eq(products.exciseCode, trimmedCode), vol ? eq(products.volumeMl, vol) : undefined),
+        ),
+      )
+      .limit(1);
+
     if (found) {
       prodId = found.id;
     } else {
@@ -475,19 +495,33 @@ export async function upsertBrandCodeMapping(input: {
       const [newProd] = await db.insert(products).values({
         name: nameToSearch,
         brand: input.brandCode.trim() || 'General',
-        barcode: trimmedCode,
+        barcode: vol ? `${trimmedCode}-${vol}` : trimmedCode,
+        sku: vol ? `TS-${trimmedCode}-${vol}` : `TS-${trimmedCode}`,
+        exciseCode: trimmedCode,
+        volumeMl: vol,
+        packQuantity: input.packQuantity ?? (vol === 180 ? 48 : vol === 375 ? 24 : vol === 90 ? 96 : 12),
         categoryId: catId,
-        mrp: '100.00',
-        costPrice: '80.00',
+        mrp: input.mrp || '100.00',
+        costPrice: input.costPrice || '80.00',
       }).returning();
       prodId = newProd.id;
     }
   }
 
+  const existingConds = [eq(brandCodeMappings.brandCode, trimmedCode)];
+  if (vol !== null) {
+    existingConds.push(eq(brandCodeMappings.volumeMl, vol));
+  } else {
+    existingConds.push(isNull(brandCodeMappings.volumeMl));
+  }
+  if (input.branchId) {
+    existingConds.push(or(eq(brandCodeMappings.branchId, input.branchId), isNull(brandCodeMappings.branchId))!);
+  }
+
   const existing = await db
     .select()
     .from(brandCodeMappings)
-    .where(eq(brandCodeMappings.brandCode, trimmedCode))
+    .where(and(...existingConds))
     .limit(1);
 
   if (existing.length > 0) {
@@ -495,6 +529,7 @@ export async function upsertBrandCodeMapping(input: {
       .update(brandCodeMappings)
       .set({
         productId: prodId,
+        volumeMl: vol,
         productName: input.productName ?? existing[0].productName,
         categoryName: input.categoryName ?? existing[0].categoryName,
         branchId: input.branchId ?? existing[0].branchId,
@@ -509,6 +544,7 @@ export async function upsertBrandCodeMapping(input: {
     .insert(brandCodeMappings)
     .values({
       brandCode: trimmedCode,
+      volumeMl: vol,
       productId: prodId,
       productName: input.productName,
       categoryName: input.categoryName,

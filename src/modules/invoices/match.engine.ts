@@ -150,14 +150,31 @@ export function matchLine(line: MatchInput, catalog: CatalogProduct[]): MatchRes
   const lineVol = extractVolumeMl(line.description) ?? line.volumeMl ?? null;
   const sku = line.sku?.trim().toLowerCase();
   if (sku) {
-    const skuMatches = active.filter((c) => (c.sku && c.sku.trim().toLowerCase() === sku) || (c.exciseCode && c.exciseCode.trim().toLowerCase() === sku));
-    if (skuMatches.length === 1) {
-      return { productId: skuMatches[0].id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
-    }
-    if (skuMatches.length > 1) {
+    const skuMatches = active.filter(
+      (c) =>
+        (c.sku && c.sku.trim().toLowerCase() === sku) ||
+        (c.exciseCode && c.exciseCode.trim().toLowerCase() === sku),
+    );
+    if (lineVol) {
+      // Hard rule: along with brand number (exciseCode), you also MUST verify ML!
+      // Same brand number can have different ML (e.g. 180ml vs 750ml).
       const volMatch = skuMatches.find((c) => c.volumeMl === lineVol);
-      const chosen = volMatch ?? skuMatches[0];
-      return { productId: chosen.id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
+      if (volMatch) {
+        return { productId: volMatch.id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
+      }
+      // If brand code matched but volume differs, DO NOT match a different ML!
+      if (skuMatches.length > 0) {
+        return {
+          productId: null,
+          status: 'UNMATCHED',
+          method: null,
+          confidence: 0,
+          flags: ['VOLUME_DIFFERS'],
+          candidates: skuMatches.map((p) => ({ productId: p.id, name: p.name, confidence: 0.5 })),
+        };
+      }
+    } else if (skuMatches.length === 1) {
+      return { productId: skuMatches[0].id, status: 'MATCHED', method: 'SKU', confidence: 1, flags: [], candidates: [] };
     }
   }
   const scored = active.map((p) => {

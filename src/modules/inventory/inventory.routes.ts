@@ -156,10 +156,14 @@ export async function inventoryRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const schema = z.object({
       brandCode: z.string().min(1),
+      volumeMl: z.number().int().positive().optional().nullable(),
       productId: z.string().uuid().optional(),
       productName: z.string().optional(),
       categoryName: z.string().optional(),
       branchId: z.string().uuid().optional(),
+      packQuantity: z.number().int().positive().optional(),
+      mrp: MONEY.optional(),
+      costPrice: MONEY.optional(),
     });
     const parsed = schema.safeParse(request.body);
     if (!parsed.success) {

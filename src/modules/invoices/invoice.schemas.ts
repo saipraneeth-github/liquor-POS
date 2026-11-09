@@ -26,6 +26,7 @@ export const LineInputSchema = z.object({
   casesDelivered: z.number().int().min(0).max(100_000).nullable().optional(),
   bottlesDelivered: z.number().int().min(0).max(100_000).nullable().optional(),
   packQuantity: z.number().int().min(1).max(100_000).nullable().optional(),
+  volumeMl: z.number().int().positive().nullable().optional(),
   quantity: z.number().int().min(0).max(100_000),
   caseRate: MONEY.nullable().optional(),
   costPrice: PRECISION_MONEY,

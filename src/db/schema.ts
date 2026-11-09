@@ -314,6 +314,7 @@ export const supplierInvoiceItems = pgTable('supplier_invoice_items', {
   casesDelivered:     integer('cases_delivered').default(0),
   bottlesDelivered:   integer('bottles_delivered').default(0),
   packQuantity:       integer('pack_quantity').default(12),
+  volumeMl:           integer('volume_ml'),
   quantity:           integer('quantity').notNull(),
   caseRate:           numeric('case_rate', { precision: 12, scale: 2 }),
   costPrice:          numeric('cost_price', { precision: 14, scale: 6 }).notNull(),
@@ -886,11 +887,18 @@ export const dunningLog = pgTable('dunning_log', {
 export const brandCodeMappings = pgTable('brand_code_mappings', {
   id:           uuid('id').primaryKey().defaultRandom(),
   brandCode:    text('brand_code').notNull(),
+  volumeMl:     integer('volume_ml'),
   productId:    uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
   productName:  text('product_name'),
   categoryName: text('category_name'),
   branchId:     uuid('branch_id').references(() => branches.id, { onDelete: 'cascade' }),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:    timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => ({
+  uqBrandCodeVolBranch: uniqueIndex('uq_brand_code_vol_branch').on(
+    t.brandCode,
+    sql`coalesce(${t.volumeMl}, 0)`,
+    sql`coalesce(${t.branchId}, '00000000-0000-0000-0000-000000000000'::uuid)`
+  ),
+}));
 

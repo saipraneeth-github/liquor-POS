@@ -80,6 +80,8 @@ export async function getInvoiceDetail(id: string) {
       productBrand: products.brand,
       catalogMrp: products.mrp,
       packQuantity: products.packQuantity,
+      volumeMl: supplierInvoiceItems.volumeMl,
+      productVolumeMl: products.volumeMl,
       rawDescription: supplierInvoiceItems.rawDescription,
       barcode: supplierInvoiceItems.barcode,
       casesDelivered: supplierInvoiceItems.casesDelivered,

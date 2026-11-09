@@ -26,6 +26,7 @@ export interface DraftLine {
   casesDelivered: number;
   bottlesDelivered: number;
   packQuantity: number;
+  volumeMl: number | null;
   quantity: number;
   caseRate: string | null;
   costPrice: string;
@@ -134,6 +135,7 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       casesDelivered: calc.casesDelivered,
       bottlesDelivered: calc.bottlesDelivered,
       packQuantity: calc.packQuantity,
+      volumeMl: line.volumeMl ?? product?.volumeMl ?? null,
       quantity: calc.totalQuantity,
       caseRate: calc.caseRate,
       costPrice: calc.costPrice,

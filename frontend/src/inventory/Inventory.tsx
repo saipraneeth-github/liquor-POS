@@ -11,6 +11,7 @@ import { businessDate } from '../lib/business-day';
 interface BrandMappingRow {
   id: string;
   brandCode: string;
+  volumeMl?: number | null;
   productId: string;
   productName: string | null;
   categoryName: string | null;
@@ -67,6 +68,8 @@ interface InvoiceItem {
   rawDescription: string;
   barcode?: string | null;
   quantity: number;
+  volumeMl?: number | null;
+  productVolumeMl?: number | null;
   casesDelivered?: number | null;
   bottlesDelivered?: number | null;
   packQuantity?: number | null;
@@ -131,6 +134,12 @@ function formatInvoiceDate(val?: string | null): string {
     // fallback
   }
   return val;
+}
+
+function extractVolumeMl(desc: string): number | null {
+  const m = desc.match(/\b(2000|1000|750|700|650|500|375|330|275|250|200|180|90|60)\s*ml\b/i) ||
+            desc.match(/\b(2000|1000|750|700|650|500|375|330|275|250|200|180|90|60)ml\b/i);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 interface ActiveInvoiceData {
@@ -381,18 +390,24 @@ export function Inventory() {
     return m ? m[0] : it.rawDescription.slice(0, 8);
   };
 
-  const handleSaveBrandMapping = async (lineIdx: number, brandCode: string) => {
-    setSavingMappingCode(brandCode);
+  const handleSaveBrandMapping = async (lineIdx: number, brandCode: string, volumeMl?: number | null) => {
+    const mapKey = volumeMl ? `${brandCode}_${volumeMl}` : brandCode;
+    setSavingMappingCode(mapKey);
     try {
-      const pName = newMappingNames[brandCode]?.trim() || activeInvoice?.items[lineIdx]?.rawDescription || brandCode;
-      const cName = newMappingCats[brandCode] || 'Whisky';
+      const it = activeInvoice?.items[lineIdx];
+      const pName = newMappingNames[mapKey]?.trim() || (it?.rawDescription ? (volumeMl && !it.rawDescription.includes(`${volumeMl}ml`) ? `${it.rawDescription} ${volumeMl}ml` : it.rawDescription) : brandCode);
+      const cName = newMappingCats[mapKey] || 'Whisky';
       const created = await api.post<BrandMappingRow>('/inventory/brand-mappings', {
         brandCode,
+        volumeMl,
         productName: pName,
         categoryName: cName,
         branchId,
+        packQuantity: it?.packQuantity ?? (volumeMl === 180 ? 48 : volumeMl === 375 ? 24 : volumeMl === 90 ? 96 : 12),
+        costPrice: it?.costPrice,
+        mrp: it?.mrp,
       });
-      showToast(`Brand code "${brandCode}" mapped to "${pName}"`, 'success');
+      showToast(`Brand code "${brandCode}" ${volumeMl ? `(${volumeMl}ml)` : ''} mapped to "${pName}"`, 'success');
       await loadBrandMappings();
       await loadStock();
       if (activeInvoice) {
@@ -1765,9 +1780,16 @@ export function Inventory() {
                     <tbody id="invEditLines" className="divide-y divide-gray-100">
                       {activeInvoice.items.map((it, idx) => {
                         const code = getBrandCode(it);
-                        const mappedMapping = brandMappings.find((m) => m.brandCode.toLowerCase().trim() === code.toLowerCase().trim());
+                        const vol = it.volumeMl ?? extractVolumeMl(it.rawDescription) ?? null;
+                        const mappedMapping = brandMappings.find((m) => {
+                          if (m.brandCode.toLowerCase().trim() !== code.toLowerCase().trim()) return false;
+                          if (vol && m.volumeMl) return m.volumeMl === vol;
+                          if (!vol && !m.volumeMl) return true;
+                          return false;
+                        });
                         const matchedProd = it.productId ? productMap.get(it.productId) : mappedMapping?.productId ? productMap.get(mappedMapping.productId) : null;
-                        const isMatched = !!(it.productId || mappedMapping?.productId);
+                        const isMatched = !!(matchedProd && (!vol || !matchedProd.volumeMl || matchedProd.volumeMl === vol));
+                        const mapKey = vol ? `${code}_${vol}` : code;
                         const isEditing = editingRowIdx === idx;
 
                         if (onlyIssues && isMatched) return null;
@@ -1807,25 +1829,25 @@ export function Inventory() {
                                 <div className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
                                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                                   <span className="font-semibold">{matchedProd?.name || mappedMapping?.productName || it.productName}</span>
-                                  <span className="text-[10px] font-mono text-gray-500">[{code}]</span>
+                                  <span className="text-[10px] font-mono text-gray-500">[{code}]{vol ? ` • ${vol}ml` : ''}</span>
                                 </div>
                               ) : (
                                 <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg space-y-2 text-xs">
                                   <div className="font-semibold text-amber-800 dark:text-amber-200 flex items-center justify-between">
-                                    <span>Unknown Brand Code: <code className="font-mono bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border">{code}</code></span>
+                                    <span>Unknown Brand Code: <code className="font-mono bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border">{code}</code>{vol ? <span className="ml-1 text-amber-700 font-mono">({vol}ml)</span> : null}</span>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
                                     <input
                                       type="text"
                                       placeholder="Product name (optional)"
                                       className="p-1.5 border rounded text-xs bg-white flex-1 min-w-[130px]"
-                                      value={newMappingNames[code] ?? it.rawDescription}
-                                      onChange={(e) => setNewMappingNames((prev) => ({ ...prev, [code]: e.target.value }))}
+                                      value={newMappingNames[mapKey] ?? (it.rawDescription + (vol && !it.rawDescription.includes(`${vol}ml`) ? ` ${vol}ml` : ''))}
+                                      onChange={(e) => setNewMappingNames((prev) => ({ ...prev, [mapKey]: e.target.value }))}
                                     />
                                     <select
                                       className="p-1.5 border rounded text-xs bg-white font-medium"
-                                      value={newMappingCats[code] ?? 'Whisky'}
-                                      onChange={(e) => setNewMappingCats((prev) => ({ ...prev, [code]: e.target.value }))}
+                                      value={newMappingCats[mapKey] ?? 'Whisky'}
+                                      onChange={(e) => setNewMappingCats((prev) => ({ ...prev, [mapKey]: e.target.value }))}
                                     >
                                       {['Beer', 'Rum', 'Whisky', 'Vodka', 'Brandy', 'Gin', 'Wine', 'Ready to Drink', 'Other'].map((c) => (
                                         <option key={c} value={c}>{c}</option>
@@ -1833,11 +1855,11 @@ export function Inventory() {
                                     </select>
                                     <button
                                       type="button"
-                                      disabled={savingMappingCode === code}
+                                      disabled={savingMappingCode === mapKey}
                                       className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded font-medium text-xs shadow-sm cursor-pointer"
-                                      onClick={() => handleSaveBrandMapping(idx, code)}
+                                      onClick={() => handleSaveBrandMapping(idx, code, vol)}
                                     >
-                                      {savingMappingCode === code ? 'Saving…' : 'Save to Mapping'}
+                                      {savingMappingCode === mapKey ? 'Saving…' : 'Save to Mapping'}
                                     </button>
                                     <button
                                       type="button"
