@@ -310,6 +310,17 @@ describe('verifyBalanceChain — the statement must agree with itself', () => {
     expect(verifyBalanceChain(lines, { opening: '1000.00', closing: '1080.00' }).status).toBe('FAIL');
     expect(verifyBalanceChain(lines).status).toBe('UNVERIFIABLE');
   });
+  it('tracks continuous running balance across intermittent null-balance lines with checkpoints', () => {
+    const lines = [
+      { lineNo: 1, txnDate: '2026-04-01', valueDate: null, narration: 'NEFT IN', reference: null, debit: '0.00', credit: '100.00', balance: '1100.00', confidence: 1, flags: [] },
+      { lineNo: 2, txnDate: '2026-04-01', valueDate: null, narration: 'NEFT IN 2', reference: null, debit: '0.00', credit: '50.00', balance: null, confidence: 1, flags: [] },
+      { lineNo: 3, txnDate: '2026-04-02', valueDate: null, narration: 'NEFT OUT', reference: null, debit: '20.00', credit: '0.00', balance: '1130.00', confidence: 1, flags: [] },
+    ];
+    const res = verifyBalanceChain(lines, { opening: '1000.00', closing: '1130.00' });
+    expect(res.status).toBe('PASS');
+    expect(res.checked).toBe(2);
+    expect(res.breaks).toHaveLength(0);
+  });
   it('an empty statement is unverifiable', () => expect(verifyBalanceChain([]).status).toBe('UNVERIFIABLE'));
 });
 
@@ -361,6 +372,39 @@ describe('PDF / OCR text lines', () => {
     expect(r.lines[0].credit).toBe('50000.00');
     expect(r.lines[1].debit).toBe('1200.00');
     expect(r.lines.every((l) => l.flags.includes('DIRECTION_GUESSED') && l.confidence <= 0.4)).toBe(true);
+  });
+
+  it('matches amounts with multiple spaces before Cr/Dr marker', () => {
+    const t = textLinesToTable(['01/10/2026  By-Transfer NEFT : UTIB  01/10/2026  969194.38  980294.65  Cr']);
+    expect(t.rows[1][4]).toBe('969194.38');
+    expect(t.rows[1][6]).toBe('980294.65  Cr');
+  });
+
+  it('skips date-prefixed Balance C/F and Balance B/F lines while updating hints', () => {
+    const t = textLinesToTable([
+      'Opening Balance  11100.27  Cr',
+      '01/10/2026  By-Transfer NEFT  01/10/2026  969194.38  980294.65  Cr',
+      '03-10-2026  Balance C/F  2900059.00  2912197.53  23238.80 Cr',
+      '03-10-2026  Balance B/F  23238.80  Cr',
+      '03/10/2026  By-Transfer NEFT  03/10/2026  49306.92',
+      'Balance C/F  72545.72  Cr',
+    ]);
+    expect(t.hints).toEqual({ opening: '11100.27', closing: '72545.72' });
+    expect(t.rows).toHaveLength(3);
+    expect(t.rows[1][2]).toContain('By-Transfer NEFT');
+    expect(t.rows[2][2]).toContain('By-Transfer NEFT');
+  });
+
+  it('infers credit for By- and debit for To- Indian banking prefixes with high confidence', () => {
+    const t = textLinesToTable([
+      '01/10/2026  By-Transfer NEFT : HDFC0000240  1500.00',
+      '03/10/2026  To-Mail Transfer RTGS  2900059.00',
+    ]);
+    const r = rowsToLines(t.rows, 0, t.mapping);
+    expect(r.lines[0]).toMatchObject({ credit: '1500.00', debit: '0.00' });
+    expect(r.lines[0].confidence).toBeGreaterThanOrEqual(0.8);
+    expect(r.lines[1]).toMatchObject({ debit: '2900059.00', credit: '0.00' });
+    expect(r.lines[1].confidence).toBeGreaterThanOrEqual(0.8);
   });
 });
 

@@ -315,8 +315,8 @@ export function detectMapping(rows: string[][], dayFirst = true): MappingResult 
 
 // ─── ROWS → LINES ───────────────────────────────────────────────────────────
 
-const OPENING_RE = /\b(opening|brought\s*forward|b\s*\/\s*f|balance\s*b\s*\/\s*f)\b.*\bbal(ance)?\b|\bopening\s*bal/i;
-const CLOSING_RE = /\b(closing|carried\s*forward|c\s*\/\s*f)\b.*\bbal(ance)?\b|\bclosing\s*bal/i;
+const OPENING_RE = /\b(opening\s*bal(ance)?|balance\s*b\s*\/\s*f|brought\s*forward)\b/i;
+const CLOSING_RE = /\b(closing\s*bal(ance)?|balance\s*c\s*\/\s*f|carried\s*forward)\b/i;
 
 /** Opening / closing balance printed on the statement outside the transaction table, if any. */
 export function scanBalanceHints(rows: string[][]): BalanceHints {
@@ -480,9 +480,17 @@ function resolveUnknownDirections(lines: Array<ParsedLine & { _amount?: Decimal;
       // First line without an opening balance: infer from the NEXT line's balance step is not possible; leave to keywords
     }
     if (dir === null) {
-      dir = /\b(cr|credit|deposit|received|rcvd|salary|interest|int\.?\s*pd|refund|reversal|neft\s*cr|imps\s*cr|by\s*(cash|transfer|clg))\b/i.test(l.narration) ? 'CR' : 'DR';
-      l.flags.push('DIRECTION_GUESSED');
-      l.confidence = Math.min(l.confidence, 0.4);
+      if (/^(by[-/ ]|by\b)/i.test(l.narration)) {
+        dir = 'CR';
+        l.confidence = Math.min(l.confidence, 0.85);
+      } else if (/^(to[-/ ]|to\b)/i.test(l.narration)) {
+        dir = 'DR';
+        l.confidence = Math.min(l.confidence, 0.85);
+      } else {
+        dir = /\b(cr|credit|deposit|received|rcvd|salary|interest|int\.?\s*pd|refund|reversal|neft\s*cr|imps\s*cr|by\s*[-/]?\s*(cash|transfer|clg))\b/i.test(l.narration) ? 'CR' : 'DR';
+        l.flags.push('DIRECTION_GUESSED');
+        l.confidence = Math.min(l.confidence, 0.4);
+      }
     } else {
       l.confidence = Math.min(l.confidence, 0.9);
     }
@@ -495,7 +503,7 @@ function resolveUnknownDirections(lines: Array<ParsedLine & { _amount?: Decimal;
 // ─── PDF / OCR TEXT → ROWS ──────────────────────────────────────────────────
 
 const DATE_AT_START = /^(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}[-/. ]+[A-Za-z]{3,9}\.?[-/. ,]+\d{2,4}|\d{4}-\d{2}-\d{2})(?=\s|$)/;
-const MONEY_AT_END = /(?:^|\s)((?:₹|rs\.?\s?)?\(?-?\d[\d,]*\.\d{1,2}\)?(?:\s?(?:dr|cr)\b\.?)?)\s*$/i;
+const MONEY_AT_END = /(?:^|\s)((?:₹|rs\.?\s?)?\(?-?\d[\d,]*\.\d{1,2}\)?(?:\s*(?:dr|cr)\b\.?)?)\s*$/i;
 const REFERENCE_TOKEN = /\b(?:[A-Z]{0,8}\d{6,}|\d{9,})\b/;
 
 export interface TextTable { rows: string[][]; mapping: ColumnMapping; headerRow: number; hints: BalanceHints; skippedLines: number }
@@ -514,22 +522,24 @@ export function textLinesToTable(textLines: string[]): TextTable {
     const line = raw.replace(/\s+$/g, '').trim();
     if (!line) continue;
     const afterSerial = line.replace(/^\d{1,3}\s+(?=\d{1,2}[-/.])/, '');   // "12  05/04/2026 …" row serial numbers
+
+    // Opening / closing balance or page carry-forward printed as a text line (even if prefixed by a date or page header)
+    const isOpening = OPENING_RE.test(line);
+    const isClosing = CLOSING_RE.test(line);
+    if (isOpening || isClosing) {
+      const m = line.match(MONEY_AT_END);
+      const t = m ? parseMoney(m[1]) : null;
+      if (t) {
+        const signed = t.negative || t.side === 'DR' ? t.value.negated() : t.value;
+        if (isOpening && hints.opening === null) hints.opening = money2(signed);
+        if (isClosing) hints.closing = money2(signed);
+      }
+      continue;
+    }
+
     const d1 = afterSerial.match(DATE_AT_START);
 
     if (!d1) {
-      // Opening / closing balance printed as a text line
-      const isOpening = OPENING_RE.test(line);
-      const isClosing = CLOSING_RE.test(line);
-      if (isOpening || isClosing) {
-        const m = line.match(MONEY_AT_END);
-        const t = m ? parseMoney(m[1]) : null;
-        if (t) {
-          const signed = t.negative || t.side === 'DR' ? t.value.negated() : t.value;
-          if (isOpening && hints.opening === null) hints.opening = money2(signed);
-          if (isClosing) hints.closing = money2(signed);
-        }
-        continue;
-      }
       const last = rows[rows.length - 1];
       if (rows.length > 1 && !MONEY_AT_END.test(line) && line.length < 160 && !NOISE_ROW_RE.test(line)) {
         last[2] = `${last[2]} ${line}`.trim();
@@ -568,10 +578,14 @@ export function textLinesToTable(textLines: string[]): TextTable {
       if (a && b && !a.value.isZero() && !b.value.isZero()) amountRaw = tokens[0];
     }
     const amt = parseMoney(amountRaw);
-    const drCr = amt?.side ?? '';
+    let drCr = amt?.side ?? '';
     const narration = rest.trim();
+    if (!drCr) {
+      if (/^(by[-/ ]|by\b)/i.test(narration)) drCr = 'CR';
+      else if (/^(to[-/ ]|to\b)/i.test(narration)) drCr = 'DR';
+    }
     const ref = narration.match(REFERENCE_TOKEN)?.[0] ?? '';
-    rows.push([dateRaw, valueDateRaw, narration, ref, amountRaw.replace(/\s?(dr|cr)\b\.?$/i, ''), drCr, balanceRaw]);
+    rows.push([dateRaw, valueDateRaw, narration, ref, amountRaw.replace(/\s*(dr|cr)\b\.?$/i, ''), drCr, balanceRaw]);
   }
   return {
     rows,
@@ -606,23 +620,14 @@ export function verifyBalanceChain(lines: ParsedLine[], hints: BalanceHints = { 
   const closing = closingStated ?? lastBal;
   const computedClosing = opening !== null ? opening.plus(totalCredit).minus(totalDebit) : null;
 
-  // Too few running balances to verify line by line: fall back to opening + movement = closing when both are known
-  if (withBal.length < Math.max(2, Math.ceil(lines.length * 0.5))) {
-    if (opening !== null && closingStated !== null && computedClosing !== null) {
-      const ok = computedClosing.minus(closingStated).abs().lte(TOL);
-      return { ...base, status: ok ? 'PASS' : 'FAIL', checked: 0, opening: money2(opening), closing: money2(closingStated), computedClosing: money2(computedClosing),
-        message: ok ? 'Opening balance + credits − debits equals the closing balance.'
-          : `Opening ${money2(opening)} + credits − debits = ${money2(computedClosing)}, but the statement closes at ${money2(closingStated)}.` };
-    }
-    return { ...base, status: 'UNVERIFIABLE', checked: 0, opening: opening !== null ? money2(opening) : null, closing: closing !== null ? money2(closing) : null, computedClosing: computedClosing !== null ? money2(computedClosing) : null,
-      message: 'This statement has no running balance, so it cannot be proven correct automatically. Review the totals before importing.' };
-  }
-
   const breaks: BalanceCheck['breaks'] = [];
   let prev: Decimal | null = opening;
   let checked = 0;
   for (const l of lines) {
-    if (l.balance === null) { prev = null; continue; }
+    if (l.balance === null) {
+      if (prev !== null) prev = prev.plus(l.credit).minus(l.debit);
+      continue;
+    }
     const actual = D(l.balance);
     if (prev !== null) {
       const expected = prev.plus(l.credit).minus(l.debit);
@@ -631,6 +636,19 @@ export function verifyBalanceChain(lines: ParsedLine[], hints: BalanceHints = { 
     }
     prev = actual;                 // resync so one bad line does not cascade into hundreds of breaks
   }
+
+  // Too few running balances to verify line by line: fall back to opening + movement = closing when both are known
+  if (withBal.length < Math.max(2, Math.ceil(lines.length * 0.5))) {
+    if (opening !== null && closingStated !== null && computedClosing !== null) {
+      const ok = computedClosing.minus(closingStated).abs().lte(TOL) && breaks.length === 0;
+      return { ...base, status: ok ? 'PASS' : 'FAIL', checked, opening: money2(opening), closing: money2(closingStated), computedClosing: money2(computedClosing),
+        message: ok ? `Opening balance + credits − debits equals the closing balance${checked > 0 ? ` (${checked} checkpoint(s) verified)` : ''}.`
+          : `Opening ${money2(opening)} + credits − debits = ${money2(computedClosing)}, but the statement closes at ${money2(closingStated)}.` };
+    }
+    return { ...base, status: 'UNVERIFIABLE', checked, opening: opening !== null ? money2(opening) : null, closing: closing !== null ? money2(closing) : null, computedClosing: computedClosing !== null ? money2(computedClosing) : null,
+      message: 'This statement has no running balance, so it cannot be proven correct automatically. Review the totals before importing.' };
+  }
+
   let closingOk = true;
   if (closingStated !== null && lastBal !== null) closingOk = closingStated.minus(lastBal).abs().lte(TOL);
 
