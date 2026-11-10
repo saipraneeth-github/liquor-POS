@@ -56,7 +56,7 @@ export function parseFieldErrors(err: unknown): Record<string, string> {
   }
 }
 
-import { showToast } from './toast.js';
+import { showToast } from './toast';
 export { showToast };
 
 export type PrintKind = 'bills' | 'kot';

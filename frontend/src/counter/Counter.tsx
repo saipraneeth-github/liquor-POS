@@ -5,6 +5,7 @@ import { useAuth, isManagerLike, userCan } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { ProtectedButton } from '../components/ui';
 import { businessDate } from '../lib/business-day';
+import { showToast } from '../lib/print';
 
 interface CounterLine {
   productId: string;
@@ -86,17 +87,7 @@ export function Counter() {
     onOk: () => void;
   } | null>(null);
 
-  const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
-    const host = document.getElementById('toastHost');
-    if (!host) return;
-    const el = document.createElement('div');
-    el.className = `toast ${type} ${
-      type === 'error' ? 'bg-red-600' : type === 'info' ? 'bg-blue-600' : 'bg-emerald-600'
-    } text-white p-3 rounded shadow`;
-    el.textContent = msg;
-    host.appendChild(el);
-    setTimeout(() => el.remove(), 4000);
-  };
+
 
   const loadRecent = async () => {
     if (!branchId) return;
@@ -514,6 +505,12 @@ export function Counter() {
     }
     if (moveModal.from === moveModal.to) {
       showToast('Choose two different sale types.', 'error');
+      return;
+    }
+    const currentLine = sheet?.lines.find((l) => l.productId === moveModal.productId);
+    const fromIsCurrentSheet = (moveModal.from || null) === (sheet?.saleTypeId || null);
+    if (fromIsCurrentSheet && currentLine && quantity > currentLine.closingBottles) {
+      showToast(`Cannot move ${quantity} bottles of "${currentLine.productName}". Only ${currentLine.closingBottles} available on this counter.`, 'error');
       return;
     }
     try {
@@ -1167,16 +1164,31 @@ export function Counter() {
                 </label>
               ))}
             </div>
-            <label className="block text-sm font-medium mb-4">
-              Bottles
-              <input
-                className="mt-1 w-full p-2 border rounded font-mono bg-white dark:bg-gray-900"
-                type="number"
-                min="1"
-                value={moveModal.quantity}
-                onChange={(e) => setMoveModal({ ...moveModal, quantity: e.target.value })}
-              />
-            </label>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">
+                Bottles
+                <input
+                  className="mt-1 w-full p-2 border rounded font-mono bg-white dark:bg-gray-900"
+                  type="number"
+                  min="1"
+                  value={moveModal.quantity}
+                  onChange={(e) => setMoveModal({ ...moveModal, quantity: e.target.value })}
+                />
+              </label>
+              {(() => {
+                const currentLine = sheet?.lines.find((l) => l.productId === moveModal.productId);
+                const fromIsCurrentSheet = (moveModal.from || null) === (sheet?.saleTypeId || null);
+                if (fromIsCurrentSheet && currentLine) {
+                  return (
+                    <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                      <span>Available on this counter:</span>
+                      <span className="font-bold text-gray-900 dark:text-gray-100">{currentLine.closingBottles} bottles</span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
             <div className="flex justify-end gap-2">
               <button type="button" className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200" onClick={() => setMoveModal(null)}>Cancel</button>
               <button type="button" id="moveSubmit" className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white font-medium" onClick={submitMove}>Move</button>

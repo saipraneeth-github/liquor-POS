@@ -76,13 +76,14 @@ interface PermissionData {
 }
 
 export function Admin() {
-  const { user } = useAuth();
-  const branchId = user?.branchId;
+  const { user, activeBranchId, branches } = useAuth();
+  const branchId = activeBranchId ?? user?.branchId ?? branches[0]?.id;
   const isOwner = user?.role === 'owner';
   const isOfficeAdmin = user?.role === 'office_admin';
 
   const [users, setUsers] = useState<UserItem[]>([]);
   const [terminals, setTerminals] = useState<TerminalItem[]>([]);
+  const [saleTypes, setSaleTypes] = useState<{ id: string; name: string; code: string; isDefault: boolean; enabled: boolean }[]>([]);
   const [loading, setLoading] = useState(false);
 
   // New user form
@@ -119,16 +120,30 @@ export function Admin() {
     if (!branchId) return;
     setLoading(true);
     try {
-      const [uRes, tRes] = await Promise.all([
+      const [uRes, tRes, stRes] = await Promise.all([
         api.get<UserItem[]>('/users?branchId=' + branchId),
         api.get<TerminalItem[]>('/terminals/' + branchId),
+        api.get<any[]>('/sale-types/' + branchId + '?all=1').catch(() => []),
       ]);
       setUsers(uRes);
       setTerminals(tRes);
+      setSaleTypes(stRes || []);
     } catch (err: any) {
       showToast('Failed to load admin data: ' + err.message, 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleSaleType = async (st: { id: string; enabled: boolean; name: string }) => {
+    if (!branchId) return;
+    try {
+      await api.patch(`/sale-types/${branchId}/${st.id}`, { enabled: !st.enabled });
+      showToast(`${st.name} counter is now ${!st.enabled ? 'Enabled' : 'Disabled'}.`, 'success');
+      window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
+      await loadData();
+    } catch (err: any) {
+      showToast('Could not change sale type: ' + err.message, 'error');
     }
   };
 
@@ -470,6 +485,68 @@ export function Admin() {
             Add terminal
           </ProtectedButton>
         </form>
+      </div>
+
+      {/* Sale Types & Counters Management (Janata, Walk-in) */}
+      <div className="card pad stack p-6 bg-white dark:bg-gray-800 rounded shadow mb-6 flex flex-col gap-4 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100" id="saleTypesManagement">
+        <div>
+          <div className="h2 text-lg font-bold border-b pb-2">Sale Counters & Types</div>
+          <div className="text-xs text-gray-500 mt-1">
+            Turn counters on or off for this outlet. Janata and other alternate sale types can be toggled here.
+          </div>
+        </div>
+
+        <div className="table-wrap overflow-x-auto text-sm">
+          {saleTypes.length === 0 ? (
+            <div className="muted small text-gray-500">No sale counters found.</div>
+          ) : (
+            <table className="table w-full text-left">
+              <thead>
+                <tr className="border-b text-xs text-gray-500 bg-gray-50 dark:bg-gray-900">
+                  <th className="py-2 px-3">Counter / Sale Type</th>
+                  <th className="py-2 px-3">Type</th>
+                  <th className="py-2 px-3">Status</th>
+                  <th className="py-2 px-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {saleTypes.map((st) => (
+                  <tr key={st.id} className="border-b">
+                    <td className="py-2.5 px-3 font-semibold">{st.name}</td>
+                    <td className="py-2.5 px-3 text-xs text-gray-500">
+                      {st.isDefault ? 'Default Counter (Walk-in)' : 'Alternate Counter'}
+                    </td>
+                    <td className="py-2.5 px-3">
+                      <span className={`text-xs px-2.5 py-1 rounded font-semibold ${
+                        st.enabled ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                      }`}>
+                        {st.enabled ? 'ON / Active' : 'OFF / Disabled'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {st.isDefault ? (
+                        <span className="text-xs text-gray-400 italic">Always Active</span>
+                      ) : (
+                        <ProtectedButton
+                          type="button"
+                          minRole="manager"
+                          onClick={() => toggleSaleType(st)}
+                          className={`px-3 py-1 text-xs font-semibold rounded cursor-pointer ${
+                            st.enabled
+                              ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
+                              : 'bg-green-600 hover:bg-green-700 text-white'
+                          }`}
+                        >
+                          {st.enabled ? 'Turn OFF' : 'Turn ON'}
+                        </ProtectedButton>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
       {editingUserId && (

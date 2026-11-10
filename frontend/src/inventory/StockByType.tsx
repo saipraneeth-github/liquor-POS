@@ -19,14 +19,10 @@ const REASONS: Record<string, string> = {
   COUNTER_SHEET: 'Counter count', TYPE_TRANSFER: 'Moved between counters', MANUAL_ADJUST: 'Adjustment', SCHEME_FREE_GOODS: 'Free goods',
 };
 
+import { showToast } from '../lib/print';
+
 const toast = (msg: string, type: 'success' | 'error' = 'success') => {
-  const host = document.getElementById('toastHost');
-  if (!host) return;
-  const el = document.createElement('div');
-  el.className = `toast ${type} ${type === 'error' ? 'bg-red-600' : 'bg-emerald-600'} text-white p-3 rounded shadow`;
-  el.textContent = msg;
-  host.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  showToast(msg, type);
 };
 
 export function StockByType({ branchId, stockRows, canMove, reloadKey }: { branchId: string; stockRows: StockInfo[]; canMove: boolean; reloadKey: number }) {
@@ -112,7 +108,18 @@ export function StockByType({ branchId, stockRows, canMove, reloadKey }: { branc
   const submitMove = async () => {
     if (!move) return;
     const quantity = parseInt(move.quantity, 10);
-    if (isNaN(quantity) || quantity <= 0) { toast('Enter a whole number of bottles.', 'error'); return; }
+    if (isNaN(quantity) || quantity <= 0) { toast('Enter a positive whole number of bottles.', 'error'); return; }
+    if (move.from === move.to) { toast('Choose two different counters to move stock between.', 'error'); return; }
+
+    // Validate available stock in source counter
+    const prodRow = data?.products.find((p) => p.productId === move.productId);
+    const available = prodRow ? (prodRow.counters[move.from] ?? 0) : 0;
+    if (quantity > available) {
+      const fromName = types.find((t) => t.id === move.from)?.name ?? 'source counter';
+      toast(`Cannot move ${quantity} bottles of "${move.name}". Only ${Math.max(0, available)} available in ${fromName}.`, 'error');
+      return;
+    }
+
     const def = types.find((t) => t.isDefault)!;
     try {
       await api.post(`/sale-types/${branchId}/transfer`, {
@@ -261,10 +268,23 @@ export function StockByType({ branchId, stockRows, canMove, reloadKey }: { branc
                 </label>
               ))}
             </div>
-            <label className="block text-sm font-medium mb-4">
-              Bottles
-              <input className="mt-1 w-full p-2 border rounded font-mono bg-white dark:bg-gray-900" type="number" min="1" value={move.quantity} onChange={(e) => setMove({ ...move, quantity: e.target.value })} />
-            </label>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">
+                Bottles
+                <input className="mt-1 w-full p-2 border rounded font-mono bg-white dark:bg-gray-900" type="number" min="1" value={move.quantity} onChange={(e) => setMove({ ...move, quantity: e.target.value })} />
+              </label>
+              {(() => {
+                const prodRow = data?.products.find((p) => p.productId === move.productId);
+                const avail = prodRow ? (prodRow.counters[move.from] ?? 0) : 0;
+                const fromName = types.find((t) => t.id === move.from)?.name ?? 'source counter';
+                return (
+                  <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                    <span>Available in {fromName}:</span>
+                    <span className="font-bold text-gray-900 dark:text-gray-100">{avail} bottles</span>
+                  </div>
+                );
+              })()}
+            </div>
             <div className="flex justify-end gap-2">
               <button type="button" className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200" onClick={() => setMove(null)}>Cancel</button>
               <button type="button" id="sbtMoveSubmit" className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white font-medium" onClick={submitMove}>Move</button>

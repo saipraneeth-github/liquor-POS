@@ -5,16 +5,15 @@
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
-let lastToastMsg = '';
-let lastToastTime = 0;
-
 export function showToast(msg: string, type: ToastType = 'success', durationMs = 4500) {
   const now = Date.now();
-  if (msg === lastToastMsg && now - lastToastTime < 1000) {
-    return; // suppress duplicate toast within 1 second
+  const g = typeof window !== 'undefined' ? (window as any) : (globalThis as any);
+
+  // Global window-level suppression within 1.5 seconds for identical message
+  if (g.__lastToast && g.__lastToast.msg === msg && now - g.__lastToast.time < 1500) {
+    return;
   }
-  lastToastMsg = msg;
-  lastToastTime = now;
+  g.__lastToast = { msg, time: now };
 
   let host = document.getElementById('toastHost');
   if (!host) {
@@ -22,6 +21,14 @@ export function showToast(msg: string, type: ToastType = 'success', durationMs =
     host.id = 'toastHost';
     host.className = 'fixed top-6 right-6 z-[10000] flex flex-col items-end gap-3 pointer-events-none w-auto max-w-lg';
     document.body.appendChild(host);
+  }
+
+  // DOM-level deduplication: if this exact toast message is already displayed on screen, do not stack a duplicate
+  const activeToasts = host.querySelectorAll('.toast');
+  for (const existing of Array.from(activeToasts)) {
+    if (existing.textContent?.includes(msg)) {
+      return;
+    }
   }
 
   const el = document.createElement('div');

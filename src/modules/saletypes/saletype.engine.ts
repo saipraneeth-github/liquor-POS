@@ -29,12 +29,12 @@ export function normalizeSaleTypeCode(raw: string): string {
   return code.slice(0, 40);
 }
 
-/** Tax-inclusive unit price of a product under a sale type, or null when it is not sold under that type. */
+/** Tax-inclusive unit price of a product under a sale type. Non-default types (Janata, ...) default to Walk-in price (MRP). */
 export function unitPriceFor(type: Pick<SaleTypeLite, 'isDefault'>, mrp: string, typePrice: string | null | undefined): string | null {
   if (type.isDefault) return mrp;
-  if (typePrice === null || typePrice === undefined) return null;
+  if (typePrice === null || typePrice === undefined || (typeof typePrice === 'string' && typePrice.trim() === '')) return mrp;
   const p = new Decimal(typePrice);
-  return p.gt(0) ? p.toFixed(2) : null;
+  return p.gt(0) ? p.toFixed(2) : mrp;
 }
 
 /**

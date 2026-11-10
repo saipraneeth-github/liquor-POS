@@ -242,11 +242,14 @@ async function moveInTx(
   const [row] = await tx.select().from(stock)
     .where(and(eq(stock.branchId, branchId), eq(stock.productId, productId))).for('update');
   if (!row) throw new BusinessRuleError('There is no stock of this product in this shop');
-  if (!to.isDefault) {
-    const prices = await typePrices(tx, to.id, [productId]);
-    if (!prices.has(productId)) throw new BusinessRuleError(`Set a ${to.name} price for this product before moving stock to it`);
-  }
+
   const explicit = await explicitCounters(tx, branchId, productId);
+  const available = counterQuantity(from, row.quantity, explicit);
+  if (available < quantity) {
+    const [prod] = await tx.select({ name: products.name }).from(products).where(eq(products.id, productId)).limit(1);
+    throw new BusinessRuleError(`Cannot move ${quantity} bottle(s) of "${prod?.name ?? 'product'}". Only ${Math.max(0, available)} available in ${from.name}.`);
+  }
+
   let next: Map<string, number>;
   try {
     next = applyTransfer(row.quantity, explicit, from, to, quantity);
@@ -301,6 +304,21 @@ export async function setAllocation(user: JwtPayload, branchId: string, input: z
       if (!type) throw new BusinessRuleError('That sale type is not available in this shop');
       if (type.isDefault) throw new BusinessRuleError(`${type.name} keeps whatever is not given to another counter — set the other counters instead`);
       wanted.set(`${a.productId}|${a.saleTypeId}`, a.quantity);
+    }
+
+    // Validate that total allocation across non-default counters does not exceed the shop's total stock
+    const allocByProd = new Map<string, number>();
+    for (const a of input.allocations) {
+      allocByProd.set(a.productId, (allocByProd.get(a.productId) ?? 0) + a.quantity);
+    }
+    for (const [prodId, totalAlloc] of allocByProd) {
+      const [stk] = await tx.select({ quantity: stock.quantity }).from(stock)
+        .where(and(eq(stock.branchId, branchId), eq(stock.productId, prodId))).limit(1);
+      const totalAvailable = stk?.quantity ?? 0;
+      if (totalAlloc > totalAvailable) {
+        const [prod] = await tx.select({ name: products.name }).from(products).where(eq(products.id, prodId)).limit(1);
+        throw new BusinessRuleError(`Cannot allocate ${totalAlloc} bottle(s) for "${prod?.name ?? prodId}": total stock in shop is only ${totalAvailable} bottle(s).`);
+      }
     }
     const plan: { productId: string; type: BranchSaleType; diff: number }[] = [];
     for (const [k, quantity] of wanted) {

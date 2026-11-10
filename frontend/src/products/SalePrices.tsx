@@ -10,14 +10,10 @@ interface SaleType { id: string; code: string; name: string; isDefault: boolean;
 interface Row { id: string; name: string; brand: string; volumeMl: number | null; packQuantity: number | null; exciseCode: string | null; mrp: string; prices: Record<string, string> }
 interface Matrix { types: SaleType[]; products: Row[] }
 
+import { showToast } from '../lib/print';
+
 const toast = (msg: string, type: 'success' | 'error' = 'success') => {
-  const host = document.getElementById('toastHost');
-  if (!host) return;
-  const el = document.createElement('div');
-  el.className = `toast ${type} ${type === 'error' ? 'bg-red-600' : 'bg-emerald-600'} text-white p-3 rounded shadow`;
-  el.textContent = msg;
-  host.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  showToast(msg, type);
 };
 
 export function SalePrices({ branchId }: { branchId: string }) {
@@ -90,15 +86,6 @@ export function SalePrices({ branchId }: { branchId: string }) {
     }
   };
 
-  const toggle = async (t: SaleType) => {
-    try {
-      await api.patch(`/sale-types/${branchId}/${t.id}`, { enabled: !t.enabled });
-      await load();
-    } catch (e: any) {
-      toast('Could not change: ' + e.message, 'error');
-    }
-  };
-
   if (loading && !matrix) {
     return (
       <div className="card mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 rounded shadow p-6 text-center text-sm text-gray-500">
@@ -122,8 +109,7 @@ export function SalePrices({ branchId }: { branchId: string }) {
       <summary className="font-semibold text-sm cursor-pointer select-none">Prices by sale type</summary>
       <div className="pt-3 space-y-3">
         <p className="text-xs text-gray-500">
-          Walk-in is the product's MRP. Give a product a price under another sale type (e.g. Janata) to sell it there; leave it blank and it
-          is not sold under that type. Stock for each counter is moved on the Counter Stock page.
+          Walk-in is the product's MRP. By default, Janata and other counters use the Walk-in price (MRP). Enter a custom price below to override it for that counter. (Enable or disable sale counters in Staff & Terminals).
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -131,9 +117,9 @@ export function SalePrices({ branchId }: { branchId: string }) {
             <span key={t.id} className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${t.enabled ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
               {t.name}{t.isDefault ? ' (default)' : ''}
               {!t.isDefault && (
-                <button type="button" className="underline font-medium cursor-pointer" onClick={() => toggle(t)} title="Switch this sale type on or off for this shop">
-                  {t.enabled ? 'on' : 'off'}
-                </button>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${t.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
+                  {t.enabled ? 'Active' : 'Disabled'}
+                </span>
               )}
             </span>
           ))}
@@ -194,7 +180,8 @@ export function SalePrices({ branchId }: { branchId: string }) {
                               inputMode="decimal"
                               className={`w-28 p-1 border rounded text-right font-mono bg-white dark:bg-gray-900 ${dirty ? 'border-amber-400 bg-amber-50' : ''}`}
                               aria-label={`${t.name} price for ${p.name}`}
-                              placeholder="not sold"
+                              placeholder={`₹${parseFloat(p.mrp).toFixed(2)}`}
+                              title={`Default price is Walk-in MRP (₹${parseFloat(p.mrp).toFixed(2)})`}
                               value={valueOf(p, t)}
                               onChange={(e) => setEdits({ ...edits, [key(p.id, t.id)]: e.target.value.replace(/[^\d.]/g, '') })}
                             />

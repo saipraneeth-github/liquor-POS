@@ -11,6 +11,7 @@ const pageMinRole: Record<string, string> = {
   '/customers': 'cashier',
   '/tables': 'steward',
   '/products': 'cashier',
+  '/invoices': 'cashier',
   '/inventory': 'cashier',
   '/counter': 'cashier',
   '/schemes': 'manager',

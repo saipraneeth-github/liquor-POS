@@ -175,6 +175,7 @@ export async function salesByProduct(
   start: Date,
   end?: Date,
   saleTypeId: string | null = null,
+  productIds?: string[],
 ): Promise<Map<string, { bottles: number; revenue: string }>> {
   const conditions = [
     eq(bills.branchId, branchId),
@@ -183,6 +184,9 @@ export async function salesByProduct(
     typeIs(bills.saleTypeId, saleTypeId),
   ];
   if (end) conditions.push(lt(bills.createdAt, end));
+  if (productIds && productIds.length > 0) {
+    conditions.push(inArray(billItems.productId, productIds));
+  }
 
   const rows = await tx
     .select({
@@ -204,7 +208,7 @@ export async function salesByProduct(
 }
 
 /** Σ approved supplier-invoice quantities and purchase audits per product for a branch, in [start, end). */
-async function inwardByProduct(tx: Tx | typeof db, branchId: string, start: Date, end?: Date): Promise<Map<string, number>> {
+async function inwardByProduct(tx: Tx | typeof db, branchId: string, start: Date, end?: Date, productIds?: string[]): Promise<Map<string, number>> {
   const invConditions = [
     eq(supplierInvoices.branchId, branchId),
     eq(supplierInvoices.status, 'APPROVED'),
@@ -212,6 +216,9 @@ async function inwardByProduct(tx: Tx | typeof db, branchId: string, start: Date
     gte(supplierInvoices.approvedAt, start),
   ];
   if (end) invConditions.push(lt(supplierInvoices.approvedAt, end));
+  if (productIds && productIds.length > 0) {
+    invConditions.push(inArray(supplierInvoiceItems.productId, productIds));
+  }
   const invRows = await tx
     .select({
       productId: supplierInvoiceItems.productId,
@@ -228,6 +235,9 @@ async function inwardByProduct(tx: Tx | typeof db, branchId: string, start: Date
     gte(stockAudit.createdAt, start),
   ];
   if (end) auditConditions.push(lt(stockAudit.createdAt, end));
+  if (productIds && productIds.length > 0) {
+    auditConditions.push(inArray(stockAudit.productId, productIds));
+  }
   const auditRows = await tx
     .select({
       productId: stockAudit.productId,
@@ -276,13 +286,16 @@ async function movementByProduct(
 
 /** Net bottles moved into (+) / out of (−) a counter by TYPE_TRANSFER rows in [start, end). */
 async function transferByProduct(
-  tx: Tx | typeof db, branchId: string, start: Date, end: Date | undefined, saleTypeId: string | null,
+  tx: Tx | typeof db, branchId: string, start: Date, end: Date | undefined, saleTypeId: string | null, productIds?: string[],
 ): Promise<Map<string, number>> {
   const conditions = [
     eq(stockAudit.branchId, branchId), eq(stockAudit.reason, 'TYPE_TRANSFER'), gte(stockAudit.createdAt, start),
     typeIs(stockAudit.saleTypeId, saleTypeId),
   ];
   if (end) conditions.push(lt(stockAudit.createdAt, end));
+  if (productIds && productIds.length > 0) {
+    conditions.push(inArray(stockAudit.productId, productIds));
+  }
   const rows = await tx
     .select({ productId: stockAudit.productId, qty: sql<string>`coalesce(sum(${stockAudit.changeQty}), 0)` })
     .from(stockAudit).where(and(...conditions)).groupBy(stockAudit.productId);
@@ -806,51 +819,58 @@ export async function unpostSheet(user: JwtPayload, sheetId: string) {
  *   sold    = opening + inward - closing (= posSold)
  *   revenue = sold * rate
  */
-export async function syncSheetWithSales(sheetId: string, txHandle?: Tx) {
+export async function syncSheetWithSales(sheetId: string, txHandle?: Tx, targetProductIds?: string[]) {
   const runner = async (tx: Tx) => {
     const [sheet] = await tx.select().from(dailyCounterSheets).where(eq(dailyCounterSheets.id, sheetId)).limit(1);
     if (!sheet) throw new NotFoundError('Counter sheet not found');
     if (sheet.status !== 'DRAFT') throw new BusinessRuleError('Cannot sync a posted counter sheet');
 
     const { start, end } = businessDayBounds(sheet.sheetDate);
-    // Supplier invoices are received into the default counter; other counters get bottles by transfer
-    const inwardMap = sheet.saleTypeId === null ? await inwardByProduct(tx, sheet.branchId, start, end) : new Map<string, number>();
-    const transferMap = await transferByProduct(tx, sheet.branchId, start, end, sheet.saleTypeId);
-    const salesMap = await salesByProduct(tx, sheet.branchId, start, end, sheet.saleTypeId);
+    // If targetProductIds is supplied (e.g. from a bill sale), only calculate lines for those products
+    const hasTargets = targetProductIds && targetProductIds.length > 0;
+    const inwardMap = sheet.saleTypeId === null ? await inwardByProduct(tx, sheet.branchId, start, end, targetProductIds) : new Map<string, number>();
+    const transferMap = await transferByProduct(tx, sheet.branchId, start, end, sheet.saleTypeId, targetProductIds);
+    const salesMap = await salesByProduct(tx, sheet.branchId, start, end, sheet.saleTypeId, targetProductIds);
 
+    const lineConditions = [eq(dailyCounterSheetLines.sheetId, sheetId)];
+    if (hasTargets) {
+      lineConditions.push(inArray(dailyCounterSheetLines.productId, targetProductIds!));
+    }
     const lines = await tx
       .select()
       .from(dailyCounterSheetLines)
-      .where(eq(dailyCounterSheetLines.sheetId, sheetId));
+      .where(and(...lineConditions));
 
-    const existingProductIds = new Set(lines.map((l) => l.productId));
-    const stocked = await counterStocks(tx, sheet.branchId, sheet.saleTypeId);
-
-    const missingStocked = stocked.filter((s) => !existingProductIds.has(s.productId));
-    if (missingStocked.length > 0) {
-      const newLineValues = missingStocked.map((p) => {
-        const inward = inwardMap.get(p.productId) ?? 0;
-        const transfer = transferMap.get(p.productId) ?? 0;
-        const posSold = salesMap.get(p.productId)?.bottles ?? 0;
-        const opening = Math.max(0, p.quantity - inward - transfer + posSold);
-        const closing = Math.max(0, opening + inward + transfer - posSold);
-        const lineRes = computeLine(
-          { opening, inward, closing, rate: p.rate, transfer },
-          { allowAdjustment: true },
-        );
-        return {
-          sheetId:        sheet.id,
-          productId:      p.productId,
-          openingBottles: opening,
-          inwardBottles:  inward,
-          transferBottles: transfer,
-          closingBottles: closing,
-          soldBottles:    lineRes.sold,
-          sellingRate:    p.rate,
-          lineRevenue:    lineRes.revenue,
-        };
-      });
-      await tx.insert(dailyCounterSheetLines).values(newLineValues);
+    // Only discover missing stocked products when doing a full sync (not a targeted single-bill update)
+    if (!hasTargets) {
+      const existingProductIds = new Set(lines.map((l) => l.productId));
+      const stocked = await counterStocks(tx, sheet.branchId, sheet.saleTypeId);
+      const missingStocked = stocked.filter((s) => !existingProductIds.has(s.productId));
+      if (missingStocked.length > 0) {
+        const newLineValues = missingStocked.map((p) => {
+          const inward = inwardMap.get(p.productId) ?? 0;
+          const transfer = transferMap.get(p.productId) ?? 0;
+          const posSold = salesMap.get(p.productId)?.bottles ?? 0;
+          const opening = Math.max(0, p.quantity - inward - transfer + posSold);
+          const closing = Math.max(0, opening + inward + transfer - posSold);
+          const lineRes = computeLine(
+            { opening, inward, closing, rate: p.rate, transfer },
+            { allowAdjustment: true },
+          );
+          return {
+            sheetId:        sheet.id,
+            productId:      p.productId,
+            openingBottles: opening,
+            inwardBottles:  inward,
+            transferBottles: transfer,
+            closingBottles: closing,
+            soldBottles:    lineRes.sold,
+            sellingRate:    p.rate,
+            lineRevenue:    lineRes.revenue,
+          };
+        });
+        await tx.insert(dailyCounterSheetLines).values(newLineValues);
+      }
     }
 
     const updates = lines.map((l) => {
@@ -904,7 +924,7 @@ export async function syncSheetWithSales(sheetId: string, txHandle?: Tx) {
  * when a bill is paid or voided, a supplier invoice is approved or stock is moved between counters.
  * `saleTypeId` null = the default sale type's sheet.
  */
-export async function onBillPaidOrVoided(branchId: string, eventDate: Date, tx: Tx, saleTypeId: string | null = null) {
+export async function onBillPaidOrVoided(branchId: string, eventDate: Date, tx: Tx, saleTypeId: string | null = null, productIds?: string[]) {
   const sheetDate = businessDateOf(eventDate);
   const [draftSheet] = await tx
     .select({ id: dailyCounterSheets.id })
@@ -920,7 +940,7 @@ export async function onBillPaidOrVoided(branchId: string, eventDate: Date, tx: 
     .limit(1);
 
   if (draftSheet) {
-    await syncSheetWithSales(draftSheet.id, tx);
+    await syncSheetWithSales(draftSheet.id, tx, productIds);
   }
 }
 
@@ -937,8 +957,9 @@ let counterUnsubscribers: (() => void)[] | null = null;
 export function registerCounterSheetHandlers(): void {
   if (counterUnsubscribers) return;
   counterUnsubscribers = [
-    onDomainEvent('bill.paid', async ({ bill }, tx) => {
-      await onBillPaidOrVoided(bill.branchId, bill.createdAt ?? new Date(), tx, bill.saleTypeId ?? null);
+    onDomainEvent('bill.paid', async ({ bill, items }, tx) => {
+      const prodIds = items?.map((i) => i.productId).filter(Boolean);
+      await onBillPaidOrVoided(bill.branchId, bill.createdAt ?? new Date(), tx, bill.saleTypeId ?? null, prodIds);
     }),
     onDomainEvent('bill.voided', async ({ bill }, tx) => {
       await onBillPaidOrVoided(bill.branchId, bill.createdAt ?? new Date(), tx, bill.saleTypeId ?? null);

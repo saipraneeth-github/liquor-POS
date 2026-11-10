@@ -14,6 +14,7 @@ import { Counter } from './counter/Counter';
 import { Shift } from './shifts/Shift';
 import { Products } from './products/Products';
 import { Inventory } from './inventory/Inventory';
+import { InvoiceUpload } from './invoices/InvoiceUpload';
 import { KitchenMenu } from './menu/KitchenMenu';
 import { BarMenu } from './menu/BarMenu';
 import { Closing } from './closing/Closing';
@@ -50,6 +51,7 @@ export default function App() {
                     <Route path="/customers" element={<Customers />} />
                     <Route path="/tables" element={<Tables />} />
                     <Route path="/products" element={<Products />} />
+                    <Route path="/invoices" element={<InvoiceUpload />} />
                     <Route path="/inventory" element={<Inventory />} />
                     <Route path="/menu/kitchen" element={<KitchenMenu />} />
                     <Route path="/menu/bar" element={<BarMenu />} />

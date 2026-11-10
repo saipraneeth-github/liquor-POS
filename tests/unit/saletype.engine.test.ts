@@ -10,11 +10,11 @@ const janata = { id: 'j', name: 'Janata', isDefault: false };
 const permit = { id: 'p', name: 'Permit', isDefault: false };
 
 describe('sale type pricing and ids', () => {
-  it('the default type is priced by the MRP; others only by their own price', () => {
+  it('the default type is priced by the MRP; others default to MRP when not explicitly set', () => {
     expect(unitPriceFor(walkIn, '1000.00', null)).toBe('1000.00');
     expect(unitPriceFor(janata, '1000.00', '900')).toBe('900.00');
-    expect(unitPriceFor(janata, '1000.00', null)).toBeNull();        // no price = not sold under that type
-    expect(unitPriceFor(janata, '1000.00', '0')).toBeNull();
+    expect(unitPriceFor(janata, '1000.00', null)).toBe('1000.00');        // defaults to Walk-in MRP
+    expect(unitPriceFor(janata, '1000.00', '0')).toBe('1000.00');         // 0 falls back to Walk-in MRP
   });
   it('rows store NULL for the default type', () => {
     expect(rowTypeId(walkIn)).toBeNull();

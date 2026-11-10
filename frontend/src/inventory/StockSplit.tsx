@@ -11,14 +11,10 @@ interface CounterData { types: SaleType[]; products: { productId: string; total:
 interface StockInfo { productId: string; name: string; brand?: string; volumeMl?: number | null }
 interface PriceData { products: { id: string; prices: Record<string, string> }[] }
 
+import { showToast } from '../lib/print';
+
 const toast = (msg: string, type: 'success' | 'error' = 'success') => {
-  const host = document.getElementById('toastHost');
-  if (!host) return;
-  const el = document.createElement('div');
-  el.className = `toast ${type} ${type === 'error' ? 'bg-red-600' : 'bg-emerald-600'} text-white p-3 rounded shadow`;
-  el.textContent = msg;
-  host.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  showToast(msg, type);
 };
 
 export function StockSplit({ branchId, stockRows }: { branchId: string; stockRows: StockInfo[] }) {
@@ -69,7 +65,28 @@ export function StockSplit({ branchId, stockRows }: { branchId: string; stockRow
     return r !== undefined && typed(pid, others.find((t) => t.id === tid)!, r.counters[tid] ?? 0) !== (r.counters[tid] ?? 0);
   });
 
+  const hasOverAllocation = useMemo(() => {
+    if (!data) return false;
+    for (const r of data.products) {
+      const explicit = others.reduce((s, t) => s + typed(r.productId, t, r.counters[t.id] ?? 0), 0);
+      if (explicit > r.total) return true;
+    }
+    return false;
+  }, [data, others, edits]);
+
   const save = async () => {
+    // Validate that no product has more bottles allocated than available in stock
+    for (const pid of new Set(changed.map((k) => k.split('|')[0]))) {
+      const r = data?.products.find((x) => x.productId === pid);
+      if (!r) continue;
+      const totalWanted = others.reduce((sum, t) => sum + typed(pid, t, r.counters[t.id] ?? 0), 0);
+      if (totalWanted > r.total) {
+        const prodName = names.get(pid)?.name ?? 'Product';
+        toast(`Cannot allocate ${totalWanted} bottles for "${prodName}". Only ${r.total} bottles available in total stock.`, 'error');
+        return;
+      }
+    }
+
     const allocations = changed.map((k) => {
       const [productId, saleTypeId] = k.split('|');
       return { productId, saleTypeId, quantity: typed(productId, others.find((t) => t.id === saleTypeId)!, 0) };
@@ -95,8 +112,13 @@ export function StockSplit({ branchId, stockRows }: { branchId: string; stockRow
       <div className="pt-3 space-y-3">
         <p className="text-xs text-gray-500">
           The total is what inventory holds (invoices add to it). Set how many bottles each counter should hold — {walkIn?.name ?? 'Walk-in'} keeps the
-          rest. Lower a number to take bottles back. A product needs a price in a sale type before it can be moved there.
+          rest. Lower a number to take bottles back. Allocations cannot exceed total stock in inventory.
         </p>
+        {hasOverAllocation && (
+          <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg text-xs font-semibold text-red-700 dark:text-red-300">
+            ⚠️ Some products have more bottles allocated across counters than total stock available. Adjust quantities before saving.
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <input
             className="p-2 border rounded text-sm w-64 bg-white dark:bg-slate-950"
@@ -107,7 +129,7 @@ export function StockSplit({ branchId, stockRows }: { branchId: string; stockRow
           />
           <div className="flex items-center gap-2">
             {changed.length > 0 && <span className="text-xs text-amber-700 font-medium">{changed.length} unsaved</span>}
-            <button type="button" id="stockSplitSave" className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium disabled:opacity-50 cursor-pointer" disabled={changed.length === 0 || saving} onClick={save}>
+            <button type="button" id="stockSplitSave" className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium disabled:opacity-50 cursor-pointer" disabled={changed.length === 0 || saving || hasOverAllocation} onClick={save}>
               {saving ? 'Saving…' : 'Save split'}
             </button>
           </div>

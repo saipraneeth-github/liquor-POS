@@ -3,7 +3,7 @@ import { X, Search, Plus, Minus, Trash2 } from 'lucide-react';
 import { api } from '../api/client';
 import { autoPrint } from '../lib/auto-print';
 import { useAuth } from '../auth/AuthProvider';
-import { printInBrowser, sendToNetworkPrinter, errorMessage } from '../lib/print';
+import { printInBrowser, sendToNetworkPrinter, errorMessage, showToast } from '../lib/print';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import {
   classifyProductCategory,
@@ -87,18 +87,7 @@ const KOT_NEXT: Record<string, string[]> = {
 
 const roleRank = { steward: 1, cashier: 2, manager: 3, owner: 4 };
 
-function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
-  const host = document.getElementById('toastHost');
-  if (!host) return;
-  const el = document.createElement('div');
-  el.className = `p-3 rounded shadow text-sm font-medium ${
-    type === 'success' ? 'bg-green-600 text-white' :
-    type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-800 text-white'
-  }`;
-  el.textContent = message;
-  host.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
-}
+
 
 export function Tables() {
   const { user } = useAuth();

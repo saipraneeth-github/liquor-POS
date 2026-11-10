@@ -217,8 +217,8 @@ export function POS() {
       const q = counters[p.id]?.[activeType.id];
       const stock = p.trackStock === false || q === undefined ? {} : { currentStock: q, stockQuantity: q };
       if (activeType.isDefault) return [{ ...p, ...stock }];
-      const price = typePrices[p.id]?.[activeType.id];
-      if (!price || p.menuType === 'BAR' || p.menuType === 'KITCHEN') return [];    // no price = not sold under this type
+      if (p.menuType === 'BAR' || p.menuType === 'KITCHEN') return [];
+      const price = typePrices[p.id]?.[activeType.id] || p.mrp;
       return [{ ...p, ...stock, mrp: price, servings: [] }];
     });
   }, [rawProducts, activeType, saleTypes.length, counters, typePrices]);
@@ -635,7 +635,6 @@ export function POS() {
       // Best effort: kick the receipt out to the branch's network printer if one is set up
       void autoPrint(branchId ?? '', 'bills', data.id);
       // Refresh live stock on the POS screen and notify any other tabs/screens
-      loadProducts();
       window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
     } finally {
       setIsPaying(false);
