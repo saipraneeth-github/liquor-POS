@@ -148,6 +148,18 @@ function candidateOf(p: CatalogProduct, confidence: number) {
   return { productId: p.id, name: p.name, confidence, volumeMl: catalogVolume(p) };
 }
 
+export function normalizeBrandCode(code: string): string {
+  return code.trim().toLowerCase().replace(/^0+/, '') || '0';
+}
+
+export function isBrandCodeEqual(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  const aClean = a.trim().toLowerCase();
+  const bClean = b.trim().toLowerCase();
+  if (aClean === bClean) return true;
+  return normalizeBrandCode(aClean) === normalizeBrandCode(bClean);
+}
+
 /**
  * Matching rules (every path that matches an invoice line — upload, new line, manual draft — must pass the brand
  * code and volume it has, so the same rules apply everywhere):
@@ -174,11 +186,11 @@ export function matchLine(line: MatchInput, catalog: CatalogProduct[]): MatchRes
   }
   const sku = line.sku?.trim().toLowerCase();
   if (sku) {
-    const exactSku = active.filter((c) => c.sku && c.sku.trim().toLowerCase() === sku);
+    const exactSku = active.filter((c) => c.sku && isBrandCodeEqual(c.sku, sku));
     const skuMatches = active.filter(
       (c) =>
-        (c.sku && c.sku.trim().toLowerCase() === sku) ||
-        (c.exciseCode && c.exciseCode.trim().toLowerCase() === sku),
+        (c.sku && isBrandCodeEqual(c.sku, sku)) ||
+        (c.exciseCode && isBrandCodeEqual(c.exciseCode, sku)),
     );
     if (skuMatches.length > 0) {
       const all = skuMatches.map((p) => candidateOf(p, 0.5));

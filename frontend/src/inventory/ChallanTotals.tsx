@@ -48,13 +48,13 @@ export function reconcileChallan(f: ChallanFigures, linesSum: number): Check[] {
 const FIELDS: Array<{ key: ChallanField; label: string; hint?: string }> = [
   { key: 'linesBasicTotal', label: 'Invoice Value', hint: 'wholesale total of the lines' },
   { key: 'mrpRoundingOff', label: 'MRP Rounding Off' },
-  { key: 'netInvoiceValue', label: 'Net Invoice Value', hint: '(-) Less this Invoice Value' },
-  { key: 'turnoverTax', label: 'Turnover Tax' },
-  { key: 'specialExciseCess', label: 'Special Excise Cess' },
-  { key: 'tcsAmount', label: 'TCS' },
-  { key: 'previousCredit', label: 'Previous Credit' },
   { key: 'challanAmount', label: 'e-challan / DD Amount' },
+  { key: 'previousCredit', label: 'Previous Credit' },
   { key: 'subTotal', label: 'Sub Total' },
+  { key: 'netInvoiceValue', label: '(-) Less this Invoice Value' },
+  { key: 'turnoverTax', label: 'Retail Shop Excise Turnover Tax' },
+  { key: 'specialExciseCess', label: 'Special Excise Cess' },
+  { key: 'tcsAmount', label: 'TCS (2%)' },
   { key: 'retailerCreditBalance', label: 'Retailer Credit Balance' },
 ];
 
@@ -69,7 +69,6 @@ export default function ChallanTotals({
   const checks = reconcileChallan(figures, linesSum);
   const failed = checks.filter((c) => c.ok === false).length;
   const unverified = checks.filter((c) => c.ok === null).length;
-  const payable = (num(figures.netInvoiceValue) ?? 0) + (num(figures.turnoverTax) ?? 0) + (num(figures.specialExciseCess) ?? 0) + (num(figures.tcsAmount) ?? 0);
 
   return (
     <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800" id="challanTotals">
@@ -90,21 +89,11 @@ export default function ChallanTotals({
         )}
       </div>
 
-      <ul className="mt-3 space-y-1.5 text-xs">
-        {checks.map((c) => (
-          <li key={c.label} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5">
-            <span className="flex items-center gap-2">
-              <span aria-hidden className={c.ok === false ? 'text-rose-600' : c.ok === null ? 'text-amber-600' : 'text-emerald-600'}>
-                {c.ok === false ? '✗' : c.ok === null ? '?' : '✓'}
-              </span>
-              <span className="text-gray-700 dark:text-slate-300">{c.label}</span>
-            </span>
-            <span className="font-mono text-gray-600 dark:text-slate-400">
-              {c.ok === null ? 'needs the missing figure' : c.ok ? inr(c.actual) : `should be ${inr(c.expected)}, is ${inr(c.actual)}`}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {failed > 0 && (
+        <div className="mt-2 text-xs text-rose-600 dark:text-rose-400 font-medium">
+          {checks.filter((c) => c.ok === false).map((c) => c.label).join(' · ')}
+        </div>
+      )}
 
       <div className="mt-3 pt-3 border-t dark:border-slate-800 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-xs">
         {FIELDS.map((f) => (
@@ -124,10 +113,6 @@ export default function ChallanTotals({
             )}
           </label>
         ))}
-        <div className="block p-2 rounded border border-indigo-200 bg-indigo-50/60 dark:bg-indigo-950/30 dark:border-indigo-900/50">
-          <span className="text-gray-500 dark:text-slate-400 text-[10px] block leading-tight">Total payable to depot</span>
-          <span className="font-mono font-bold text-indigo-900 dark:text-indigo-200">{inr(payable)}</span>
-        </div>
       </div>
     </div>
   );

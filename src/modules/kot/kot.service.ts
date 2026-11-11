@@ -49,7 +49,7 @@ export async function createKotOrder(input: CreateKotInput) {
       .select({
         id: products.id, name: products.name, mrp: products.mrp, isActive: products.isActive,
         taxRate: categories.taxRate, gstRate: products.gstRate, isAvailable: products.isAvailable,
-        syndicateId: products.syndicateId,
+        syndicateId: products.syndicateId, trackStock: products.trackStock,
       })
       .from(products)
       .leftJoin(categories, eq(products.categoryId, categories.id))
@@ -65,7 +65,7 @@ export async function createKotOrder(input: CreateKotInput) {
       : [];
     const servingMap = new Map(servingRows.map((s) => [s.id, s]));
 
-    const bottleItems = input.items.filter((i) => !i.servingId);
+    const bottleItems = input.items.filter((i) => !i.servingId && productMap.get(i.productId)?.trackStock !== false);
     if (bottleItems.length > 0) {
       const stockEntries = await tx
         .select({ productId: stock.productId, quantity: stock.quantity })

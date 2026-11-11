@@ -368,6 +368,8 @@ export async function upsertBrandCodeMapping(input: {
   costPrice?: string | null;
 }) {
   const trimmedCode = input.brandCode.trim();
+  const normCode = trimmedCode.replace(/^0+/, '') || '0';
+  const paddedCode = trimmedCode.padStart(4, '0');
   const vol = input.volumeMl ?? null;
   let prodId = input.productId;
 
@@ -383,7 +385,14 @@ export async function upsertBrandCodeMapping(input: {
       .where(
         or(
           eq(products.name, nameToSearch),
-          and(eq(products.exciseCode, trimmedCode), vol ? eq(products.volumeMl, vol) : undefined),
+          and(
+            or(
+              eq(products.exciseCode, trimmedCode),
+              eq(products.exciseCode, normCode),
+              eq(products.exciseCode, paddedCode),
+            ),
+            vol ? eq(products.volumeMl, vol) : undefined,
+          ),
         ),
       )
       .limit(1);
@@ -416,7 +425,13 @@ export async function upsertBrandCodeMapping(input: {
     }
   }
 
-  const existingConds = [eq(brandCodeMappings.brandCode, trimmedCode)];
+  const existingConds = [
+    or(
+      eq(brandCodeMappings.brandCode, trimmedCode),
+      eq(brandCodeMappings.brandCode, normCode),
+      eq(brandCodeMappings.brandCode, paddedCode),
+    )!,
+  ];
   if (vol !== null) {
     existingConds.push(eq(brandCodeMappings.volumeMl, vol));
   } else {

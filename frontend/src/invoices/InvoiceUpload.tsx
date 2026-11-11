@@ -29,6 +29,7 @@ interface Product {
   name: string;
   barcode?: string;
   sku?: string;
+  exciseCode?: string;
   costPrice?: string;
   previousCostPrice?: string;
   costPerCase?: string;
@@ -125,6 +126,17 @@ function extractVolumeMl(desc: string): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
+function normBrandCode(c?: string | null): string {
+  return (c ?? '').trim().toLowerCase().replace(/^0+/, '') || '0';
+}
+
+function isBrandCodeEqual(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  const aClean = a.trim().toLowerCase();
+  const bClean = b.trim().toLowerCase();
+  return aClean === bClean || normBrandCode(aClean) === normBrandCode(bClean);
+}
+
 interface ActiveInvoiceData {
   invoice: InvoiceHeader;
   items: InvoiceItem[];
@@ -195,6 +207,7 @@ export function InvoiceUpload() {
   // Navigation tab: 'upload' = Bill Inward Wizard, 'history' = Invoices History, 'all-invoices' = All Uploaded Invoices
   const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'all-invoices'>('upload');
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
+  const [searchIcdc, setSearchIcdc] = useState<string>('');
   const [viewSnapshot, setViewSnapshot] = useState<ActiveInvoiceData | null>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
 
@@ -330,6 +343,46 @@ export function InvoiceUpload() {
       showToast('Could not load invoice snapshot: ' + err.message, 'error');
     } finally {
       setLoadingSnapshot(false);
+    }
+  };
+
+  const filteredAllInvoices = useMemo(() => {
+    if (!searchIcdc.trim()) return invoices;
+    const q = searchIcdc.trim().toLowerCase();
+    const cleanQ = q.replace(/^icdc/i, '');
+    return invoices.filter((inv) => {
+      const num = (inv.invoiceNumber || '').toLowerCase();
+      const cleanNum = num.replace(/^icdc/i, '');
+      return (
+        num.includes(q) ||
+        (cleanQ && cleanNum.includes(cleanQ)) ||
+        (inv.supplierName || '').toLowerCase().includes(q)
+      );
+    });
+  }, [invoices, searchIcdc]);
+
+  const handleIcdcSearch = () => {
+    if (!searchIcdc.trim()) {
+      if (selectedInvoiceId) openSnapshot(selectedInvoiceId);
+      return;
+    }
+    const q = searchIcdc.trim().toLowerCase();
+    const cleanQ = q.replace(/^icdc/i, '');
+    const found = invoices.find((inv) => {
+      const num = (inv.invoiceNumber || '').toLowerCase();
+      const cleanNum = num.replace(/^icdc/i, '');
+      return (
+        num === q ||
+        (cleanQ && cleanNum === cleanQ) ||
+        num.includes(q) ||
+        (cleanQ && cleanNum.includes(cleanQ))
+      );
+    });
+    if (found) {
+      setSelectedInvoiceId(found.id);
+      openSnapshot(found.id);
+    } else {
+      showToast(`No invoice found matching "${searchIcdc}"`, 'info');
     }
   };
 
@@ -1090,17 +1143,57 @@ export function InvoiceUpload() {
             </button>
           </div>
 
-          {/* Invoice Number Dropdown & View Button */}
-          <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/60 rounded-xl border dark:border-slate-700">
-            <div className="flex-1 min-w-[260px]">
-              <label htmlFor="allInvoicesDropdown" className="text-xs font-semibold text-gray-600 dark:text-slate-300 uppercase tracking-wider block mb-1">
-                Select Invoice Number
-              </label>
+          {/* ICDC Search Bar & View Button */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/60 rounded-xl border dark:border-slate-700">
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                id="searchIcdcInput"
+                placeholder="Search ICDC + <remaining number>"
+                className="w-full p-2.5 pl-3 pr-8 border dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono shadow-sm outline-none focus:ring-2 focus:ring-purple-500"
+                value={searchIcdc}
+                onChange={(e) => setSearchIcdc(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleIcdcSearch();
+                  }
+                }}
+              />
+              {searchIcdc && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-2.5 text-xs text-gray-400 hover:text-gray-600 font-bold cursor-pointer"
+                  onClick={() => setSearchIcdc('')}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              id="viewIcdcSearchBtn"
+              disabled={loadingSnapshot}
+              className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold text-sm shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-all"
+              onClick={handleIcdcSearch}
+            >
+              <Eye size={16} /> {loadingSnapshot ? 'Loading Snapshot…' : 'View'}
+            </button>
+          </div>
+
+          {/* Quick Dropdown selector (optional helper) */}
+          {invoices.length > 0 && !searchIcdc && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+              <span>Or choose from list:</span>
               <select
                 id="allInvoicesDropdown"
-                className="w-full p-2.5 border dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono"
+                className="p-1.5 border dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-200 font-mono"
                 value={selectedInvoiceId}
-                onChange={(e) => setSelectedInvoiceId(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedInvoiceId(val);
+                  if (val) openSnapshot(val);
+                }}
               >
                 <option value="">-- Choose an invoice to view snapshot --</option>
                 {invoices.map((inv) => (
@@ -1110,23 +1203,16 @@ export function InvoiceUpload() {
                 ))}
               </select>
             </div>
-            <button
-              type="button"
-              id="viewSelectedInvoiceBtn"
-              disabled={!selectedInvoiceId || loadingSnapshot}
-              className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer transition-all self-end"
-              onClick={() => openSnapshot(selectedInvoiceId)}
-            >
-              <Eye size={16} /> {loadingSnapshot ? 'Loading Snapshot…' : 'View Snapshot'}
-            </button>
-          </div>
+          )}
 
           {/* Invoices List Table */}
           <div className="overflow-x-auto border dark:border-slate-800 rounded-xl">
             {loadingInvoices ? (
               <BeerBottleLoader inline size="sm" title="Loading Invoices…" subtitle="Fetching all uploaded supplier invoices…" />
-            ) : invoices.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 text-sm">No invoices found. Click "Upload New Invoice" to begin.</div>
+            ) : filteredAllInvoices.length === 0 ? (
+              <div className="p-8 text-center text-gray-500 text-sm">
+                {searchIcdc ? `No invoices found matching "${searchIcdc}".` : 'No invoices found. Click "Upload New Invoice" to begin.'}
+              </div>
             ) : (
               <table className="w-full text-left text-sm" id="allInvoicesTable">
                 <thead>
@@ -1141,7 +1227,7 @@ export function InvoiceUpload() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-                  {invoices.map((inv) => (
+                  {filteredAllInvoices.map((inv) => (
                     <tr key={inv.id} className="hover:bg-gray-50/70 dark:hover:bg-slate-800/60 transition-colors">
                       <td className="py-3 px-3">
                         <div className="font-bold text-gray-900 dark:text-slate-100 font-mono">{inv.invoiceNumber}</div>
@@ -1492,8 +1578,8 @@ export function InvoiceUpload() {
               </div>
 
               {/* Bill Details Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-gray-50 rounded-xl border">
-                <div>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 p-4 bg-gray-50 rounded-xl border">
+                <div className="md:col-span-3">
                   <label className="block text-xs font-bold text-gray-600" htmlFor="invEditSupplier">
                     Depot / Supplier
                   </label>
@@ -1510,19 +1596,19 @@ export function InvoiceUpload() {
                   />
                 </div>
 
-                <div>
+                <div className="md:col-span-5">
                   <label className="block text-xs font-bold text-gray-600">
                     Shop / Licensee Name
                   </label>
                   <div
-                    className="w-full mt-1 p-2 border rounded text-sm bg-gray-100 font-medium text-gray-800 truncate"
+                    className="w-full mt-1 p-2 border rounded text-sm md:text-base font-bold text-gray-900 bg-white shadow-sm flex items-center min-h-[38px]"
                     title={(activeInvoice.invoice.extractionMeta?.shopName as string) || activeInvoice.invoice.shopName || shopName}
                   >
                     {(activeInvoice.invoice.extractionMeta?.shopName as string) || activeInvoice.invoice.shopName || shopName}
                   </div>
                 </div>
 
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-xs font-bold text-gray-600" htmlFor="invEditNumber">
                     Bill / Challan No.
                   </label>
@@ -1546,7 +1632,7 @@ export function InvoiceUpload() {
                   )}
                 </div>
 
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-xs font-bold text-gray-600" htmlFor="invEditDate">
                     Bill Date
                   </label>
@@ -1559,23 +1645,6 @@ export function InvoiceUpload() {
                       setActiveInvoice({
                         ...activeInvoice,
                         invoice: { ...activeInvoice.invoice, invoiceDate: e.target.value },
-                      })
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-600" htmlFor="invEditTotal">
-                    Document Total (₹)
-                  </label>
-                  <input
-                    id="invEditTotal"
-                    className="w-full mt-1 p-2 border rounded text-sm bg-white font-mono font-bold text-gray-900"
-                    value={activeInvoice.invoice.totalAmount || '0.00'}
-                    onChange={(e) =>
-                      setActiveInvoice({
-                        ...activeInvoice,
-                        invoice: { ...activeInvoice.invoice, totalAmount: e.target.value },
                       })
                     }
                   />
@@ -1615,7 +1684,8 @@ export function InvoiceUpload() {
                     <thead>
                       <tr className="border-b text-[11px] text-gray-500 bg-gray-50 dark:bg-gray-800 uppercase tracking-wider">
                         <th className="py-2.5 px-3 w-8">#</th>
-                        <th className="py-2.5 px-3">Item &amp; Brand Code Match</th>
+                        <th className="py-2.5 px-2 text-center w-24">Brand Code</th>
+                        <th className="py-2.5 px-3">Item &amp; Match</th>
                         <th className="py-2.5 px-2 text-right w-28">Qty</th>
                         <th className="py-2.5 px-2 text-right w-24">Case Rate</th>
                         <th className="py-2.5 px-2 text-right w-28">Unit Cost ₹</th>
@@ -1629,12 +1699,33 @@ export function InvoiceUpload() {
                         const code = getBrandCode(it);
                         const vol = it.volumeMl ?? extractVolumeMl(it.rawDescription) ?? null;
                         const mappedMapping = brandMappings.find((m) => {
-                          if (m.brandCode.toLowerCase().trim() !== code.toLowerCase().trim()) return false;
+                          if (!isBrandCodeEqual(m.brandCode, code)) return false;
                           if (vol && m.volumeMl) return m.volumeMl === vol;
                           if (!vol && !m.volumeMl) return true;
                           return false;
-                        });
-                        const matchedProd = it.productId ? productMap.get(it.productId) : mappedMapping?.productId ? productMap.get(mappedMapping.productId) : null;
+                        }) || brandMappings.find((m) => isBrandCodeEqual(m.brandCode, code) && !m.volumeMl)
+                           || brandMappings.find((m) => isBrandCodeEqual(m.brandCode, code));
+
+                        let matchedProd = it.productId ? productMap.get(it.productId) : mappedMapping?.productId ? productMap.get(mappedMapping.productId) : null;
+                        const codeCandidates = code ? products.filter((p) =>
+                          (p.exciseCode && isBrandCodeEqual(p.exciseCode, code)) ||
+                          (p.sku && isBrandCodeEqual(p.sku, code)) ||
+                          (p.barcode && isBrandCodeEqual(p.barcode, code))
+                        ) : [];
+                        if (!matchedProd && codeCandidates.length > 0) {
+                          if (vol) {
+                            const volMatches = codeCandidates.filter((p) => (p.volumeMl ?? extractVolumeMl(p.name)) === vol);
+                            if (volMatches.length === 1) {
+                              matchedProd = volMatches[0];
+                            } else if (volMatches.length > 1) {
+                              matchedProd = null;
+                            } else {
+                              matchedProd = codeCandidates.find((p) => !(p.volumeMl ?? extractVolumeMl(p.name))) || null;
+                            }
+                          } else if (codeCandidates.length === 1) {
+                            matchedProd = codeCandidates[0];
+                          }
+                        }
                         const isMatched = !!(matchedProd && (!vol || !matchedProd.volumeMl || matchedProd.volumeMl === vol));
                         const mapKey = vol ? `${code}_${vol}` : code;
                         const isEditing = editingRowIdx === idx;
@@ -1648,6 +1739,11 @@ export function InvoiceUpload() {
                             data-match-status={it.matchStatus}
                           >
                             <td className="py-3 px-3 text-xs text-gray-400 font-mono">{idx + 1}</td>
+                            <td className="py-3 px-2 text-center">
+                              <span className="inline-block font-mono font-bold text-xs text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-700">
+                                {code}
+                              </span>
+                            </td>
                             <td className="py-3 px-3 space-y-1.5">
                               <div className="flex items-center gap-2">
                                 {(() => {
@@ -1676,13 +1772,52 @@ export function InvoiceUpload() {
                                 <div className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
                                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                                   <span className="font-semibold">{matchedProd?.name || mappedMapping?.productName || it.productName}</span>
-                                  <span className="text-[10px] font-mono text-gray-500">[{code}]{vol ? ` • ${vol}ml` : ''}</span>
+                                  {vol ? <span className="text-[10px] font-mono text-gray-500">• {vol}ml</span> : null}
                                 </div>
                               ) : (
                                 <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg space-y-2 text-xs">
                                   <div className="font-semibold text-amber-800 dark:text-amber-200 flex items-center justify-between">
-                                    <span>Unknown Brand Code: <code className="font-mono bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border">{code}</code>{vol ? <span className="ml-1 text-amber-700 font-mono">({vol}ml)</span> : null}</span>
+                                    <span>
+                                      {it.flags?.includes('AMBIGUOUS_MATCH') || codeCandidates.length > 1
+                                        ? 'Multiple Catalog Matches for Brand Code: '
+                                        : it.flags?.includes('VOLUME_DIFFERS')
+                                        ? 'Volume Mismatch for Brand Code: '
+                                        : 'Unmapped Brand Code: '}
+                                      <code className="font-mono bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border">{code}</code>
+                                      {vol ? <span className="ml-1 text-amber-700 font-mono">({vol}ml)</span> : null}
+                                    </span>
                                   </div>
+                                  {codeCandidates.length > 1 && (
+                                    <div className="flex items-center gap-2 py-1 px-1.5 bg-amber-100/60 dark:bg-amber-900/30 rounded border border-amber-300 dark:border-amber-700">
+                                      <span className="text-[11px] font-bold text-amber-900 dark:text-amber-200 shrink-0">Match to existing:</span>
+                                      <select
+                                        className="p-1 border rounded bg-white dark:bg-gray-900 text-xs flex-1 truncate font-medium text-gray-900 dark:text-gray-100"
+                                        defaultValue=""
+                                        onChange={(e) => {
+                                          const chosenId = e.target.value;
+                                          if (!chosenId) return;
+                                          const chosen = productMap.get(chosenId);
+                                          if (chosen && activeInvoice) {
+                                            const nextItems = [...activeInvoice.items];
+                                            nextItems[idx] = {
+                                              ...nextItems[idx],
+                                              productId: chosen.id,
+                                              productName: chosen.name,
+                                              matchStatus: 'MATCHED',
+                                            };
+                                            setActiveInvoice({ ...activeInvoice, items: nextItems });
+                                          }
+                                        }}
+                                      >
+                                        <option value="">-- Select from {codeCandidates.length} catalog products --</option>
+                                        {codeCandidates.map((c) => (
+                                          <option key={c.id} value={c.id}>
+                                            {c.name} {c.volumeMl ? `(${c.volumeMl}ml)` : ''} — MRP ₹{parseFloat(c.mrp).toFixed(2)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
                                   <div className="flex flex-wrap items-center gap-2">
                                     <input
                                       type="text"
