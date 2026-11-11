@@ -44,3 +44,7 @@ test_lru.py
 .pglite/
 .pglite-e2e/
 scratch/
+
+# Local sample/test invoices and statements (kept local only)
+Bank Invoices/
+Testing_invoices/
