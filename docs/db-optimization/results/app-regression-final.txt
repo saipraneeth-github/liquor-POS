@@ -1,0 +1,318 @@
+
+ RUN  v5.1.0 D:/AI Project
+
+ ❯ tests/integration/sale-types.int.test.ts (14 tests | 11 failed) 24333ms
+   ❯ sale types (7)
+     × a Janata bill uses the Janata price and needs a price for every item 108ms
+     × each counter only sells its own bottles 177ms
+     × voiding a Janata bill returns the bottles to the Janata counter 118ms
+     × a price cannot be removed while the counter still holds bottles of that product 63ms
+     × moving more than a counter holds is refused; moving back works 169ms
+   ❯ counter sheets per sale type (4)
+     × Walk-in and Janata each get their own sheet for the same day, at their own rate and stock 455ms
+     × a Janata bill moves only the Janata sheet 218ms
+     × posting corrects that counter and books the sales no POS bill covered; un-posting reverses both 81ms
+     × the Walk-in sheet is unaffected by the Janata correction and posts without booking anything extra 93ms
+   ❯ dividing the stock (inventory is the source of truth) (2)
+     × refuses more than the shop has, a type without a price, the default type, and a cashier 223ms
+   ❯ movement history per counter (1)
+     × lists a product's movements tagged with the counter that moved 30ms
+ ❯ tests/integration/dashboard.int.test.ts (19 tests | 1 failed) 15322ms
+   ❯ owner overview (5)
+     × puts every outlet side by side, each against its own yesterday at this time 122ms
+ ❯ tests/integration/counter-sheets.int.test.ts (16 tests | 1 failed) 11722ms
+   ❯ stock movements recorded outside the sheet day (4)
+     × approves surplus counts (manager), preserves prior approval, and updates inventory on post 291ms
+
+ Test Files  3 failed | 36 passed (39)
+      Tests  13 failed | 407 passed (420)
+   Start at  21:11:55
+   Duration  838.74s (tests 91%, import 8%, transform 1%)
+
+    Isolate  39 workers spawned · ~654ms startup each (spawn + environment, per file)
+             at least ~24.87s faster with isolate: false — reuses workers across files instead of one per file
+
+npm notice run liquor-counter@0.1.0 test:integration
+npm notice run vitest run tests/integration --fileParallelism=false
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://v4.vitest.dev/guide/migration#pool-rework
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/counter-sheets.int.test.ts > stock movements recorded outside the sheet day > approves surplus counts (manager), preserves prior approval, and updates inventory on post
+AssertionError: expected -10 to be 5 // Object.is equality
+
+- Expected
++ Received
+
+- 5
++ -10
+
+ ❯ tests/integration/counter-sheets.int.test.ts:478:30
+    476|     expect(audits.length).toBeGreaterThan(0);
+    477|     const latest = audits[audits.length - 1];
+    478|     expect(latest.changeQty).toBe(stockAfter - stockBefore);
+       |                              ^
+    479|
+    480|     // 6. Cashier cannot revert to draft (403)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  tests/integration/dashboard.int.test.ts > owner overview > puts every outlet side by side, each against its own yesterday at this time
+AssertionError: expected { sales: '3400.00', …(6) } to deeply equal { sales: '3400.00', …(3) }
+
+- Expected
++ Received
+
+  {
+    "bills": 4,
+    "percent": 54.5,
++   "physicalStockPresent": 0,
+    "sales": "3400.00",
+    "salesSameTimeYesterday": "2200.00",
++   "sheetRevenue": "3400.00",
++   "totalBottlesSold": 4,
+  }
+
+ ❯ tests/integration/dashboard.int.test.ts:264:22
+    262|     expect(alpha).toMatchObject({ sales: '2400.00', bills: 3, salesSam…
+    263|     expect(bravo).toMatchObject({ sales: '1000.00', salesSameTimeYeste…
+    264|     expect(d.totals).toEqual({ sales: '3400.00', salesSameTimeYesterda…
+       |                      ^
+    265|   });
+    266|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > sale types > a Janata bill uses the Janata price and needs a price for every item
+AssertionError: expected '{"error":"Insufficient stock: Test Be…' to match /No Janata price/
+
+- Expected:
+/No Janata price/
+
++ Received:
+"{\"error\":\"Insufficient stock: Test Beer 650ml (requested 1, available 0)\"}"
+
+ ❯ tests/integration/sale-types.int.test.ts:85:26
+     83|     const noPrice = await bill([{ productId: beer.id, quantity: 1 }], …
+     84|     expect(noPrice.statusCode).toBe(422);
+     85|     expect(noPrice.body).toMatch(/No Janata price/);
+       |                          ^
+     86|
+     87|     // stock must be in the Janata counter first: move 30 whisky from …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > sale types > each counter only sells its own bottles
+AssertionError: expected 201 to be 422 // Object.is equality
+
+- Expected
++ Received
+
+- 422
++ 201
+
+ ❯ tests/integration/sale-types.int.test.ts:111:29
+    109|     // Walk-in has 69; asking for 70 must not touch the 25 held by Jan…
+    110|     const over = await bill([{ productId: whisky.id, quantity: 70 }]);
+    111|     expect(over.statusCode).toBe(422);
+       |                             ^
+    112|     expect(over.body).toMatch(/Insufficient stock/);
+    113|     // Janata has 25; 26 must not take Walk-in's bottles
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > sale types > voiding a Janata bill returns the bottles to the Janata counter
+AssertionError: expected { total: 30, WALK_IN: 30, JANATA: +0 } to match object { JANATA: 21, WALK_IN: 69 }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "JANATA": 21,
+-   "WALK_IN": 69,
++   "JANATA": 0,
++   "WALK_IN": 30,
+  }
+
+ ❯ tests/integration/sale-types.int.test.ts:127:39
+    125|     const sale = await bill([{ productId: whisky.id, quantity: 4 }], j…
+    126|     const id = (sale.json().bill ?? sale.json()).id as string;
+    127|     expect(await counters(whisky.id)).toMatchObject({ JANATA: 21, WALK…
+       |                                       ^
+    128|     const voided = await inject('POST', `/bills/${id}/void`, ctx.auth(…
+    129|     expect(voided.statusCode, voided.body).toBe(200);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > sale types > a price cannot be removed while the counter still holds bottles of that product
+AssertionError: expected 200 to be 422 // Object.is equality
+
+- Expected
++ Received
+
+- 422
++ 200
+
+ ❯ tests/integration/sale-types.int.test.ts:137:28
+    135|       prices: [{ productId: whisky.id, saleTypeId: janata.id, price: n…
+    136|     });
+    137|     expect(res.statusCode).toBe(422);
+       |                            ^
+    138|     expect(res.body).toMatch(/move them back/);
+    139|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > sale types > moving more than a counter holds is refused; moving back works
+AssertionError: expected 201 to be 422 // Object.is equality
+
+- Expected
++ Received
+
+- 422
++ 201
+
+ ❯ tests/integration/sale-types.int.test.ts:145:32
+    143|     expect(tooMany.statusCode).toBe(422);
+    144|     const noPrice = await inject('POST', `/sale-types/${ctx.branchId}/…
+    145|     expect(noPrice.statusCode).toBe(422);
+       |                                ^
+    146|     expect(noPrice.body).toMatch(/Set a Janata price/);
+    147|     const back = await inject('POST', `/sale-types/${ctx.branchId}/tra…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > counter sheets per sale type > Walk-in and Janata each get their own sheet for the same day, at their own rate and stock
+AssertionError: expected { …(17) } to match object { openingBottles: +0, …(3) }
+(15 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "closingBottles": 20,
++   "closingBottles": 21,
+    "openingBottles": 0,
+    "sellingRate": "180.00",
+-   "transferBottles": 20,
++   "transferBottles": 21,
+  }
+
+ ❯ tests/integration/sale-types.int.test.ts:179:19
+    177|
+    178|     const jBeer = (jan.json().lines as { productId: string; openingBot…
+    179|     expect(jBeer).toMatchObject({ openingBottles: 0, transferBottles: …
+       |                   ^
+    180|     const wBeer = (walk.json().lines as typeof jBeer[]).find((l) => l.…
+    181|     expect(wBeer).toMatchObject({ openingBottles: 100, transferBottles…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > counter sheets per sale type > a Janata bill moves only the Janata sheet
+AssertionError: expected { …(17) } to match object { soldBottles: 4, …(2) }
+(16 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "closingBottles": 16,
++   "closingBottles": 17,
+    "lineRevenue": "720.00",
+    "soldBottles": 4,
+  }
+
+ ❯ tests/integration/sale-types.int.test.ts:188:80
+    186|     expect(sale.statusCode, sale.body).toBe(201);
+    187|     const j = (await inject('GET', `/counter-sheets/sheet/${janataShee…
+    188|     expect(j.lines.find((l: { productId: string }) => l.productId === …
+       |                                                                                ^
+    189|     const w = (await inject('GET', `/counter-sheets/sheet/${walkInShee…
+    190|     expect(w.lines.find((l: { productId: string }) => l.productId === …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > counter sheets per sale type > posting corrects that counter and books the sales no POS bill covered; un-posting reverses both
+AssertionError: expected { …(17) } to match object { soldBottles: 6, …(1) }
+(17 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "lineRevenue": "1080.00",
+-   "soldBottles": 6,
++   "lineRevenue": "1260.00",
++   "soldBottles": 7,
+  }
+
+ ❯ tests/integration/sale-types.int.test.ts:197:90
+    195|     const edit = await inject('PUT', `/counter-sheets/sheet/${janataSh…
+    196|     expect(edit.statusCode, edit.body).toBe(200);
+    197|     expect(edit.json().lines.find((l: { productId: string }) => l.prod…
+       |                                                                                          ^
+    198|
+    199|     const post = await inject('POST', `/counter-sheets/sheet/${janataS…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > counter sheets per sale type > the Walk-in sheet is unaffected by the Janata correction and posts without booking anything extra
+AssertionError: expected 96 to be 94 // Object.is equality
+
+- Expected
++ Received
+
+- 94
++ 96
+
+ ❯ tests/integration/sale-types.int.test.ts:236:36
+    234|     const after = await ctx.db.select().from(ctx.schema.journalVoucher…
+    235|     expect(after.length - before.length).toBeLessThanOrEqual(1);   // …
+    236|     expect(await stockRow(beerId)).toBe(94);
+       |                                    ^
+    237|   });
+    238| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > dividing the stock (inventory is the source of truth) > refuses more than the shop has, a type without a price, the default type, and a cashier
+AssertionError: expected 200 to be 422 // Object.is equality
+
+- Expected
++ Received
+
+- 422
++ 200
+
+ ❯ tests/integration/sale-types.int.test.ts:290:29
+    288|     await ctx.db.insert(ctx.schema.stock).values({ branchId: ctx.branc…
+    289|     const nopr = await put([{ productId: fresh.id, saleTypeId: janata,…
+    290|     expect(nopr.statusCode).toBe(422);
+       |                             ^
+    291|     expect(nopr.body).toMatch(/Set a Janata price/);
+    292|     expect((await put([{ productId: whisky.id, saleTypeId: walkIn, qua…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/13]⎯
+
+ FAIL  tests/integration/sale-types.int.test.ts > movement history per counter > lists a product's movements tagged with the counter that moved
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/integration/sale-types.int.test.ts:308:77
+    306|     expect(transfers.length).toBeGreaterThanOrEqual(2);
+    307|     expect(new Set(transfers.map((r) => r.counter))).toEqual(new Set([…
+    308|     expect(rows.some((r) => r.reason === 'SALE' && r.counter === 'Jana…
+       |                                                                             ^
+    309|     expect((await inject('GET', `/sale-types/${ctx.branchId}/history/n…
+    310|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/13]⎯
+
+
+EXIT 1

@@ -136,7 +136,7 @@ test('Bar Menu + POS: configure pegs, sell a 60 ml peg, stock shows the open bot
   // inventory shows the opened bottle
   await page.click('#newBillBtn');
   await page.click('#nav-inventory');
-  await page.getByRole('button', { name: /Current Store Stock/ }).click();
+  await page.getByRole('button', { name: /Current Stock/ }).click();
   await expect(page.locator('.open-ml').first()).toContainText('ml open');
 });
 
@@ -228,7 +228,7 @@ test('Super Admin: sees the platform console, adds a tenant, suspends it, and th
   const email = `admin.${stamp.toLowerCase()}@tenant.test`;
   await reactLogin(page, 'superadmin@liquor.com');
   await expect(page.locator('#page-platform')).toBeVisible();          // lands on the console
-  await expect(page.locator('#nav-pos')).toBeVisible();                // super admin has access to all menus
+  await expect(page.locator('#nav-pos')).toHaveCount(0);                // the Super Admin runs the software, not a shop: no billing menu
   await expect(page.locator('#platformKpis')).toContainText('Monthly recurring revenue');
   await expect(page.locator('#platformQueue')).toContainText('Payments overdue');
 
@@ -242,7 +242,7 @@ test('Super Admin: sees the platform console, adds a tenant, suspends it, and th
 
   const row = page.locator('.tenant-row', { hasText: tenant });
   await expect(row).toBeVisible();
-  await expect(row).toContainText('STANDARD');
+  await expect(row).toContainText('Standard');
   await expect(row).toContainText('0');   // branches used
 
   // the new Admin can sign in
@@ -319,6 +319,7 @@ test('Staff: a manager resets a cashier password; a user changes their own passw
   await reactLogin(page, 'manager@liquor.com');
   await page.click('#nav-admin');
   await page.locator('tr[data-email="' + email + '"] .user-reset').click();
+  await page.locator('div.fixed', { hasText: 'Reset password for this user' }).getByRole('button', { name: 'Reset password', exact: true }).click();
   const temp = (await page.locator('#revealedPassword').innerText()).trim();
   expect((await request.post('/api/v1/auth/login', { data: { email, password: temp } })).status()).toBe(200);
   await page.getByRole('button', { name: 'Done' }).click();

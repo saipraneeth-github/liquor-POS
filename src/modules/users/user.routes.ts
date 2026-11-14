@@ -26,6 +26,9 @@ import {
   getUserPermissions,
   setUserPermissions,
   SetPermissionsSchema,
+  SetRoleSchema,
+  listAssignableRolesFor,
+  setUserRole,
   CreateUserSchema,
   UpdateUserSchema,
   ListUsersQuerySchema,
@@ -43,6 +46,17 @@ export async function userRoutes(fastify: FastifyInstance) {
     } catch (err) {
       return sendError(reply, err, 'Profile lookup failed');
     }
+  });
+
+  // The roles this person may give to their staff (built-in ones below them, and custom ones they hold every permission of)
+  fastify.get('/roles', { preHandler: requireRole('manager') }, async (request) => ({ roles: await listAssignableRolesFor(getUser(request)) }));
+
+  fastify.put('/users/:id/role', { preHandler: requireRole('manager') }, async (request, reply) => {
+    const params = IdParams.safeParse(request.params);
+    const body = SetRoleSchema.safeParse(request.body);
+    if (!params.success) return reply.code(404).send({ error: 'User not found' });
+    if (!body.success) return reply.code(400).send({ error: 'Choose a role' });
+    try { return await setUserRole(getUser(request), params.data.id, body.data.roleId); } catch (err) { return sendError(reply, err, 'Could not change the role'); }
   });
 
   fastify.get('/users', { preHandler: requireRole('manager') }, async (request, reply) => {

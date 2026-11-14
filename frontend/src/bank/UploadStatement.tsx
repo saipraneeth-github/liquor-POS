@@ -130,14 +130,14 @@ export function UploadStatement({ account, onImported, onCancel }: { account: Ac
         onDrop={(e) => { e.preventDefault(); choose(e.dataTransfer.files?.[0] ?? null); }}
       >
         <input
-          ref={inputRef} id="bankFile" type="file" className="hidden" accept=".csv,.xlsx,.pdf,.txt,text/csv"
+          ref={inputRef} id="bankFile" type="file" className="hidden" accept=".csv,.xlsx,.pdf,.txt,.ofx,.qfx,.qif,text/csv"
           onChange={(e) => { choose(e.target.files?.[0] ?? null); e.target.value = ''; }}
         />
         <p className="text-sm text-gray-700 dark:text-gray-300">Drop your bank statement here, or</p>
         <button type="button" id="bankChooseFile" onClick={() => inputRef.current?.click()} className="mt-2 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 cursor-pointer">
           Choose a file
         </button>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">CSV, Excel (.xlsx) or a PDF downloaded from net banking. Any bank — columns are detected automatically. Max 10 MB.</p>
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">CSV, Excel (.xlsx), OFX / QFX, QIF or a PDF downloaded from net banking. Any bank — columns are detected automatically. Max 10 MB.</p>
         {file && <p className="mt-2 text-xs font-mono text-gray-600 dark:text-gray-300">{file.name}</p>}
       </div>
 
@@ -175,7 +175,7 @@ export function UploadStatement({ account, onImported, onCancel }: { account: Ac
                   <tr key={l.lineNo} className="border-t border-gray-100 dark:border-gray-700">
                     <td className="px-3 py-1.5 text-gray-400">{l.lineNo}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{l.txnDate}</td>
-                    <td className="px-3 py-1.5 max-w-xs truncate" title={l.narration}>{l.narration}</td>
+                    <td className="px-3 py-1.5 min-w-[14rem] max-w-md whitespace-normal break-words" title={l.narration}>{l.narration}</td>
                     <td className="px-3 py-1.5 font-mono text-gray-500">{l.reference ?? ''}</td>
                     <td className="px-3 py-1.5 text-right font-mono text-red-600 dark:text-red-400">{isZero(l.debit) ? '' : inr(l.debit)}</td>
                     <td className="px-3 py-1.5 text-right font-mono text-emerald-600 dark:text-emerald-400">{isZero(l.credit) ? '' : inr(l.credit)}</td>

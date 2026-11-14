@@ -6,6 +6,7 @@ import { Badge, Field, Modal, inr, ProtectedButton } from '../components/ui';
 import { errorMessage, showToast } from '../lib/print';
 import { IgnoreRules } from './IgnoreRules';
 import { ReconcileStatement } from './ReconcileStatement';
+import { TransactionSearch } from './TransactionSearch';
 import { UploadStatement } from './UploadStatement';
 import type { Account, Scope, StatementRow } from './types';
 
@@ -22,6 +23,7 @@ export function BankReconciliation() {
   const [view, setView] = useState<View>({ name: 'home' });
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [homeTab, setHomeTab] = useState<'statements' | 'transactions'>('statements');
 
   const account = accounts.find((a) => a.id === accountId) ?? null;
 
@@ -54,11 +56,11 @@ export function BankReconciliation() {
   if (loading) return <div className="text-sm text-gray-500">Loading…</div>;
 
   return (
-    <div className="space-y-5 max-w-6xl">
+    <div className="space-y-5 w-full">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Bank Reconciliation</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Upload your bank statement and check it against your books. Works with any bank.</p>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Match Bank Statement</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Upload your bank statement and tick it off against your books, entry by entry. Works with any bank.</p>
         </div>
         <div className="flex items-end gap-2">
           {accounts.length > 0 && (
@@ -84,6 +86,15 @@ export function BankReconciliation() {
       )}
 
       {account && view.name === 'home' && (
+        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-600 p-0.5 text-xs font-semibold" role="tablist" aria-label="Bank reconciliation sections">
+          <button type="button" id="bankTabStatements" role="tab" aria-selected={homeTab === 'statements'} onClick={() => setHomeTab('statements')} className={`px-3 py-1.5 rounded-md cursor-pointer ${homeTab === 'statements' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Statements</button>
+          <button type="button" id="bankTabTransactions" role="tab" aria-selected={homeTab === 'transactions'} onClick={() => setHomeTab('transactions')} className={`px-3 py-1.5 rounded-md cursor-pointer ${homeTab === 'transactions' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Transactions &amp; search</button>
+        </div>
+      )}
+
+      {account && view.name === 'home' && homeTab === 'transactions' && <TransactionSearch key={account.id} branchId={branchId} account={account} />}
+
+      {account && view.name === 'home' && homeTab === 'statements' && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-gray-900 dark:text-white">Statements</h3>
@@ -127,7 +138,7 @@ export function BankReconciliation() {
         </div>
       )}
 
-      {account && view.name === 'home' && <IgnoreRules key={account.id} account={account} />}
+      {account && view.name === 'home' && homeTab === 'statements' && <IgnoreRules key={account.id} account={account} />}
 
       {account && view.name === 'upload' && (
         <UploadStatement account={account} onCancel={() => setView({ name: 'home' })}
@@ -135,7 +146,15 @@ export function BankReconciliation() {
       )}
 
       {account && view.name === 'reconcile' && (
-        <ReconcileStatement statementId={view.statementId} onBack={() => { setView({ name: 'home' }); void loadStatements(); }} />
+        <ReconcileStatement
+          statementId={view.statementId}
+          onBack={() => { setView({ name: 'home' }); void loadStatements(); }}
+          onReconciled={() => {
+            setView({ name: 'home' });
+            setHomeTab('transactions');
+            void loadStatements();
+          }}
+        />
       )}
 
       {adding && (

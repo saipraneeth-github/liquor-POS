@@ -12,7 +12,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
 import { db } from '../../db/client.js';
 import {
-  accountLedgers, bankAccounts, bankIgnoreRules, bankLineMatches, bankStatementLines, bankStatements, branches, journalLines, journalVouchers,
+  accountLedgers, bankAccounts, bankIgnoreRules, bankLineMatches, bankTransactionTypes, bankStatementLines, bankStatements, branches, journalLines, journalVouchers, users,
 } from '../../db/schema.js';
 import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { Tx } from '../../lib/domain-events.js';
@@ -30,6 +30,9 @@ import {
   matchIgnoreRule, postingForCategory, rowsToLines, scanBalanceHints, suggestMatches, suggestPattern, summarise, textLinesToTable, verifyBalanceChain,
   type BalanceCheck, type BalanceHints, type BankCategory, type BookEntry, type ColumnMapping, type IgnoreReason, type IgnoreRule, type ParsedLine, type Suggestion,
 } from './bank.engine.js';
+import { bankFormatToTable, sniffBankFormat } from './bank-formats.js';
+import { categoryLabel } from './ledger-txn.engine.js';
+import { ensureDefaultCategories, recordPostedLine } from './ledger-txn.service.js';
 
 const D = (v: Decimal.Value) => new Decimal(v);
 const money2 = (d: Decimal) => d.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
@@ -71,10 +74,22 @@ export const UploadFieldsSchema = z.object({
 export type UploadFields = z.infer<typeof UploadFieldsSchema>;
 
 export const PostLineSchema = z.object({
-  category: z.enum(POSTABLE_CATEGORIES as [BankCategory, ...BankCategory[]]),
+  category: z.enum(POSTABLE_CATEGORIES as [BankCategory, ...BankCategory[]]).optional(),
+  typeId: z.string().uuid().optional(),        // one of the customer's own types for this account (instead of a built-in category)
   ledgerId: z.string().uuid().optional(),
   narration: z.string().trim().max(200).optional(),
+}).refine((v) => (v.category ? 1 : 0) + (v.typeId ? 1 : 0) === 1, { message: 'Choose either a category or one of your own types' });
+
+/** A transaction type the customer defines for one bank account. */
+export const CreateTypeSchema = z.object({
+  name: z.string().trim().min(3, 'Use at least 3 characters').max(40, 'Use at most 40 characters'),
+  direction: z.enum(['IN', 'OUT', 'EITHER']),
+  ledgerId: z.string().uuid('Choose the ledger account it posts to'),
+  matchText: z.string().trim().max(80).optional().transform((v) => (v ? v : undefined))
+    .refine((v) => v === undefined || v.length >= MIN_RULE_PATTERN, `Use at least ${MIN_RULE_PATTERN} characters`),
+  applyToOpen: z.boolean().optional(),         // also offer it on lines already waiting for a decision
 });
+export const UpdateTypeSchema = z.object({ isActive: z.boolean() });
 export const AcceptSchema = z.object({ postFee: z.boolean().optional() });
 const AMOUNT = /^\d+(\.\d{1,2})?$/;
 const IgnoreReasonEnum = z.enum(IGNORE_REASONS);
@@ -221,7 +236,7 @@ export async function updateAccount(user: JwtPayload, id: string, input: z.infer
 // ─── PARSING (file → lines) ─────────────────────────────────────────────────
 
 export interface ParseOutcome {
-  source: 'CSV' | 'EXCEL' | 'PDF';
+  source: 'CSV' | 'EXCEL' | 'PDF' | 'OFX' | 'QIF';
   fileHash: string;
   headers: string[];
   headerRow: number;
@@ -257,8 +272,17 @@ export function parseMappingField(raw: string | undefined): ColumnMapping | unde
   return m;
 }
 
+/** The text of an upload that is OFX / QIF (bank export formats), else null. Bank files are often Latin-1, not UTF-8. */
+function bankFormatText(buf: Buffer): string | null {
+  if (buf.subarray(0, 1024).includes(0)) return null;
+  let text: string;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = buf.toString('latin1'); }
+  return sniffBankFormat(text) ? text : null;
+}
+
 export async function parseStatementFile(buf: Buffer, fields: UploadFields = {}): Promise<ParseOutcome> {
-  const detected = detectFileType(buf);   // throws UnsupportedFileError (415) for anything that is not CSV / XLSX / PDF / image
+  const formatText = bankFormatText(buf);
+  const detected = formatText ? { kind: 'CSV' as const, offset: undefined } : detectFileType(buf);   // throws UnsupportedFileError (415) for anything that is not CSV / XLSX / PDF / image
   if (detected.kind === 'IMAGE') throw new UnsupportedFileError('Photos of statements are not supported. Download the statement as CSV, Excel (.xlsx) or a PDF.');
   const fileHash = createHash('sha256').update(buf).digest('hex');
   const warnings: string[] = [];
@@ -269,7 +293,16 @@ export async function parseStatementFile(buf: Buffer, fields: UploadFields = {})
   let fixedMapping: ColumnMapping | undefined;
   let fixedHeaderRow: number | undefined;
 
-  if (detected.kind === 'CSV') {
+  if (formatText) {
+    let table;
+    try { table = bankFormatToTable(formatText)!; } catch (err) { throw new BusinessRuleError((err as Error).message); }
+    source = table.kind;
+    rows = table.rows;
+    pdfHints = table.hints;
+    fixedMapping = table.mapping;
+    fixedHeaderRow = table.headerRow;
+    warnings.push(...table.warnings);
+  } else if (detected.kind === 'CSV') {
     source = 'CSV';
     rows = parseCsvRows(decodeText(buf));
   } else if (detected.kind === 'EXCEL') {
@@ -488,6 +521,9 @@ export async function runAutoMatch(user: JwtPayload, statementId: string): Promi
     .where(and(eq(bankIgnoreRules.accountId, account.id), eq(bankIgnoreRules.isActive, true)))
     .orderBy(asc(bankIgnoreRules.createdAt))).map(toEngineRule);
 
+  const customTypes = await db.select().from(bankTransactionTypes)
+    .where(and(eq(bankTransactionTypes.accountId, account.id), eq(bankTransactionTypes.isActive, true), sql`${bankTransactionTypes.matchText} is not null`));
+
   let suggested = 0;
   let autoIgnored = 0;
   const autoRuleIds = new Set<string>();
@@ -512,6 +548,11 @@ export async function runAutoMatch(user: JwtPayload, statementId: string): Promi
           reason: `Matches your ignore rule “${rule.pattern}” (${REASON_LABEL[rule.reason].toLowerCase()}). Confirm to ignore it.`,
         };
       }
+      // The customer's own types: a line the books have no answer for, whose text names one of them, is offered as that type
+      if (!rule && (!s || s.kind === 'POST')) {
+        const t = customTypeFor(l, customTypes);
+        if (t) s = customTypeSuggestion(t, lineSide(l));
+      }
       if (s) suggested++;
       await tx.update(bankStatementLines).set({
         status: s ? 'SUGGESTED' : 'UNMATCHED',
@@ -524,6 +565,91 @@ export async function runAutoMatch(user: JwtPayload, statementId: string): Promi
     await logAudit(user.sub, 'bank.line.auto_ignore', { type: 'bank_statement', id: statementId }, { count: autoIgnored, ruleIds: [...autoRuleIds] });
   }
   return { suggested, unmatched: open.length - suggested - autoIgnored, autoIgnored };
+}
+
+// ─── CUSTOMER-DEFINED TRANSACTION TYPES ─────────────────────────────────────
+
+type TxnType = typeof bankTransactionTypes.$inferSelect;
+
+const typeFitsSide = (t: TxnType, side: 'IN' | 'OUT') => t.direction === 'EITHER' || t.direction === side;
+
+/** The first type whose text appears in the line's narration/reference and that fits the line's side. */
+function customTypeFor(l: Line, types: TxnType[]): TxnType | null {
+  const hay = `${l.narration} ${l.reference ?? ''}`.toLowerCase();
+  const side = lineSide(l);
+  return types.find((t) => t.matchText && typeFitsSide(t, side) && hay.includes(t.matchText.toLowerCase())) ?? null;
+}
+
+function customTypeSuggestion(t: TxnType, side: 'IN' | 'OUT'): Suggestion {
+  return {
+    kind: 'POST', category: side === 'IN' ? 'OTHER_RECEIPT' : 'OTHER_PAYMENT', confidence: 0.75,
+    customTypeId: t.id, customTypeName: t.name, reason: `The narration mentions “${t.matchText}”, which is your type “${t.name}”.`,
+  };
+}
+
+async function assertTypeLedger(account: Account, ledgerId: string) {
+  const [ledger] = await db.select({ branchId: accountLedgers.branchId, code: accountLedgers.code }).from(accountLedgers).where(eq(accountLedgers.id, ledgerId)).limit(1);
+  if (!ledger || ledger.branchId !== account.branchId) throw new BusinessRuleError("That ledger does not belong to this account's books");
+  if (ledger.code === 'BANK') throw new BusinessRuleError('Choose the other side of the entry, not the bank ledger itself');
+}
+
+/** Rent, Wages, Utilities and Supplies, ready to post to (idempotent). */
+export async function addDefaultCategories(user: JwtPayload, accountId: string) {
+  const account = await loadAccount(user, accountId);
+  return ensureDefaultCategories(user, account);
+}
+
+export async function listTypes(user: JwtPayload, accountId: string) {
+  await loadAccount(user, accountId);
+  return db.select({
+    id: bankTransactionTypes.id, name: bankTransactionTypes.name, direction: bankTransactionTypes.direction, ledgerId: bankTransactionTypes.ledgerId,
+    ledgerName: accountLedgers.name, matchText: bankTransactionTypes.matchText, isActive: bankTransactionTypes.isActive,
+  }).from(bankTransactionTypes)
+    .innerJoin(accountLedgers, eq(accountLedgers.id, bankTransactionTypes.ledgerId))
+    .where(eq(bankTransactionTypes.accountId, accountId))
+    .orderBy(asc(bankTransactionTypes.name));
+}
+
+export async function createType(user: JwtPayload, accountId: string, input: z.infer<typeof CreateTypeSchema>) {
+  const account = await loadAccount(user, accountId);
+  await assertTypeLedger(account, input.ledgerId);
+  let row: TxnType;
+  try {
+    [row] = await db.insert(bankTransactionTypes).values({
+      accountId, name: input.name, nameKey: input.name.toLowerCase(), direction: input.direction, ledgerId: input.ledgerId,
+      matchText: input.matchText ?? null, createdById: user.sub,
+    }).returning();
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new ConflictError(`A type named “${input.name}” already exists for this account`);
+    throw err;
+  }
+  await logAudit(user.sub, 'bank.type.create', { type: 'bank_transaction_type', id: row.id }, { accountId, name: row.name, direction: row.direction });
+
+  // "Save and apply": offer the new type on lines still waiting for a decision (never over a book-entry or ignore suggestion)
+  let applied = 0;
+  if (input.applyToOpen && row.matchText) {
+    const open = await db.select().from(bankStatementLines)
+      .where(and(eq(bankStatementLines.accountId, accountId), inArray(bankStatementLines.status, ['UNMATCHED', 'SUGGESTED'])));
+    for (const l of open) {
+      const existing = l.suggestion as { kind?: string } | null;
+      if (existing && existing.kind !== 'POST') continue;
+      if (!customTypeFor(l, [row])) continue;
+      const s = customTypeSuggestion(row, lineSide(l));
+      await db.update(bankStatementLines).set({ status: 'SUGGESTED', suggestion: s as unknown as Record<string, unknown>, confidence: s.confidence.toFixed(3) })
+        .where(eq(bankStatementLines.id, l.id));
+      applied++;
+    }
+  }
+  return { type: row, applied };
+}
+
+export async function updateType(user: JwtPayload, id: string, input: z.infer<typeof UpdateTypeSchema>) {
+  const [t] = await db.select().from(bankTransactionTypes).where(eq(bankTransactionTypes.id, id)).limit(1);
+  if (!t) throw new NotFoundError('Transaction type not found');
+  await loadAccount(user, t.accountId);
+  const [row] = await db.update(bankTransactionTypes).set({ isActive: input.isActive }).where(eq(bankTransactionTypes.id, id)).returning();
+  await logAudit(user.sub, 'bank.type.update', { type: 'bank_transaction_type', id }, { isActive: input.isActive });
+  return row;
 }
 
 // ─── IGNORE RULES ───────────────────────────────────────────────────────────
@@ -606,7 +732,14 @@ async function postVoucherForLine(
 ): Promise<string> {
   const ids = await ensureSystemLedgers(tx, account.branchId);
   const lines = spec.lines.map((l) => {
-    const ledger = l.ledger === '__OTHER__' ? otherLedgerId : ids.get(l.ledger);
+    let ledger: string | undefined;
+    if (l.ledger === '__OTHER__') {
+      ledger = otherLedgerId;
+    } else if (otherLedgerId && l.ledger !== 'BANK') {
+      ledger = otherLedgerId;
+    } else {
+      ledger = ids.get(l.ledger);
+    }
     if (!ledger) throw new BusinessRuleError(`Ledger ${l.ledger} is not available for this branch`);
     return { ledger, debit: l.debit, credit: l.credit };
   });
@@ -733,28 +866,50 @@ export async function postLine(user: JwtPayload, lineId: string, input: z.infer<
   const { line, account } = await loadLine(user, lineId);
   assertOpen(line);
   const side = lineSide(line);
-  if (CATEGORY_SIDE[input.category] !== side) {
-    throw new BusinessRuleError(`${input.category.replace(/_/g, ' ').toLowerCase()} cannot be used for a ${side === 'IN' ? 'credit (money in)' : 'debit (money out)'} line`);
+  const sideWord = side === 'IN' ? 'credit (money in)' : 'debit (money out)';
+  let category: BankCategory;
+  let chosenLedgerId = input.ledgerId;
+  let customType: TxnType | null = null;
+  if (input.typeId) {
+    const [t] = await db.select().from(bankTransactionTypes).where(and(eq(bankTransactionTypes.id, input.typeId), eq(bankTransactionTypes.accountId, account.id))).limit(1);
+    if (!t) throw new NotFoundError('Transaction type not found');
+    if (!t.isActive) throw new BusinessRuleError(`“${t.name}” is switched off`);
+    if (!typeFitsSide(t, side)) throw new BusinessRuleError(`“${t.name}” cannot be used for a ${sideWord} line`);
+    customType = t;
+    category = side === 'IN' ? 'OTHER_RECEIPT' : 'OTHER_PAYMENT';
+    chosenLedgerId = t.ledgerId;
+  } else {
+    category = input.category!;
+    if (CATEGORY_SIDE[category] !== side) {
+      throw new BusinessRuleError(`${category.replace(/_/g, ' ').toLowerCase()} cannot be used for a ${sideWord} line`);
+    }
   }
-  const spec = postingForCategory(input.category, money2(lineAmount(line)));
+  const spec = postingForCategory(category, money2(lineAmount(line)));
   let otherLedgerId: string | undefined;
   if (spec.lines.some((l) => l.ledger === '__OTHER__')) {
-    if (!input.ledgerId) throw new BusinessRuleError('Choose the ledger account this belongs to');
+    if (!chosenLedgerId) throw new BusinessRuleError('Choose the ledger account this belongs to');
     const [ledger] = await db.select({ id: accountLedgers.id, branchId: accountLedgers.branchId, code: accountLedgers.code })
-      .from(accountLedgers).where(eq(accountLedgers.id, input.ledgerId)).limit(1);
+      .from(accountLedgers).where(eq(accountLedgers.id, chosenLedgerId)).limit(1);
+    if (!ledger || ledger.branchId !== account.branchId) throw new BusinessRuleError('That ledger does not belong to this account\'s books');
+    if (ledger.code === 'BANK') throw new BusinessRuleError('Choose the other side of the entry, not the bank ledger itself');
+    otherLedgerId = ledger.id;
+  } else if (chosenLedgerId) {
+    const [ledger] = await db.select({ id: accountLedgers.id, branchId: accountLedgers.branchId, code: accountLedgers.code })
+      .from(accountLedgers).where(eq(accountLedgers.id, chosenLedgerId)).limit(1);
     if (!ledger || ledger.branchId !== account.branchId) throw new BusinessRuleError('That ledger does not belong to this account\'s books');
     if (ledger.code === 'BANK') throw new BusinessRuleError('Choose the other side of the entry, not the bank ledger itself');
     otherLedgerId = ledger.id;
   }
-  const narration = input.narration || `Bank: ${line.narration || input.category}`;
+  const narration = input.narration || `Bank: ${customType ? `${customType.name}: ` : ''}${line.narration || category}`;
   const voucherId = await db.transaction(async (tx) => {
     const vid = await postVoucherForLine(tx, account, line, user, spec, narration, otherLedgerId);
     await tx.update(bankStatementLines).set({
-      status: 'MATCHED', category: input.category, voucherId: vid, feeAmount: '0.00', resolvedById: user.sub, resolvedAt: new Date(),
+      status: 'MATCHED', category: customType ? `CUSTOM:${customType.id}` : category, voucherId: vid, feeAmount: '0.00', resolvedById: user.sub, resolvedAt: new Date(),
     }).where(eq(bankStatementLines.id, line.id));
+    await recordPostedLine(tx, { account, line, category: customType ? customType.name : categoryLabel(category), voucherId: vid, userId: user.sub });
     return vid;
   });
-  await logAudit(user.sub, 'bank.line.post', { type: 'bank_statement_line', id: line.id }, { category: input.category, amount: money2(lineAmount(line)), voucherId });
+  await logAudit(user.sub, 'bank.line.post', { type: 'bank_statement_line', id: line.id }, { category: customType ? `CUSTOM:${customType.id}` : category, amount: money2(lineAmount(line)), voucherId });
   return { status: 'MATCHED', voucherId };
 }
 
@@ -842,6 +997,72 @@ export async function unmatchLine(user: JwtPayload, lineId: string) {
   });
   await logAudit(user.sub, 'bank.line.unmatch', { type: 'bank_statement_line', id: line.id });
   return { status: 'UNMATCHED' };
+}
+
+/** Everything behind one statement line: the book entries it is matched to, the voucher it posted, and who resolved it. */
+export async function getLineDetail(user: JwtPayload, lineId: string) {
+  const { line } = await loadLine(user, lineId);
+  const entries = await db.select({
+    id: journalLines.id, debit: journalLines.debit, credit: journalLines.credit,
+    voucherNumber: journalVouchers.voucherNumber, date: journalVouchers.voucherDate,
+    narration: journalVouchers.narration, sourceType: journalVouchers.sourceType,
+  }).from(bankLineMatches)
+    .innerJoin(journalLines, eq(journalLines.id, bankLineMatches.journalLineId))
+    .innerJoin(journalVouchers, eq(journalVouchers.id, journalLines.voucherId))
+    .where(eq(bankLineMatches.lineId, line.id))
+    .orderBy(asc(journalVouchers.voucherDate));
+  let resolvedBy: string | null = null;
+  if (line.resolvedById) {
+    const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, line.resolvedById)).limit(1);
+    resolvedBy = u?.name ?? null;
+  }
+  let voucherNumber: string | null = null;
+  if (line.voucherId) {
+    const [v] = await db.select({ n: journalVouchers.voucherNumber }).from(journalVouchers).where(eq(journalVouchers.id, line.voucherId)).limit(1);
+    voucherNumber = v?.n ?? null;
+  }
+  return {
+    valueDate: line.valueDate, hash: line.hash, resolvedAt: line.resolvedAt, resolvedBy, voucherNumber,
+    entries: entries.map((e) => ({ id: e.id, voucherNumber: e.voucherNumber, date: e.date, narration: e.narration, sourceType: e.sourceType, debit: e.debit, credit: e.credit })),
+  };
+}
+
+/**
+ * The book side of a statement: every BANK-ledger entry around the statement's dates, whether or not a line already
+ * accounts for it. `matchedLineId` says which statement line it is matched to (a line on this or another statement).
+ */
+export async function listBookEntries(user: JwtPayload, statementId: string) {
+  const { statement, account } = await loadStatement(user, statementId);
+  const bounds = await db.select({ lo: sql<string | null>`min(${bankStatementLines.txnDate})`, hi: sql<string | null>`max(${bankStatementLines.txnDate})` })
+    .from(bankStatementLines).where(eq(bankStatementLines.statementId, statementId));
+  const lo = statement.periodStart ?? bounds[0]?.lo;
+  const hi = statement.periodEnd ?? bounds[0]?.hi;
+  if (!lo || !hi) return [];
+  const branchIds = await scopeBranchIds(account);
+  const rows = await db
+    .select({
+      id: journalLines.id, date: journalVouchers.voucherDate, debit: journalLines.debit, credit: journalLines.credit,
+      narration: journalVouchers.narration, sourceType: journalVouchers.sourceType, voucherNumber: journalVouchers.voucherNumber,
+      matchedLineId: bankLineMatches.lineId, postedForLineId: bankStatementLines.id,
+    })
+    .from(journalLines)
+    .innerJoin(journalVouchers, eq(journalLines.voucherId, journalVouchers.id))
+    .innerJoin(accountLedgers, eq(journalLines.ledgerId, accountLedgers.id))
+    .leftJoin(bankLineMatches, eq(bankLineMatches.journalLineId, journalLines.id))
+    .leftJoin(bankStatementLines, eq(bankStatementLines.voucherId, journalVouchers.id))
+    .where(and(
+      eq(accountLedgers.code, 'BANK'),
+      inArray(accountLedgers.branchId, branchIds),
+      gte(journalVouchers.voucherDate, addDays(lo, -12)),
+      lte(journalVouchers.voucherDate, addDays(hi, 8)),
+    ))
+    .orderBy(asc(journalVouchers.voucherDate), asc(journalVouchers.voucherNumber))
+    .limit(1000);
+  // A voucher that a line posted itself is "matched" to that line even though no match row exists
+  return rows.map((r) => ({
+    id: r.id, date: r.date, debit: r.debit, credit: r.credit, narration: r.narration, sourceType: r.sourceType,
+    voucherNumber: r.voucherNumber, matchedLineId: r.matchedLineId ?? r.postedForLineId ?? null,
+  }));
 }
 
 /** Unmatched book entries near a line, for picking a match by hand. */

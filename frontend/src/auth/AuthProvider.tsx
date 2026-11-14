@@ -31,7 +31,7 @@ export function isManagerLike(u: User | null | undefined): boolean {
   return !!u && (u.role === 'owner' || u.role === 'office_admin' || u.role === 'manager');
 }
 
-export type BranchOption = { id: string; name: string; code: string };
+export type BranchOption = { id: string; name: string; code: string; /** Features the Super Admin switched off for this branch. */ disabledFeatures?: string[] };
 
 /** Owners have no home branch; they work in the branch picked in the header. */
 export type SaasRole = 'super_admin' | 'admin' | 'office_admin' | 'manager' | 'cashier' | 'steward';
@@ -49,6 +49,8 @@ interface AuthContextType {
   activeBranchId: string | null;
   setActiveBranch: (id: string) => void;
   refreshBranches: (preferBranchId?: string) => Promise<BranchOption[]>;
+  /** Features the Super Admin switched off for the branch being worked in. */
+  disabledFeatures: string[];
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -120,6 +122,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshBranches();
   }, [isOwner, rawUser?.id, refreshBranches]);
 
+  // Staff work in one branch and never load the branch list; they still need to know what is switched off there
+  const [ownDisabled, setOwnDisabled] = useState<string[]>([]);
+  useEffect(() => {
+    if (isOwner || !rawUser) { setOwnDisabled([]); return; }
+    let live = true;
+    api.get<BranchOption[]>('/branches').then((list) => { if (live) setOwnDisabled(list.find((b) => b.id === rawUser.branchId)?.disabledFeatures ?? list[0]?.disabledFeatures ?? []); }).catch(() => { if (live) setOwnDisabled([]); });
+    return () => { live = false; };
+  }, [isOwner, rawUser?.id, rawUser?.branchId]);
+
   // React to cross-component or global branch updates
   useEffect(() => {
     const handleBranchesUpdated = (e: Event) => {
@@ -142,6 +153,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSelected(id);
   };
 
+  const disabledFeatures = useMemo(
+    () => (isOwner ? branches.find((b) => b.id === selected)?.disabledFeatures ?? [] : ownDisabled),
+    [isOwner, branches, selected, ownDisabled],
+  );
+
   const user = useMemo<User | null>(() => {
     if (!rawUser) return null;
     return rawUser.role === 'owner' ? { ...rawUser, branchId: selected } : rawUser;
@@ -160,6 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         activeBranchId: selected,
         setActiveBranch,
         refreshBranches,
+        disabledFeatures,
       }}
     >
       {children}

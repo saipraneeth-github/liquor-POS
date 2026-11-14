@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  assignHashes, classifyHeader, detectDayFirst, detectMapping, feePosting, hintCategory, looksLikeMoney, matchIgnoreRule, parseBankDate, parseMoney,
+  assignHashes, classifyHeader, detectDayFirst, detectMapping, feePosting, hintCategory, CATEGORY_NEEDS_LEDGER, CATEGORY_SIDE, POSTABLE_CATEGORIES, postingForCategory, looksLikeMoney, matchIgnoreRule, parseBankDate, parseMoney,
   postingForCategory, rowsToLines, scanBalanceHints, suggestMatches, suggestPattern, summarise, textLinesToTable, verifyBalanceChain,
   type BookEntry, type IgnoreRule, type MatchLine,
 } from '../../src/modules/bank/bank.engine.js';
@@ -436,9 +436,35 @@ describe('hintCategory', () => {
     expect(h('CASH DEPOSIT BY SELF', 'credit')).toBe('CASH_DEPOSIT');
     expect(h('RAZORPAY SETTLEMENT', 'credit')).toBe('SETTLEMENT');
   });
+  it('recognises the patterns seen on real Indian liquor-store statements', () => {
+    expect(h('CSH DEP (CDM)-  /  123456 7-', 'credit')).toBe('CASH_DEPOSIT');
+    expect(h('By-Transfer NEFT : INDBN 12/10/2026 PAYSWIFF TECHNOLOGIES PRIVATE LIMI', 'credit')).toBe('SETTLEMENT');
+    expect(h('BY TRANSFER- TRANSFER FROM 4430 NEFT*UTIBN / 2*ONE MOBIKWIK SYS-', 'credit')).toBe('SETTLEMENT');
+    expect(h('BULK POSTING-  /  123 SBIP_CR_TEN ELEVEN WINES TSN 3108-', 'credit')).toBe('SETTLEMENT');
+    expect(h('By-Clearing MS INDUSTRIES AND SPIRITS PVT LTD, Chq : 1', 'credit')).toBe('SUPPLIER_REFUND');
+    expect(h('TO TRANSFER- NCK00S INB- ZPQ7 TRANSFER TO TNSG CYBER TREASU', 'debit')).toBe('EXCISE_GOVT');
+    expect(h('To-Transfer YOUR SELF DD 123 (COMMISSIONER PROHIBITION AND EXCISE', 'debit')).toBe('EXCISE_GOVT');
+    expect(h('To-Charges SMS CHARGES 31/10/2026 OCTOBER', 'debit')).toBe('BANK_CHARGE');
+    expect(h('STAFF SALARY OCTOBER', 'debit')).toBe('SALARY_WAGES');
+    expect(h('SHOP RENT FOR NOV 2026', 'debit')).toBe('RENT');
+    expect(h('BESCOM ELECTRICITY BILL', 'debit')).toBe('UTILITIES');
+    expect(h('MISCELLANEOUS OFFICE EXPENSES', 'debit')).toBe('MISC_EXPENSES');
+  });
   it('does not guess for an ordinary transfer, and respects direction', () => {
     expect(h('NEFT-RAJ BEVERAGES', 'debit')).toBeNull();
     expect(h('SMS ALERT CHARGES', 'credit')).toBeNull();
+  });
+});
+
+describe('new transaction types', () => {
+  it('every postable type has a side and posts a balanced voucher', () => {
+    for (const c of POSTABLE_CATEGORIES) {
+      const r = postingForCategory(c, '100.00');
+      expect(r.side).toBe(CATEGORY_SIDE[c]);
+      const dr = r.lines.reduce((t, l) => t + Number(l.debit), 0), cr = r.lines.reduce((t, l) => t + Number(l.credit), 0);
+      expect(dr).toBe(cr);
+      expect(r.lines.some((l) => l.ledger === '__OTHER__')).toBe(CATEGORY_NEEDS_LEDGER.has(c));
+    }
   });
 });
 
@@ -598,6 +624,11 @@ describe('posting rules', () => {
     ['BANK_CHARGE', 'PAYMENT', 'OUT', ['BANK_CHARGES', 'BANK']],
     ['INTEREST', 'RECEIPT', 'IN', ['BANK', 'INTEREST_INCOME']],
     ['SUPPLIER_PAYMENT', 'PAYMENT', 'OUT', ['SUNDRY_CREDITORS', 'BANK']],
+    ['SALARY_WAGES', 'PAYMENT', 'OUT', ['SALARY_WAGES', 'BANK']],
+    ['RENT', 'PAYMENT', 'OUT', ['RENT', 'BANK']],
+    ['MISC_EXPENSES', 'PAYMENT', 'OUT', ['MISC_EXPENSES', 'BANK']],
+    ['UTILITIES', 'PAYMENT', 'OUT', ['UTILITIES', 'BANK']],
+    ['EXCISE_GOVT', 'PAYMENT', 'OUT', ['EXCISE_GOVT', 'BANK']],
   ] as const)('%s is a balanced %s voucher', (category, type, side, ledgers) => {
     const p = postingForCategory(category, '100.00');
     expect(p.voucherType).toBe(type);

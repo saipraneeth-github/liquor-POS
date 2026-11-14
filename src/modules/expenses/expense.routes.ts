@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
+import { requirePermission } from '../permissions/permission.service.js';
 import { sendError } from '../../lib/errors.js';
 import { ListExpensesQuerySchema, RecordExpenseSchema, listExpenses, recordExpense } from './expense.service.js';
 
@@ -11,7 +12,7 @@ const BranchParamsSchema = z.object({ branchId: z.string().uuid() });
 export async function expenseRoutes(fastify: FastifyInstance) {
   // POST /expenses/:branchId — record an expense (posts a PAYMENT voucher)
   fastify.post('/expenses/:branchId', {
-    preHandler: requireRole('manager'),
+    preHandler: [requireRole('steward'), requirePermission('accounting.post')],
   }, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Validation failed', details: params.error.flatten() });
@@ -29,7 +30,7 @@ export async function expenseRoutes(fastify: FastifyInstance) {
 
   // GET /expenses/:branchId?from=&to= — expenses with totals by category
   fastify.get('/expenses/:branchId', {
-    preHandler: requireRole('manager'),
+    preHandler: [requireRole('steward'), requirePermission('accounting.view')],
   }, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Validation failed', details: params.error.flatten() });

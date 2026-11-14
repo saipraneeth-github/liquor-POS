@@ -58,27 +58,41 @@ test('forgot password: the form sits a little above the middle, not pushed down'
 });
 
 test('a supplier bill typed in by hand can be confirmed into stock', async ({ page }) => {
+  // The brand code is the first word of the description and brand mappings are shared by the whole business,
+  // so it must be unique to this run or the stock would land on an earlier run's product.
+  const product = `MB${stamp} Manual Brandy 750ml`;
+  const invNo = `MAN-${stamp}`;
   await login(page, 'manager@liquor.com');
-  await page.goto('/inventory');
-  await page.getByRole('button', { name: 'Current Store Stock' }).click();
-  await expect(page.locator('#stockTable tbody tr').first()).toBeVisible({ timeout: 15000 });
-  const qtyOf = async () => Number((await page.locator('#stockTable tbody tr').first().locator('td').nth(1).innerText()).match(/\d+/)?.[0] ?? '0');
-  const before = await qtyOf();
 
+  await page.goto('/invoices');
   await page.getByRole('button', { name: 'Add Supplier Bill' }).click();
   await page.getByText('Enter bill items manually').click();
-  const texts = page.locator('main input[type=text], main input:not([type])');
-  await texts.nth(0).fill(`Depot ${stamp}`);
-  await texts.nth(1).fill(`MAN-${stamp}`);
-  await page.locator('main input[type=number]').first().fill('6');
-  await page.getByRole('button', { name: /Proceed to Inward Confirmation/ }).click();
+  await page.locator('#invEditSupplier').fill(`Depot ${stamp}`);
+  await page.locator('#invEditNumber').fill(invNo);
+
+  // The first line starts as a placeholder: describe it and set 6 bottles at 400.00 (MRP 600.00)
+  const row = page.locator('#invEditLines .inv-edit-row').first();
+  await row.getByTitle('Edit row fields').click();
+  await row.locator('.ie-desc').fill(product);
+  await row.locator('.ie-qty').fill('6');
+  await row.locator('.ie-cost').fill('400.00');
+  await row.locator('.ie-mrp').fill('600.00');
+  await row.getByTitle('Save and make read-only').click();
+
+  // A new brand has to be added to the catalogue before stock can be inwarded against it
+  await row.getByRole('button', { name: 'Save to Mapping' }).click();
+  await expect(row).toHaveAttribute('data-match-status', /^(MATCHED|MANUAL)$/, { timeout: 15000 });
+
+  await page.click('#invReviewBtn');
+  await page.getByRole('button', { name: /Submit Invoice/ }).click();
 
   // the dialog states what will be posted, worked out from the lines (6 bottles at the line's cost)
-  await page.getByRole('button', { name: /Confirm & Add to Live Stock/ }).click();
+  await page.click('#invApproveBtn');
   await expect(page.locator('#confirmOk')).toBeVisible();
-  await expect(page.locator('[role=dialog], #modal').last()).not.toContainText('₹0.00');
+  await expect(page.locator('[role=dialog], #modal').last()).toContainText('₹2400.00');
   await page.click('#confirmOk');
 
-  await expect(page.locator('#stockTable')).toBeVisible({ timeout: 20000 });
-  await expect.poll(qtyOf, { timeout: 15000 }).toBe(before + 6);
+  await expect(page.locator('#invHistoryBox tr', { hasText: invNo })).toContainText('Added to Stock', { timeout: 20000 });
+  await page.goto('/inventory');
+  await expect(page.locator('#stockTable tbody tr', { hasText: product })).toContainText('6', { timeout: 15000 });
 });

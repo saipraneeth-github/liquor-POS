@@ -27,6 +27,7 @@ export default defineConfig({
       PORT: '3001',
       NODE_ENV: 'development',
       SEED_DEMO_STOCK: 'true',
+      ARCHIVE_RETENTION_DAYS: '0',   // lets the lifecycle spec delete a business right after archiving it (ignored in production)
     },
   },
   projects: [

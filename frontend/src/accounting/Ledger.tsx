@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
+import { BankTransactions } from '../bank/BankTransactions';
 
 type TrialBalanceRow = {
   name: string;
@@ -44,8 +45,8 @@ function fmtMoney(amount: string | number | undefined): string {
 }
 
 export function Ledger() {
-  const { user } = useAuth();
-  const [tab, setTab] = useState<'tb' | 'pl' | 'bs' | 'tally'>('tb');
+  const { user, activeBranchId } = useAuth();
+  const [tab, setTab] = useState<'tb' | 'pl' | 'bs' | 'bank' | 'tally'>('tb');
   const [loading, setLoading] = useState(false);
 
   const [tbData, setTbData] = useState<TrialBalanceResponse | null>(null);
@@ -54,7 +55,7 @@ export function Ledger() {
   const [tallyResult, setTallyResult] = useState('');
   const [tallyDownloading, setTallyDownloading] = useState(false);
 
-  const branchId = (user as any)?.branchId ?? '';
+  const branchId = activeBranchId ?? (user as any)?.branchId ?? '';
 
   const loadTb = useCallback(async () => {
     if (!branchId) return;
@@ -170,6 +171,19 @@ export function Ledger() {
           }`}
         >
           Balance Sheet
+        </button>
+        <button
+          id="acctab-bank"
+          type="button"
+          aria-selected={tab === 'bank'}
+          onClick={() => setTab('bank')}
+          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
+            tab === 'bank'
+              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Bank Transactions
         </button>
         <button
           id="acctab-tally"
@@ -349,6 +363,8 @@ export function Ledger() {
       )}
 
       {/* Tally Export Tab */}
+      {tab === 'bank' && <BankTransactions branchId={branchId} />}
+
       {tab === 'tally' && (
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border dark:border-gray-700 space-y-4 max-w-md">
           <h3 className="font-bold text-base">Tally XML Voucher Export</h3>

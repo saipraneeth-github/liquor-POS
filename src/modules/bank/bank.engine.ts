@@ -689,17 +689,32 @@ export function assignHashes(lines: ParsedLine[]): Array<ParsedLine & { hash: st
 
 export type BankCategory =
   | 'SETTLEMENT' | 'CASH_DEPOSIT' | 'CASH_WITHDRAWAL' | 'BANK_CHARGE' | 'INTEREST'
-  | 'SUPPLIER_PAYMENT' | 'OTHER_RECEIPT' | 'OTHER_PAYMENT';
+  | 'SUPPLIER_PAYMENT' | 'SUPPLIER_REFUND' | 'OWNER_CAPITAL' | 'OWNER_DRAWINGS'
+  | 'EXCISE_GOVT' | 'SALARY_WAGES' | 'RENT' | 'MISC_EXPENSES' | 'UTILITIES'
+  | 'INTER_ACCOUNT_IN' | 'INTER_ACCOUNT_OUT'
+  | 'OTHER_RECEIPT' | 'OTHER_PAYMENT';
 
-export const POSTABLE_CATEGORIES: BankCategory[] = ['CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'BANK_CHARGE', 'INTEREST', 'SUPPLIER_PAYMENT', 'OTHER_RECEIPT', 'OTHER_PAYMENT'];
+export const POSTABLE_CATEGORIES: BankCategory[] = [
+  'CASH_DEPOSIT', 'CASH_WITHDRAWAL', 'BANK_CHARGE', 'INTEREST', 'SUPPLIER_PAYMENT', 'SUPPLIER_REFUND',
+  'OWNER_CAPITAL', 'OWNER_DRAWINGS', 'EXCISE_GOVT', 'SALARY_WAGES', 'RENT', 'MISC_EXPENSES', 'UTILITIES',
+  'INTER_ACCOUNT_IN', 'INTER_ACCOUNT_OUT', 'OTHER_RECEIPT', 'OTHER_PAYMENT',
+];
 
 /** Which direction each category belongs to: 'IN' = a credit on the statement, 'OUT' = a debit. */
 export const CATEGORY_SIDE: Record<BankCategory, 'IN' | 'OUT'> = {
-  SETTLEMENT: 'IN', CASH_DEPOSIT: 'IN', INTEREST: 'IN', OTHER_RECEIPT: 'IN',
-  CASH_WITHDRAWAL: 'OUT', BANK_CHARGE: 'OUT', SUPPLIER_PAYMENT: 'OUT', OTHER_PAYMENT: 'OUT',
+  SETTLEMENT: 'IN', CASH_DEPOSIT: 'IN', INTEREST: 'IN', SUPPLIER_REFUND: 'IN', OWNER_CAPITAL: 'IN', INTER_ACCOUNT_IN: 'IN', OTHER_RECEIPT: 'IN',
+  CASH_WITHDRAWAL: 'OUT', BANK_CHARGE: 'OUT', SUPPLIER_PAYMENT: 'OUT', OWNER_DRAWINGS: 'OUT', EXCISE_GOVT: 'OUT', SALARY_WAGES: 'OUT',
+  RENT: 'OUT', MISC_EXPENSES: 'OUT', UTILITIES: 'OUT',
+  INTER_ACCOUNT_OUT: 'OUT', OTHER_PAYMENT: 'OUT',
 };
 
-const GATEWAY_RE = /razorpay|paytm|phonepe|payu|cashfree|billdesk|pine\s*labs|mswipe|\bedc\b|\bpos\b.*settle|settlement|merchant|bharatpe|google\s*pay|gpay|ccavenue|stripe|worldline|sale\s*proceeds|\bacq(uirer)?\b|card\s*sett|upi\s*sett/i;
+/** Types whose other side is an account the user must pick (no fixed ledger). */
+export const CATEGORY_NEEDS_LEDGER: ReadonlySet<BankCategory> = new Set<BankCategory>([
+  'INTER_ACCOUNT_IN', 'INTER_ACCOUNT_OUT', 'OTHER_RECEIPT', 'OTHER_PAYMENT',
+]);
+
+const GATEWAY_RE = /razorpay|paytm|phonepe|payu|cashfree|billdesk|pine\s*labs|mswipe|\bedc\b|\bpos\b.*settle|settlement|merchant|bharatpe|google\s*pay|gpay|ccavenue|stripe|worldline|sale\s*proceeds|\bacq(uirer)?\b|card\s*sett|upi\s*sett|payswiff|mobikwik|yesapn|bulk\s*posting|sbip_cr/i;
+const SUPPLIER_NAME_RE = /\b(spirits?|wines?|beverages?|breweries|brewery|distilleries|distillery|agencies|liquors?|industries|marketing\s*services|beers?)\b/i;
 
 /** Keyword hints only — a suggestion for the user to confirm, never an automatic decision. */
 export function hintCategory(line: { debit: string; credit: string; narration: string }): BankCategory | null {
@@ -708,16 +723,21 @@ export function hintCategory(line: { debit: string; credit: string; narration: s
   const isDebit = D(line.debit).gt(0);
   if (isCredit) {
     if (/\b(int\.?\s*(pd|paid|cr|credit|on)|interest\s*(paid|credit|cr)?|credit\s*interest|sb\s*int)\b/i.test(n) && !GATEWAY_RE.test(n)) return 'INTEREST';
-    if (/\b(cash\s*(dep|deposit)|cdm|by\s*cash|self\s*deposit|cash-dep)\b/i.test(n)) return 'CASH_DEPOSIT';
+    if (/\b(cash\s*(dep|deposit)|csh\s*dep|cdm|by\s*cash|self\s*deposit|cash-dep)\b/i.test(n)) return 'CASH_DEPOSIT';
     if (GATEWAY_RE.test(n)) return 'SETTLEMENT';
+    if (/by-?\s*(clearing|transfer)/i.test(n) && SUPPLIER_NAME_RE.test(n)) return 'SUPPLIER_REFUND';
   }
   if (isDebit) {
+    if (/tnsg|cyber\s*treasur|treasury|commissioner|prohibition|excise|e-?challan/i.test(n)) return 'EXCISE_GOVT';
     if (/\b(chg|chgs|charge|charges|fee|fees|penalty|amc|min(imum)?\s*bal|sms\s*(alert|chg)|gst\s*(on)?|cgst|sgst|igst|processing|annual|return\s*chg|cheque\s*return|cash\s*handling|nach\s*return)\b/i.test(n)) return 'BANK_CHARGE';
     if (/\b(atm|cash\s*(wdl|withdrawal)|nfs|self\s*(cheque|chq)|cash\s*wdl)\b/i.test(n)) return 'CASH_WITHDRAWAL';
+    if (/\b(salary|salaries|wages|payroll|stipend)\b/i.test(n)) return 'SALARY_WAGES';
+    if (/\b(rent|rental|lease|landlord|shop\s*rent|store\s*rent|office\s*rent)\b/i.test(n)) return 'RENT';
+    if (/\b(electricity|power|bescom|tneb|mseb|cesc|water|utility|utilities|broadband|wifi|internet|telephone|mobile\s*bill|airtel|jio|bsnl)\b/i.test(n)) return 'UTILITIES';
+    if (/\b(misc|miscellaneous|stationery|printing|refreshment|tea|coffee|cleaning|repairs?|maintenance)\b/i.test(n)) return 'MISC_EXPENSES';
   }
   return null;
 }
-
 // ─── MATCHING ───────────────────────────────────────────────────────────────
 
 /** One entry of the books' BANK ledger. `debit` = money in (receipt), `credit` = money out (payment). */
@@ -736,7 +756,7 @@ export type Suggestion =
   | { kind: 'IGNORE'; ruleId: string; pattern: string; ignoreReason: IgnoreReason; confidence: number; reason: string }
   | { kind: 'ONE_TO_ONE'; entryIds: string[]; confidence: number; reason: string }
   | { kind: 'SETTLEMENT'; entryIds: string[]; expected: string; fee: string; feePct: number; days: string[]; mode: 'ALL' | 'CARD' | 'UPI'; confidence: number; reason: string }
-  | { kind: 'POST'; category: BankCategory; confidence: number; reason: string };
+  | { kind: 'POST'; category: BankCategory; confidence: number; reason: string; customTypeId?: string; customTypeName?: string };
 
 export interface MatchOptions {
   windowDays: number;       // 1:1 — how far apart the statement date and the book date may be
@@ -901,7 +921,17 @@ export function postingForCategory(category: BankCategory, amount: string): { vo
     case 'BANK_CHARGE':     return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('BANK_CHARGES'), cr('BANK')] };
     case 'INTEREST':        return { voucherType: 'RECEIPT', side: 'IN',  lines: [dr('BANK'), cr('INTEREST_INCOME')] };
     case 'SUPPLIER_PAYMENT':return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('SUNDRY_CREDITORS'), cr('BANK')] };
+    case 'SUPPLIER_REFUND': return { voucherType: 'RECEIPT', side: 'IN',  lines: [dr('BANK'), cr('SUNDRY_CREDITORS')] };
+    case 'OWNER_CAPITAL':   return { voucherType: 'RECEIPT', side: 'IN',  lines: [dr('BANK'), cr('CAPITAL')] };
+    case 'OWNER_DRAWINGS':  return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('CAPITAL'), cr('BANK')] };
+    case 'SALARY_WAGES':    return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('SALARY_WAGES'), cr('BANK')] };
+    case 'RENT':            return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('RENT'), cr('BANK')] };
+    case 'MISC_EXPENSES':   return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('MISC_EXPENSES'), cr('BANK')] };
+    case 'UTILITIES':       return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('UTILITIES'), cr('BANK')] };
+    case 'EXCISE_GOVT':     return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('EXCISE_GOVT'), cr('BANK')] };
+    case 'INTER_ACCOUNT_IN':
     case 'OTHER_RECEIPT':   return { voucherType: 'RECEIPT', side: 'IN',  lines: [dr('BANK'), cr('__OTHER__')] };
+    case 'INTER_ACCOUNT_OUT':
     case 'OTHER_PAYMENT':   return { voucherType: 'PAYMENT', side: 'OUT', lines: [dr('__OTHER__'), cr('BANK')] };
     case 'SETTLEMENT':      throw new Error('A settlement is matched to sales, not posted');
   }

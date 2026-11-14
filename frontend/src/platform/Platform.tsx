@@ -4,8 +4,11 @@ import { errorMessage, showToast } from '../lib/print';
 import { Badge, Field, Modal, inr } from '../components/ui';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { PlatformInsights, healthTone, type PlatformDash, type QueueKey } from './PlatformInsights';
+import { ChangePlanModal } from './ChangePlanModal';
+import { fmtDay, planTone, type PlanInfo } from './planUi';
+import { ArchiveModal, DeleteTenantModal, downloadTenantExport } from './TenantLifecycleModals';
 
-type Plan = 'TRIAL' | 'STANDARD' | 'PRO';
+type Plan = string;
 
 interface Tenant {
   id: string;
@@ -25,6 +28,11 @@ interface Tenant {
   paidUntil: string | null;
   health: number;
   flags: QueueKey[];
+  nextPlan: string | null;
+  nextPlanFrom: string | null;
+  archivedAt: string | null;
+  archiveReason: string | null;
+  exportedAt: string | null;
 }
 
 interface Invoice {
@@ -61,8 +69,6 @@ const QUEUE_NAME: Record<QueueKey, string> = {
   trialEnding: 'trials ending soon', overdue: 'payments overdue', quiet: 'no bills in 7+ days', suspended: 'suspended',
 };
 
-const PLAN_TONE = { TRIAL: 'warn', STANDARD: 'info', PRO: 'good' } as const;
-const PLAN_DEFAULT_LIMIT: Record<Plan, number> = { TRIAL: 1, STANDARD: 3, PRO: 25 };
 
 const blankForm = {
   name: '', gstin: '', plan: 'TRIAL' as Plan, maxBranches: '', adminName: '', adminEmail: '', adminPassword: '',
@@ -88,6 +94,15 @@ export function Platform() {
   const [outbox, setOutbox] = useState<OutboxMail[]>([]);
   const [mailOpen, setMailOpen] = useState<OutboxMail | null>(null);
   const [runningJob, setRunningJob] = useState(false);
+  const [plans, setPlans] = useState<PlanInfo[]>([]);
+  const [changing, setChanging] = useState<Tenant | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'ARCHIVED' | 'ALL'>('ACTIVE');
+  const [archiving, setArchiving] = useState<Tenant | null>(null);
+  const [deleting, setDeleting] = useState<Tenant | null>(null);
+  const planName = (code: string) => plans.find((p) => p.code === code)?.name ?? code;
+  const limitOf = (code: string) => plans.find((p) => p.code === code)?.maxBranches ?? 1;
+  /** Plans that can be picked: on sale, plus the one a business is already on (it may have been retired since). */
+  const planChoices = (current?: string) => plans.filter((p) => p.isActive || p.code === current);
 
   const loadIntegrations = useCallback(() => {
     api.get<{ integrations: Integration[] }>('/platform/integrations').then((r) => setIntegrations(r.integrations)).catch(() => setIntegrations([]));
@@ -159,6 +174,39 @@ export function Platform() {
   };
 
   /** Support sign-in: swap to a 30 minute token for the tenant's Admin; the banner in the app offers the way back. */
+  const restore = async (tenant: Tenant) => {
+    try {
+      await api.post(`/platform/tenants/${tenant.id}/restore`);
+      showToast(`${tenant.name} restored.`);
+      load();
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
+    }
+  };
+
+  const exportData = async (tenant: Tenant) => {
+    try {
+      const n = await downloadTenantExport(tenant);
+      showToast(`Downloaded ${n} records.`);
+      load();
+    } catch (err) {
+      showToast(errorMessage(err), 'error');
+    }
+  };
+
+  const voidInvoice = async (inv: Invoice) => {
+    if (!billing) return;
+    try {
+      await api.post(`/platform/invoices/${inv.id}/void`);
+      showToast('Invoice voided.');
+      const fresh = await api.get<{ invoices: Invoice[] }>(`/platform/tenants/${billing.tenant.id}/invoices`);
+      setBilling({ tenant: billing.tenant, invoices: fresh.invoices });
+    } catch (err) {
+      showToast(friendly(errorMessage(err)), 'error');
+    }
+  };
+
+  /** Support sign-in: swap to a 30 minute token for the tenant's Admin; the banner in the app offers the way back. */
   const supportSignIn = async (tenant: Tenant) => {
     try {
       const res = await api.post<{ token: string; as: { name: string; email: string } }>(`/platform/tenants/${tenant.id}/impersonate`);
@@ -181,6 +229,7 @@ export function Platform() {
       ]);
       setDash(d);
       setTenants(t.tenants);
+      api.get<{ plans: PlanInfo[] }>('/platform/plans').then((r) => setPlans(r.plans)).catch(() => setPlans([]));
       loadAudit();
       loadIntegrations();
     } catch (err) {
@@ -195,7 +244,9 @@ export function Platform() {
   }, [load]);
 
   const needle = search.trim().toLowerCase();
+  const archivedCount = tenants.filter((t) => t.archivedAt).length;
   const visible = tenants.filter((t) =>
+    (statusFilter === 'ALL' || (statusFilter === 'ARCHIVED') === !!t.archivedAt) &&
     (!queue || t.flags.includes(queue)) &&
     (!needle || t.name.toLowerCase().includes(needle) || t.admins.some((a) => a.email.toLowerCase().includes(needle) || a.name.toLowerCase().includes(needle))));
 
@@ -250,6 +301,34 @@ export function Platform() {
       showToast(errorMessage(err), 'error');
     }
   };
+
+  /** The actions for one business: the table's last column on a screen, a folded list on a phone. */
+  const renderActions = (t: Tenant) => (
+    <>
+            {t.archivedAt ? (
+              <>
+                <button type="button" className="tenant-billing text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => openBilling(t)}>Billing</button>
+                <button type="button" className="tenant-restore text-xs text-emerald-600 hover:underline mr-3 cursor-pointer" onClick={() => restore(t)}>Restore</button>
+                <button type="button" className="tenant-export text-xs text-gray-600 dark:text-gray-300 hover:underline mr-3 cursor-pointer" onClick={() => exportData(t)}>Export data</button>
+                <button type="button" className="tenant-delete text-xs text-red-600 hover:underline cursor-pointer" onClick={() => setDeleting(t)}>Delete…</button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="tenant-change-plan text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => setChanging(t)}>Change plan</button>
+                <button type="button" className="text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => setEditing({ tenant: t, plan: t.plan, maxBranches: String(t.maxBranches), accessUntil: '' })}>Plan &amp; limits</button>
+                <button type="button" className="tenant-billing text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => openBilling(t)}>Billing</button>
+                <button type="button" className="text-xs text-gray-600 dark:text-gray-300 hover:underline mr-3 cursor-pointer" onClick={() => resetAdminPassword(t)}>Reset password</button>
+                <button type="button" className="tenant-support text-xs text-gray-600 dark:text-gray-300 hover:underline mr-3 cursor-pointer" onClick={() => supportSignIn(t)}>Support sign-in</button>
+                {t.isActive ? (
+                  <button type="button" className="text-xs text-red-600 hover:underline mr-3 cursor-pointer" onClick={() => setSuspending(t)}>Suspend</button>
+                ) : (
+                  <button type="button" className="text-xs text-emerald-600 hover:underline cursor-pointer" onClick={() => setActive(t, true)}>Reactivate</button>
+                )}
+                <button type="button" className="tenant-archive text-xs text-gray-600 dark:text-gray-300 hover:underline cursor-pointer" onClick={() => setArchiving(t)}>Archive…</button>
+              </>
+            )}
+    </>
+  );
 
   return (
     <section className="page active lc lc-bleed" id="page-platform">
@@ -327,6 +406,11 @@ export function Platform() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <select id="tenantStatusFilter" aria-label="Show" className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-600" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'ACTIVE' | 'ARCHIVED' | 'ALL')}>
+          <option value="ACTIVE">Not archived</option>
+          <option value="ARCHIVED">Archived ({archivedCount})</option>
+          <option value="ALL">All</option>
+        </select>
         {queue && (
           <span id="queueFilterNote">
             Showing {visible.length} of {tenants.length}: {QUEUE_NAME[queue]}{' '}
@@ -341,7 +425,8 @@ export function Platform() {
         ) : visible.length === 0 ? (
           <div className="p-8 text-center text-sm text-gray-500">No tenants yet.</div>
         ) : (
-          <table className="w-full text-left text-sm" id="tenantTable">
+          <>
+          <table className="hidden md:table w-full text-left text-sm" id="tenantTable">
             <thead>
               <tr className="border-b text-[11px] uppercase tracking-wider text-gray-500 bg-gray-50 dark:bg-gray-900/40 dark:border-gray-700">
                 <th className="py-2.5 px-4">Business</th>
@@ -361,8 +446,9 @@ export function Platform() {
                     <div className="text-xs text-gray-500">{t.admins.map((a) => a.email).join(', ') || 'No admin'}</div>
                   </td>
                   <td className="py-3 px-4">
-                    <Badge tone={PLAN_TONE[t.plan]}>{t.plan}</Badge>
+                    <Badge tone={planTone(t.plan)}>{planName(t.plan)}</Badge>
                     <div className="text-[11px] text-gray-500 mt-1">{billingLine(t)}</div>
+                    {t.nextPlan && <div className="tenant-scheduled text-[11px] text-blue-700 mt-0.5">→ {planName(t.nextPlan)} from {fmtDay(t.nextPlanFrom)}</div>}
                   </td>
                   <td className="py-3 px-4 font-mono">
                     <span className={t.branchCount >= t.maxBranches ? 'text-amber-600 font-semibold' : ''}>{t.branchCount}</span> / {t.maxBranches}
@@ -373,7 +459,8 @@ export function Platform() {
                     <div className="text-xs text-gray-500">{t.bills30d} bills</div>
                   </td>
                   <td className="py-3 px-4">
-                    {!t.isActive ? <Badge tone="bad">Suspended</Badge>
+                    {t.archivedAt ? <Badge tone="muted">Archived</Badge>
+                      : !t.isActive ? <Badge tone="bad">Suspended</Badge>
                       : t.access === 'TRIAL_EXPIRED' ? <Badge tone="bad">Trial ended</Badge>
                       : t.access === 'OVERDUE' ? <Badge tone="bad">Payment overdue</Badge>
                       : <Badge tone="good">Active</Badge>}
@@ -382,24 +469,41 @@ export function Platform() {
                     </div>
                     <div className="text-[11px] text-gray-500 mt-1">
                       {t.flags.includes('overdue') && t.isActive ? <b className="text-red-500">Payment overdue · </b> : null}
-                      {t.lastBillAt ? `Last bill ${fmtDate(t.lastBillAt)}` : 'Never billed'}
+                      {t.archivedAt ? `Archived ${fmtDate(t.archivedAt)}${t.archiveReason ? ` — ${t.archiveReason}` : ''}` : t.lastBillAt ? `Last bill ${fmtDate(t.lastBillAt)}` : 'Never billed'}
                     </div>
                   </td>
                   <td className="py-3 px-4 text-right whitespace-nowrap">
-                    <button type="button" className="text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => setEditing({ tenant: t, plan: t.plan, maxBranches: String(t.maxBranches), accessUntil: '' })}>Plan &amp; limits</button>
-                    <button type="button" className="tenant-billing text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => openBilling(t)}>Billing</button>
-                    <button type="button" className="text-xs text-gray-600 dark:text-gray-300 hover:underline mr-3 cursor-pointer" onClick={() => resetAdminPassword(t)}>Reset password</button>
-                    <button type="button" className="tenant-support text-xs text-gray-600 dark:text-gray-300 hover:underline mr-3 cursor-pointer" onClick={() => supportSignIn(t)}>Support sign-in</button>
-                    {t.isActive ? (
-                      <button type="button" className="text-xs text-red-600 hover:underline cursor-pointer" onClick={() => setSuspending(t)}>Suspend</button>
-                    ) : (
-                      <button type="button" className="text-xs text-emerald-600 hover:underline cursor-pointer" onClick={() => setActive(t, true)}>Reactivate</button>
-                    )}
+                    {renderActions(t)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          {/* On a phone: a card per business with the facts that matter; the actions are folded away */}
+          <div className="md:hidden divide-y divide-gray-100 dark:divide-gray-700" id="tenantCards">
+            {visible.map((t) => (
+              <div key={t.id} className="tenant-card p-3 space-y-1.5 text-sm" data-tenant-card={t.name}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-semibold">{t.name}</div>
+                    <div className="text-xs text-gray-500 break-all">{t.admins.map((a) => a.email).join(', ') || 'No admin'}</div>
+                  </div>
+                  {t.archivedAt ? <Badge tone="muted">Archived</Badge> : !t.isActive ? <Badge tone="bad">Suspended</Badge> : t.access === 'TRIAL_EXPIRED' ? <Badge tone="bad">Trial ended</Badge> : t.access === 'OVERDUE' ? <Badge tone="bad">Overdue</Badge> : <Badge tone="good">Active</Badge>}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
+                  <span><Badge tone={planTone(t.plan)}>{planName(t.plan)}</Badge></span>
+                  <span>{t.branchCount} / {t.maxBranches} branches</span>
+                  <span>{inr(t.sales30d)} in 30 days</span>
+                </div>
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-semibold text-purple-700">Actions ⋯</summary>
+                  <div className="flex flex-wrap gap-x-1 gap-y-2 mt-2">{renderActions(t)}</div>
+                </details>
+              </div>
+            ))}
+          </div>
+          </>
         )}
       </div>
 
@@ -448,6 +552,7 @@ export function Platform() {
                           <span className="flex gap-2">
                             <input className="input-base !py-1 text-xs" placeholder="UTR / reference" value={payRef[inv.id] ?? ''} onChange={(e) => setPayRef({ ...payRef, [inv.id]: e.target.value })} />
                             <button type="button" className="invoice-pay px-2 py-1 text-xs font-semibold bg-emerald-600 text-white rounded cursor-pointer disabled:opacity-50" disabled={!(payRef[inv.id] ?? '').trim()} onClick={() => markPaid(inv)}>Mark paid</button>
+                            <button type="button" className="invoice-void px-2 py-1 text-xs border border-red-300 text-red-700 rounded cursor-pointer" onClick={() => voidInvoice(inv)} title="Cancel this invoice">Void</button>
                           </span>
                         ) : (
                           <span className="text-xs text-gray-500">{inv.paymentRef} · {fmtDate(inv.paidAt)}</span>
@@ -484,13 +589,11 @@ export function Platform() {
               </Field>
               <Field label="Plan">
                 <select id="tenantPlan" className="input-base" value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value as Plan })}>
-                  <option value="TRIAL">Trial — 1 branch</option>
-                  <option value="STANDARD">Standard — 3 branches</option>
-                  <option value="PRO">Pro — 25 branches</option>
+                  {planChoices().map((p) => <option key={p.code} value={p.code}>{p.name} — {p.maxBranches} branch{p.maxBranches === 1 ? '' : 'es'}</option>)}
                 </select>
               </Field>
             </div>
-            <Field label="Branch limit (optional)" hint={`Leave empty for the plan default (${PLAN_DEFAULT_LIMIT[form.plan]}).`}>
+            <Field label="Branch limit (optional)" hint={`Leave empty for the plan default (${limitOf(form.plan)}).`}>
               <input className="input-base font-mono" type="number" min="1" max="500" value={form.maxBranches} onChange={(e) => setForm({ ...form, maxBranches: e.target.value })} />
             </Field>
             <div className="border-t pt-4 dark:border-gray-700">
@@ -528,12 +631,10 @@ export function Platform() {
                 value={editing.plan}
                 onChange={(e) => {
                   const plan = e.target.value as Plan;
-                  setEditing({ ...editing, plan, maxBranches: String(PLAN_DEFAULT_LIMIT[plan]) });
+                  setEditing({ ...editing, plan, maxBranches: String(limitOf(plan)) });
                 }}
               >
-                <option value="TRIAL">Trial</option>
-                <option value="STANDARD">Standard</option>
-                <option value="PRO">Pro</option>
+                {planChoices(editing.tenant.plan).map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
               </select>
             </Field>
             <Field label="Branch limit" hint={`${editing.tenant.branchCount} branch(es) in use. Lowering the limit never removes existing branches.`}>
@@ -548,6 +649,18 @@ export function Platform() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {archiving && (
+        <ArchiveModal tenant={archiving} onClose={() => setArchiving(null)} onDone={() => { setArchiving(null); load(); }} />
+      )}
+
+      {deleting && (
+        <DeleteTenantModal tenant={deleting} onClose={() => setDeleting(null)} onDone={() => { setDeleting(null); load(); }} />
+      )}
+
+      {changing && (
+        <ChangePlanModal tenant={changing} plans={plans} onClose={() => setChanging(null)} onDone={() => { setChanging(null); load(); }} />
       )}
 
       {suspending && (

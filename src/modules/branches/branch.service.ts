@@ -6,6 +6,7 @@ import type { JwtPayload } from '../auth/auth.service.js';
 import { canAccessBranch, getAccessibleBranchIds, getOwnedSyndicateId, isPlatformOwner } from '../../middleware/auth.guard.js';
 import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import { assertWithinBranchLimit, branchCountOf } from '../platform/platform.service.js';
+import { disabledFeaturesByBranch } from '../platform/branch-admin.service.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
@@ -92,7 +93,8 @@ export async function listBranches(user: JwtPayload) {
   const rows = scope === 'ALL'
     ? await db.select().from(branches).orderBy(branches.code)
     : await db.select().from(branches).where(inArray(branches.id, scope)).orderBy(branches.code);
-  return rows.map(publicBranch);
+  const off = await disabledFeaturesByBranch(rows.map((r) => r.id));
+  return rows.map((r) => ({ ...publicBranch(r), disabledFeatures: off.get(r.id) ?? [] }));
 }
 
 export async function createBranch(user: JwtPayload, input: CreateBranchInput) {

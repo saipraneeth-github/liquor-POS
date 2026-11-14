@@ -21,16 +21,18 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
+import { requirePermission } from '../permissions/permission.service.js';
 import { sendError } from '../../lib/errors.js';
 import { UnsupportedFileError, terminateOcr } from '../invoices/extraction/index.js';
 import {
-  AcceptSchema, BulkIgnoreSchema, CreateAccountSchema, CreateRuleSchema, IgnoreSchema, LinesQuerySchema, ManualMatchSchema, PostLineSchema,
+  AcceptSchema, BulkIgnoreSchema, CreateAccountSchema, CreateRuleSchema, CreateTypeSchema, UpdateTypeSchema, IgnoreSchema, LinesQuerySchema, ManualMatchSchema, PostLineSchema,
   UpdateAccountSchema, UpdateRuleSchema, UploadFieldsSchema,
   acceptSuggestion, acceptSuggestions, applyIgnoreSuggestions, createAccount, createRule, deleteRule, deleteStatement, finalizeStatement, getStatement,
-  getSummary, ignoreBulk, ignoreLine, importStatement, listAccounts, listCandidates, listLines, listRules, listStatements, manualMatch, postLine,
-  previewStatement, runAutoMatch, unmatchLine, updateAccount, updateRule,
+  getSummary, ignoreBulk, ignoreLine, importStatement, listAccounts, createType, getLineDetail, listBookEntries, listTypes, updateType, listCandidates, listLines, listRules, listStatements, manualMatch, postLine,
+  previewStatement, addDefaultCategories, runAutoMatch, unmatchLine, updateAccount, updateRule,
   type UploadFields,
 } from './bank.service.js';
+import { SearchSchema, searchTransactions } from './ledger-txn.service.js';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const IdParams = z.object({ id: z.string().uuid() });
@@ -73,7 +75,7 @@ export async function bankRoutes(app: FastifyInstance) {
   await app.register(fastifyMultipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 12, fieldSize: 4 * 1024, parts: 14 } });
   app.addHook('onClose', async () => { await terminateOcr(); });
 
-  const manager = { preHandler: requireRole('manager') };
+  const manager = { preHandler: [requireRole('steward'), requirePermission('bank.reconcile')] };   // managers and above have it by default
   // Parsing a PDF is CPU-heavy: cap uploads per client in production (tests upload in bursts)
   const uploadConfig = process.env.NODE_ENV === 'production' ? { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } } : {};
 
@@ -170,6 +172,12 @@ export async function bankRoutes(app: FastifyInstance) {
     try { return await listLines(getUser(req), params.data.id, query.data); } catch (err) { return fail(reply, err); }
   });
 
+  app.get('/bank/statements/:id/book', manager, async (req, reply) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) return reply.code(404).send({ error: 'Statement not found' });
+    try { return await listBookEntries(getUser(req), params.data.id); } catch (err) { return fail(reply, err); }
+  });
+
   app.get('/bank/statements/:id/summary', manager, async (req, reply) => {
     const params = IdParams.safeParse(req.params);
     if (!params.success) return reply.code(404).send({ error: 'Statement not found' });
@@ -221,6 +229,50 @@ export async function bankRoutes(app: FastifyInstance) {
     const params = IdParams.safeParse(req.params);
     if (!params.success) return reply.code(404).send({ error: 'Statement line not found' });
     try { return await listCandidates(getUser(req), params.data.id); } catch (err) { return fail(reply, err); }
+  });
+
+  // ── Customer-defined transaction types ──
+  app.get('/bank/accounts/:id/types', manager, async (req, reply) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) return reply.code(404).send({ error: 'Bank account not found' });
+    try { return await listTypes(getUser(req), params.data.id); } catch (err) { return fail(reply, err); }
+  });
+
+  app.post('/bank/accounts/:id/types', manager, async (req, reply) => {
+    const params = IdParams.safeParse(req.params);
+    const body = CreateTypeSchema.safeParse(req.body);
+    if (!params.success) return reply.code(404).send({ error: 'Bank account not found' });
+    if (!body.success) return reply.code(400).send({ error: 'Validation failed', details: body.error.flatten() });
+    try { return reply.code(201).send(await createType(getUser(req), params.data.id, body.data)); } catch (err) { return fail(reply, err); }
+  });
+
+  app.post('/bank/accounts/:id/types/defaults', manager, async (req, reply) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) return reply.code(404).send({ error: 'Bank account not found' });
+    try { return await addDefaultCategories(getUser(req), params.data.id); } catch (err) { return fail(reply, err); }
+  });
+
+  // ── Recorded transactions: search by category or keyword, with totals ──
+  app.get('/bank/transactions/:branchId', manager, async (req, reply) => {
+    const params = z.object({ branchId: z.string().uuid() }).safeParse(req.params);
+    const query = SearchSchema.safeParse(req.query);
+    if (!params.success) return reply.code(404).send({ error: 'Branch not found' });
+    if (!query.success) return reply.code(400).send({ error: 'Validation failed', details: query.error.flatten() });
+    try { return await searchTransactions(getUser(req), params.data.branchId, query.data); } catch (err) { return fail(reply, err); }
+  });
+
+  app.patch('/bank/types/:id', manager, async (req, reply) => {
+    const params = IdParams.safeParse(req.params);
+    const body = UpdateTypeSchema.safeParse(req.body);
+    if (!params.success) return reply.code(404).send({ error: 'Transaction type not found' });
+    if (!body.success) return reply.code(400).send({ error: 'Validation failed' });
+    try { return await updateType(getUser(req), params.data.id, body.data); } catch (err) { return fail(reply, err); }
+  });
+
+  app.get('/bank/lines/:id/detail', manager, async (req, reply) => {
+    const params = IdParams.safeParse(req.params);
+    if (!params.success) return reply.code(404).send({ error: 'Statement line not found' });
+    try { return await getLineDetail(getUser(req), params.data.id); } catch (err) { return fail(reply, err); }
   });
 
   app.post('/bank/lines/:id/accept', manager, async (req, reply) => {

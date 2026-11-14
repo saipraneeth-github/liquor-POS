@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess, getAccessibleBranchIds } from '../../middleware/auth.guard.js';
+import { requirePermission } from '../permissions/permission.service.js';
 import { sendError } from '../../lib/errors.js';
 import { isIsoDate } from '../../lib/business-day.js';
 import { performDailyClosing, listDailyClosings, getDailyClosingPreview } from './closing.service.js';
@@ -30,7 +31,7 @@ const ListClosingQuerySchema = z.object({
 export async function closingRoutes(fastify: FastifyInstance) {
   // GET /closing/preview?branchId=&date= — preview live sales breakdown for date (manager+)
   fastify.get('/closing/preview', {
-    preHandler: requireRole('manager'),
+    preHandler: [requireRole('steward'), requirePermission('day.close')],
   }, async (request, reply) => {
     const user = getUser(request);
     const parsed = PreviewClosingQuerySchema.safeParse(request.query);
@@ -49,7 +50,7 @@ export async function closingRoutes(fastify: FastifyInstance) {
 
   // POST /closing — perform end-of-day closing (manager+)
   fastify.post('/closing', {
-    preHandler: requireRole('manager'),
+    preHandler: [requireRole('steward'), requirePermission('day.close')],
   }, async (request, reply) => {
     const user = getUser(request);
     const parsed = SubmitClosingSchema.safeParse(request.body);
@@ -69,7 +70,7 @@ export async function closingRoutes(fastify: FastifyInstance) {
 
   // GET /closing?branchId= — list closing history for accessible branches (manager+)
   fastify.get('/closing', {
-    preHandler: requireRole('manager'),
+    preHandler: [requireRole('steward'), requirePermission('day.close')],
   }, async (request, reply) => {
     const user = getUser(request);
     const parsed = ListClosingQuerySchema.safeParse(request.query);

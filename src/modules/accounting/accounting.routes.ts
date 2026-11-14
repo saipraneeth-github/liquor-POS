@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
+import { requirePermission } from '../permissions/permission.service.js';
 import { sendError } from '../../lib/errors.js';
 import {
   AsOfQuerySchema,
@@ -30,10 +31,12 @@ function validationError(reply: FastifyReply, error: z.ZodError) {
 // ─── ACCOUNTING ROUTES (manager+, branch-scoped) ─────────────────────────────
 
 export async function accountingRoutes(fastify: FastifyInstance) {
-  const guard = { preHandler: requireRole('manager') };
+  // Named permissions: managers and above have them by default, so nothing changes for the built-in roles
+  const view = { preHandler: [requireRole('steward'), requirePermission('accounting.view')] };
+  const post = { preHandler: [requireRole('steward'), requirePermission('accounting.post')] };
 
   // GET /accounting/ledgers/:branchId?asOf= — chart of accounts with balances
-  fastify.get('/accounting/ledgers/:branchId', guard, async (request, reply) => {
+  fastify.get('/accounting/ledgers/:branchId', view, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error);
     const query = AsOfQuerySchema.safeParse(request.query);
@@ -47,7 +50,7 @@ export async function accountingRoutes(fastify: FastifyInstance) {
   });
 
   // POST /accounting/ledgers/:branchId — custom (non-system) ledger
-  fastify.post('/accounting/ledgers/:branchId', guard, async (request, reply) => {
+  fastify.post('/accounting/ledgers/:branchId', post, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error);
     const body = CreateLedgerSchema.safeParse(request.body);
@@ -61,7 +64,7 @@ export async function accountingRoutes(fastify: FastifyInstance) {
   });
 
   // GET /accounting/ledgers/:branchId/:ledgerId/entries?from=&to= — ledger statement with running balance
-  fastify.get('/accounting/ledgers/:branchId/:ledgerId/entries', guard, async (request, reply) => {
+  fastify.get('/accounting/ledgers/:branchId/:ledgerId/entries', view, async (request, reply) => {
     const params = LedgerParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(404).send({ error: 'Ledger not found' });
     const query = DateRangeQuerySchema.safeParse(request.query);
@@ -75,7 +78,7 @@ export async function accountingRoutes(fastify: FastifyInstance) {
   });
 
   // GET /accounting/vouchers/:branchId?from=&to=&type=&limit= — day book with lines
-  fastify.get('/accounting/vouchers/:branchId', guard, async (request, reply) => {
+  fastify.get('/accounting/vouchers/:branchId', view, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error);
     const query = VoucherQuerySchema.safeParse(request.query);
@@ -89,7 +92,7 @@ export async function accountingRoutes(fastify: FastifyInstance) {
   });
 
   // POST /accounting/journal/:branchId — manual JOURNAL voucher (must balance → 422 otherwise)
-  fastify.post('/accounting/journal/:branchId', guard, async (request, reply) => {
+  fastify.post('/accounting/journal/:branchId', post, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error);
     const body = ManualJournalSchema.safeParse(request.body);
@@ -104,7 +107,7 @@ export async function accountingRoutes(fastify: FastifyInstance) {
   });
 
   // GET /accounting/trial-balance/:branchId?asOf=
-  fastify.get('/accounting/trial-balance/:branchId', guard, async (request, reply) => {
+  fastify.get('/accounting/trial-balance/:branchId', view, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error);
     const query = AsOfQuerySchema.safeParse(request.query);
@@ -118,7 +121,7 @@ export async function accountingRoutes(fastify: FastifyInstance) {
   });
 
   // GET /accounting/profit-loss/:branchId?from=&to=
-  fastify.get('/accounting/profit-loss/:branchId', guard, async (request, reply) => {
+  fastify.get('/accounting/profit-loss/:branchId', view, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error);
     const query = DateRangeQuerySchema.safeParse(request.query);
@@ -132,7 +135,7 @@ export async function accountingRoutes(fastify: FastifyInstance) {
   });
 
   // GET /accounting/balance-sheet/:branchId?asOf=
-  fastify.get('/accounting/balance-sheet/:branchId', guard, async (request, reply) => {
+  fastify.get('/accounting/balance-sheet/:branchId', view, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error);
     const query = AsOfQuerySchema.safeParse(request.query);
@@ -146,7 +149,7 @@ export async function accountingRoutes(fastify: FastifyInstance) {
   });
 
   // GET /accounting/tally-export/:branchId?from=&to=&company= — Tally Prime / ERP 9 voucher import XML
-  fastify.get('/accounting/tally-export/:branchId', guard, async (request, reply) => {
+  fastify.get('/accounting/tally-export/:branchId', view, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error);
     const range = DateRangeQuerySchema.safeParse(request.query);

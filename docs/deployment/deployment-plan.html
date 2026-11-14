@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deployment Plan — Liquor Counter POS</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+  :root { --ink:#16211d; --muted:#5b6b64; --brand:#1f6b4f; --line:#cfd9d4; --soft:#eef4f1; --warn:#fff4dc; --warnline:#e6c46a; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, Helvetica, sans-serif; font-size: 9.6pt; line-height: 1.42; color: var(--ink); margin: 0; }
+  h1 { font-size: 24pt; margin: 0 0 4pt; color: var(--brand); letter-spacing: -.3px; }
+  h2 { font-size: 14pt; color: var(--brand); border-bottom: 2px solid var(--brand); padding-bottom: 3pt; margin: 20pt 0 8pt; break-after: avoid; }
+  h3 { font-size: 10.8pt; margin: 12pt 0 4pt; break-after: avoid; }
+  p { margin: 0 0 6pt; }
+  ul, ol { margin: 0 0 7pt; padding-left: 16pt; } li { margin-bottom: 2pt; }
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0 9pt; font-size: 8.7pt; break-inside: auto; }
+  th { background: var(--brand); color: #fff; text-align: left; padding: 3.5pt 5pt; font-weight: 600; }
+  td { border: 1px solid var(--line); padding: 3pt 5pt; vertical-align: top; }
+  tr { break-inside: avoid; } tr:nth-child(even) td { background: #f8fbf9; }
+  pre { background: #11201a; color: #e6f1ea; padding: 7pt 9pt; border-radius: 4pt; font-family: Consolas, "Courier New", monospace; font-size: 8pt; line-height: 1.35; white-space: pre-wrap; word-break: break-word; margin: 3pt 0 9pt; break-inside: avoid; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 8.6pt; background: var(--soft); padding: 0 2pt; border-radius: 2pt; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .note { background: var(--warn); border: 1px solid var(--warnline); border-radius: 4pt; padding: 6pt 9pt; margin: 6pt 0 9pt; break-inside: avoid; }
+  .box { background: var(--soft); border: 1px solid var(--line); border-radius: 4pt; padding: 6pt 9pt; margin: 6pt 0 9pt; break-inside: avoid; }
+  .meta { color: var(--muted); font-size: 9pt; }
+  .cover { padding: 36mm 0 0; break-after: page; }
+  .cover .sub { font-size: 13pt; color: var(--muted); margin-bottom: 18pt; }
+  .pb { break-before: page; }
+  .tag { display:inline-block; font-size: 7.5pt; font-weight: 700; padding: 0 4pt; border-radius: 3pt; background: var(--brand); color:#fff; vertical-align: middle; }
+  .gap { background: #b3261e; }
+  .small td, .small th { font-size: 8.2pt; }
+  footer { display: none; }
+</style>
+</head>
+<body>
+
+<!-- ───────────── COVER + TAILORING NOTE ───────────── -->
+<div class="cover">
+  <h1>Deployment Plan</h1>
+  <div class="sub">&lt;APP_NAME&gt; = Liquor Counter POS &amp; Inventory Platform — build to live hosting</div>
+  <table style="width:70%">
+    <tr><th style="width:34%">Document</th><td>Production deployment plan and release runbook</td></tr>
+    <tr><th>Version</th><td>1.0 (draft for review) — 2026-11-13</td></tr>
+    <tr><th>Release</th><td>&lt;RELEASE_VERSION&gt; (git tag <code>v&lt;MAJOR.MINOR.PATCH&gt;</code>)</td></tr>
+    <tr><th>Audience</th><td>Engineering, QA, Operations</td></tr>
+    <tr><th>Owner / approver</th><td>&lt;RELEASE_MANAGER&gt; / &lt;ENGINEERING_LEAD&gt;</td></tr>
+    <tr><th>Basis</th><td>Written from this repository (<code>package.json</code>, <code>.env.example</code>, <code>src/app.ts</code>, <code>drizzle/</code>, <code>AGENTS.md</code>). Nothing here has been executed against a live environment.</td></tr>
+  </table>
+
+  <div class="note"><b>Before you use this plan — information to supply.</b> Every <code>&lt;PLACEHOLDER&gt;</code> below is a value this repository cannot tell us. Fill these in first:
+    <table class="small" style="margin-top:5pt">
+      <tr><th style="width:30%">Placeholder</th><th>What to provide</th></tr>
+      <tr><td><code>&lt;HOSTING_PROVIDER&gt;</code>, <code>&lt;REGION&gt;</code></td><td>Where the app runs (VM, container service, Kubernetes) and its region. The database in <code>.env</code> is hosted Postgres in <code>ap-southeast-1</code>; run the app in the same region (§10.3).</td></tr>
+      <tr><td><code>&lt;APP_DOMAIN&gt;</code>, <code>&lt;DNS_PROVIDER&gt;</code>, <code>&lt;CDN&gt;</code></td><td>Public hostname (e.g. <code>pos.example.com</code>), DNS host and CDN, if any.</td></tr>
+      <tr><td><code>&lt;DB_HOST&gt;</code>, <code>&lt;DB_NAME&gt;</code>, <code>&lt;DB_ADMIN_URL&gt;</code></td><td>Production Postgres endpoint, database name, and a <i>direct</i> (non-pooled) admin connection for migrations.</td></tr>
+      <tr><td><code>&lt;REGISTRY&gt;</code>, <code>&lt;CI_SYSTEM&gt;</code></td><td>Container/artifact registry and CI platform (none is configured in the repo today).</td></tr>
+      <tr><td><code>&lt;VAULT&gt;</code></td><td>Secrets manager in use (e.g. cloud secret store, Vault, 1Password).</td></tr>
+      <tr><td><code>&lt;SMTP_HOST&gt;</code>, <code>&lt;RAZORPAY_*&gt;</code></td><td>Mail relay and live payment-gateway credentials / webhook.</td></tr>
+      <tr><td><code>&lt;RPO&gt;</code> / <code>&lt;RTO&gt;</code>, <code>&lt;RETENTION_POLICY&gt;</code></td><td>Recovery objectives and record-retention period (GST / excise).</td></tr>
+      <tr><td><code>&lt;WINDOW&gt;</code></td><td>Approved release window — outside trading hours of the outlets.</td></tr>
+      <tr><td>Contact names / on-call</td><td>For the matrix in Appendix C.</td></tr>
+    </table>
+  </div>
+  <p class="meta"><b>Conventions:</b> <span class="tag">GAP</span> marks something the code or repo does <i>not</i> provide today and must be added or accepted as a risk before go-live (collected in §1.4).</p>
+</div>
+
+<!-- ───────────── 1 ───────────── -->
+<h2>1. Overview &amp; Scope</h2>
+<h3>1.1 Purpose of the release</h3>
+<p>Take a tested build of <code>&lt;APP_NAME&gt;</code> — a point-of-sale, inventory and accounting platform for liquor retail stores and bars in India (single stores or multi-store syndicates) — from source control to live hosting, with a database change path, verification and a tested way back. Optional release items: the database index/constraint package in <code>docs/db-optimization/</code> (separately gated, §4.7).</p>
+
+<h3>1.2 System components</h3>
+<table>
+  <tr><th style="width:20%">Component</th><th>Detail</th></tr>
+  <tr><td>API + web server</td><td>Node.js ≥ 22, Fastify 5 (<code>@fastify/jwt</code>, <code>helmet</code>, <code>cors</code>, <code>rate-limit</code>, <code>multipart</code>). One process serves <code>/api/v1/*</code>, <code>/health</code> <b>and</b> the built React app at <code>/</code> (any unknown path falls through to the SPA). Listens on <code>0.0.0.0:$PORT</code> (default 3001).</td></tr>
+  <tr><td>Frontend</td><td>React + Vite, built into <code>dist/frontend</code> by <code>npm run build:frontend</code> and served by the API. No separate web tier is required.</td></tr>
+  <tr><td>Database</td><td>PostgreSQL via Drizzle ORM. 64 tables, 25 SQL migrations in <code>drizzle/</code>. Hosted Postgres (pooled endpoint for the app, direct endpoint for DDL).</td></tr>
+  <tr><td>Background work</td><td>In-process: daily billing/dunning job (<code>BILLING_JOB_ENABLED</code>), print-queue sender, invoice OCR (CPU/memory heavy). Redis (<code>REDIS_URL</code>) is listed in <code>.env.example</code> as "Phase 2" and is <b>not required</b> today.</td></tr>
+  <tr><td>Integrations</td><td>Razorpay (payments + webhook <code>/api/v1/webhooks/razorpay</code>), SMTP e-mail, branch <b>print agent</b> (local program on the shop PC that polls the API), ESC/POS network printers.</td></tr>
+  <tr><td>Clients</td><td>Browsers on shop counters (POS works offline-queued), phones/tablets for stewards.</td></tr>
+</table>
+
+<h3>1.3 Target environments and assumptions</h3>
+<table>
+  <tr><th>Env</th><th>Purpose</th><th>Data</th><th>Database</th></tr>
+  <tr><td>dev</td><td>Developer machines (<code>npm run dev:local</code>)</td><td>Seeded demo data</td><td>Embedded PGlite (<code>pglite://./.pglite</code>)</td></tr>
+  <tr><td>ci</td><td>Automated tests</td><td>Synthetic</td><td>In-memory PGlite</td></tr>
+  <tr><td>staging</td><td>Production-like rehearsal, UAT, migration dry-run</td><td>Restored copy of production (masked) or realistic seed</td><td>Separate Postgres, same version/region as prod</td></tr>
+  <tr><td>prod</td><td>Live customers</td><td>Real</td><td>Production Postgres with PITR enabled</td></tr>
+</table>
+<p><b>Assumptions:</b> (a) single region, one app deployment with ≥ 2 instances behind a load balancer; (b) release only in <code>&lt;WINDOW&gt;</code>; (c) database migrations are <b>forward-only and additive</b> within a release (Drizzle generates no "down" scripts); (d) the app is stateless apart from two in-memory throttles (§5.4); (e) every shop is reachable only over the internet, so network printers are driven through the print agent.</p>
+
+<h3>1.4 Known gaps to close or accept before go-live</h3>
+<table class="small">
+  <tr><th style="width:5%">#</th><th style="width:36%">Gap found in the repository</th><th>Consequence / action</th></tr>
+  <tr><td>G1</td><td><span class="tag gap">GAP</span> No Dockerfile, CI workflow, or IaC in the repo.</td><td>Sections 3 and 5 give proposed files; they must be created and reviewed (owner: DevOps).</td></tr>
+  <tr><td>G2</td><td><span class="tag gap">GAP</span> <code>/health</code> only proves the process is up; it does not touch the database.</td><td>Use it as the <i>liveness</i> probe only. Add a readiness check (<code>select 1</code>) or accept the synthetic login check in §8 as the DB signal.</td></tr>
+  <tr><td>G3</td><td><span class="tag gap">GAP</span> No SIGTERM/graceful-shutdown handler in <code>src/index.ts</code>.</td><td>In-flight bills can be cut during a rolling restart. Add a handler that calls <code>app.close()</code>, and set a pre-stop delay and grace period (§5.3).</td></tr>
+  <tr><td>G4</td><td>Existing tests are not green on the current tree: <b>12 integration</b> and <b>8 e2e</b> failures pre-date this plan (stale selectors/wording, one needs <code>ARCHIVE_RETENTION_DAYS=0</code>).</td><td>Triage before gating CI. Until then the gate is "<b>no new failures versus the recorded baseline</b>" (§3.3).</td></tr>
+  <tr><td>G5</td><td>Migrations <code>0017</code>–<code>0024</code> and <code>drizzle/meta/_journal.json</code> were <b>uncommitted</b> when this plan was written.</td><td>Commit them before tagging. A database missing them fails every bill (AGENTS.md §8).</td></tr>
+  <tr><td>G6</td><td>Login throttle and rate limits are <b>per instance</b> (in-memory).</td><td>With N instances the effective limit is N× higher. Accept, or add Redis later (§5.4).</td></tr>
+  <tr><td>G7</td><td><code>npm run db:migrate</code> runs through <code>tsx</code> (a dev dependency) and reads <code>./drizzle</code> from source.</td><td>Run migrations from a release job that has dev dependencies, <b>not</b> from the slim runtime image (§4.3).</td></tr>
+</table>
+
+<!-- ───────────── 2 ───────────── -->
+<h2>2. Prerequisites &amp; Access</h2>
+<h3>2.1 Tools</h3>
+<table>
+  <tr><th style="width:24%">Tool</th><th>Version / use</th></tr>
+  <tr><td>Node.js / npm</td><td>Node 22 LTS (<code>engines: &gt;=22</code>), npm 10+</td></tr>
+  <tr><td>git</td><td>Tagging and release branches</td></tr>
+  <tr><td>PostgreSQL client</td><td><code>psql</code> / <code>pg_dump</code> / <code>pg_restore</code> 16+ (≥ server major)</td></tr>
+  <tr><td>Docker (or buildah)</td><td>Image build; <code>&lt;REGISTRY&gt;</code> push access</td></tr>
+  <tr><td>kubectl / cloud CLI</td><td>Only if deploying to Kubernetes / a cloud container service</td></tr>
+  <tr><td>Playwright + Chromium</td><td>e2e tests (<code>npx playwright install chromium</code>)</td></tr>
+  <tr><td>Scanners</td><td><code>npm audit</code>, Trivy (image), gitleaks (secrets) — §7.3</td></tr>
+</table>
+<h3>2.2 Accounts, credentials and secrets management</h3>
+<ul>
+  <li>All secrets live in <code>&lt;VAULT&gt;</code>; <b>never</b> in git, images, CI logs or chat. <code>.env</code> is a developer convenience only — do not bake it into an image (<code>npm start</code> reads <code>--env-file=.env</code>; in production start with <code>node dist/index.js</code> and inject variables from the platform).</li>
+  <li>Secrets to manage: <code>DATABASE_URL</code>, <code>JWT_SECRET</code> (≥ 32 chars, enforced), <code>RAZORPAY_KEY_SECRET</code>, <code>RAZORPAY_WEBHOOK_SECRET</code>, <code>SMTP_PASS</code>, registry token, DB admin URL, backup-bucket key.</li>
+  <li>Rotate on: staff departure, suspected leak, and every <code>&lt;ROTATION_DAYS&gt;</code> days. Rotating <code>JWT_SECRET</code> signs every user out — do it in a window.</li>
+</ul>
+<h3>2.3 Access matrix (least privilege)</h3>
+<table>
+  <tr><th>Role</th><th>Git</th><th>CI</th><th>Registry</th><th>Vault</th><th>Staging</th><th>Prod app</th><th>Prod DB</th></tr>
+  <tr><td>Developer</td><td>write (PR)</td><td>run</td><td>pull</td><td>dev only</td><td>deploy</td><td>none</td><td>none</td></tr>
+  <tr><td>QA</td><td>read</td><td>view</td><td>—</td><td>—</td><td>test</td><td>smoke only</td><td>none</td></tr>
+  <tr><td>Release manager</td><td>tag</td><td>approve</td><td>push</td><td>read</td><td>deploy</td><td>approve</td><td>—</td></tr>
+  <tr><td>DevOps / SRE</td><td>read</td><td>admin</td><td>admin</td><td>read/write</td><td>admin</td><td>deploy</td><td>migrate (time-boxed)</td></tr>
+  <tr><td>DBA</td><td>read</td><td>—</td><td>—</td><td>DB secrets</td><td>admin</td><td>—</td><td>admin</td></tr>
+  <tr><td>Support</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>read logs</td><td>none</td></tr>
+</table>
+<p>Production database admin rights are granted just-in-time for the release and revoked afterwards. Two-person approval for any production DDL.</p>
+
+<!-- ───────────── 3 ───────────── -->
+<h2>3. Build Process</h2>
+<h3>3.1 Branching, tagging and versioning</h3>
+<ul>
+  <li><b>Trunk-based:</b> short-lived feature branches → PR → <code>main</code> (protected: required review + green CI). Commit style: conventional commits (<code>feat(scope):</code>, <code>fix:</code>, <code>chore(db):</code>).</li>
+  <li><b>Release:</b> cut <code>release/x.y</code> from <code>main</code>; only fixes land there. Tag <code>vX.Y.Z</code> on the release commit (annotated, signed if possible).</li>
+  <li><b>Versioning:</b> SemVer. MAJOR = breaking API/contract or non-additive schema change; MINOR = backward-compatible feature (including additive migrations); PATCH = fix. The image tag is the git tag plus the short SHA: <code>&lt;REGISTRY&gt;/&lt;APP_NAME&gt;:1.4.0</code> and <code>:1.4.0-a1b2c3d</code>. <b>Never deploy <code>latest</code>.</b> Align <code>package.json</code> version (currently <code>0.1.0</code>) with the tag.</li>
+</ul>
+<h3>3.2 CI pipeline (proposed — GAP G1)</h3>
+<table>
+  <tr><th style="width:4%">#</th><th style="width:16%">Stage</th><th>Command</th><th style="width:30%">Gate</th></tr>
+  <tr><td>1</td><td>Install</td><td><code>npm ci &amp;&amp; npm ci --prefix frontend</code></td><td>lockfiles unchanged</td></tr>
+  <tr><td>2</td><td>Lint / types</td><td><code>npm --prefix frontend run lint</code> (oxlint); <code>npx tsc --noEmit</code></td><td>zero errors</td></tr>
+  <tr><td>3</td><td>Unit</td><td><code>npm run test:unit</code></td><td>all pass</td></tr>
+  <tr><td>4</td><td>Integration</td><td><code>npm run test:integration</code> (real app on in-memory PGlite)</td><td>no new failures vs baseline (G4)</td></tr>
+  <tr><td>5</td><td>Build</td><td><code>npm run build</code> (= frontend build + <code>tsc</code> → <code>dist/</code>)</td><td>exit 0</td></tr>
+  <tr><td>6</td><td>E2E</td><td><code>npm run test:e2e</code> (needs the frontend build; boots its own PGlite on :3001 — never run where a dev server holds :3001)</td><td>no new failures vs baseline</td></tr>
+  <tr><td>7</td><td>Security scans</td><td><code>npm audit --omit=dev --audit-level=high</code>; gitleaks; Trivy on the image</td><td>no High/Critical without waiver</td></tr>
+  <tr><td>8</td><td>Package</td><td><code>docker build -t &lt;REGISTRY&gt;/&lt;APP_NAME&gt;:$VER .</code></td><td>image builds</td></tr>
+  <tr><td>9</td><td>Publish</td><td><code>docker push</code>; attach SBOM and test reports</td><td>digest recorded in the release ticket</td></tr>
+</table>
+<div class="box"><b>Build note.</b> <code>npm start</code> has a <code>prestart</code> hook that rebuilds. In production never build at start: build once in CI and run <code>node dist/index.js</code>. Build the image <code>FROM node:22-bookworm-slim</code> (glibc; the <code>@napi-rs/canvas</code> native module used by invoice OCR does not suit Alpine).</div>
+<h3>3.3 Test baseline</h3>
+<p>At the time of writing: integration <b>12 failed / 392 passed</b>, e2e <b>8 failed / 67 passed</b> on an unmodified tree. Record the failing test names in the release ticket; a release is blocked by <i>any failure not in that list</i>.</p>
+<h3>3.4 Artifact and storage</h3>
+<table>
+  <tr><th>Artifact</th><th>Contents</th><th>Storage / retention</th></tr>
+  <tr><td>Container image</td><td><code>dist/</code> (API + <code>dist/frontend</code>), production <code>node_modules</code>, <b>and</b> the <code>drizzle/</code> folder</td><td><code>&lt;REGISTRY&gt;</code>, immutable tags, keep last 20 releases + all tagged</td></tr>
+  <tr><td>Migration bundle</td><td><code>drizzle/*.sql</code> + <code>_journal.json</code> at the tag (also the release job image)</td><td>same registry / release assets</td></tr>
+  <tr><td>Evidence</td><td>Test reports, SBOM, scan results, image digest</td><td>CI artifact store, 12 months</td></tr>
+</table>
+
+<!-- ───────────── 4 ───────────── -->
+<h2>4. Database Setup &amp; Migration</h2>
+<h3>4.1 Provisioning (first install only)</h3>
+<pre><code># as DBA, on the DIRECT endpoint
+createdb -h &lt;DB_HOST&gt; -U &lt;DB_ADMIN&gt; &lt;DB_NAME&gt;
+psql "&lt;DB_ADMIN_URL&gt;" -c "CREATE ROLE &lt;APP_DB_USER&gt; LOGIN PASSWORD '&lt;from vault&gt;';"
+psql "&lt;DB_ADMIN_URL&gt;" -c "GRANT CONNECT ON DATABASE &lt;DB_NAME&gt; TO &lt;APP_DB_USER&gt;;"
+# app user owns the objects it migrates (Drizzle creates tables, enums, indexes)
+psql "&lt;DB_ADMIN_URL&gt;" -c "ALTER DATABASE &lt;DB_NAME&gt; OWNER TO &lt;APP_DB_USER&gt;;"</code></pre>
+<p>Enable <b>point-in-time recovery</b> and note its window. Use the <b>pooled</b> URL in <code>DATABASE_URL</code> for the running app and the <b>direct</b> URL for migrations and backups.</p>
+<h3>4.2 Migration scripts and execution order</h3>
+<p>Migrations are the ordered SQL files <code>drizzle/0000_… → 0024_…</code> listed in <code>drizzle/meta/_journal.json</code>; Drizzle applies the ones not yet recorded in <code>drizzle.__drizzle_migrations</code>, in journal order, inside <b>one transaction</b> — a failure rolls the whole pending batch back (which is also why <code>CREATE INDEX CONCURRENTLY</code> cannot go through it). <b>Order of operations for every release: migrate first, then deploy the app</b> — a missing column fails every bill because the counter-sheet handler runs inside the bill transaction.</p>
+<p><b>Compatibility rule:</b> release N's schema must work with release N-1's code (add columns/indexes/tables; never drop or rename in the same release — use expand → migrate → contract over two releases). This is what makes an application-only rollback safe (§11).</p>
+<h3>4.3 Running the migration</h3>
+<pre><code># release job (has devDependencies + the repo at the release tag), DIRECT url, from a bastion/CI runner
+git checkout v&lt;RELEASE_VERSION&gt;
+npm ci
+export DATABASE_URL="&lt;DB_ADMIN_URL&gt;"          # direct, not -pooler
+npm run db:migrate                            # prints "Migrations applied"
+
+# confirm
+psql "$DATABASE_URL" -tc "select count(*) from drizzle.__drizzle_migrations;"   # expect 25 + new ones</code></pre>
+<h3>4.4 Backup before migration (mandatory gate)</h3>
+<pre><code># 1) provider snapshot / branch + note the timestamp (preferred, instant)
+# 2) logical dump as a second copy, stored outside the DB account, encrypted
+pg_dump -Fc -h &lt;DB_HOST&gt; -U &lt;DB_ADMIN&gt; -d &lt;DB_NAME&gt; -f pre_&lt;RELEASE_VERSION&gt;_$(date +%F_%H%M).dump
+pg_restore --list pre_&lt;RELEASE_VERSION&gt;_*.dump | head      # proves the file is readable
+sha256sum pre_&lt;RELEASE_VERSION&gt;_*.dump &gt; pre_&lt;RELEASE_VERSION&gt;.sha256</code></pre>
+<p><b>Restore rehearsal:</b> restore the dump to staging at least once per quarter and before any first release.</p>
+<h3>4.5 Seed data</h3>
+<ul>
+  <li><b>Do not run <code>npm run db:seed</code> in production.</b> It creates demo users with a known password and refuses to run when <code>NODE_ENV=production</code> unless <code>ALLOW_PROD_SEED=1</code> — leave that unset.</li>
+  <li>Create the first Super Admin (the software provider's platform owner) on the server against the production URL: <code>npm run super-admin</code> (see <code>src/db/create-super-admin.ts</code>); store the generated credentials in the vault and force a password change.</li>
+  <li>Reference data (categories, GST rates, sale types) is loaded by the onboarding workflow / agreed import — <code>&lt;REFERENCE_DATA_SOURCE&gt;</code>.</li>
+</ul>
+<h3>4.6 Validation after migration (read-only SQL)</h3>
+<pre><code>-- run the package from docs/db-optimization/sql/tests/
+psql "$DATABASE_URL" -f t02_business_invariants.sql   -- every violations = 0
+psql "$DATABASE_URL" -f t03_referential_integrity.sql -- must return no rows
+psql "$DATABASE_URL" -f t01_fingerprint.sql &gt; fp_after.txt   -- compare with fp_before.txt for DDL-only releases</code></pre>
+<h3>4.6a Rollback scripts</h3>
+<p>Drizzle migrations have no automatic down step. Rollback options, in order of preference: (1) <b>leave the additive schema in place</b> and roll back only the application; (2) run the release's hand-written <code>*_down.sql</code> (the <code>docs/db-optimization</code> phases ship tested ones); (3) restore the §4.4 backup / PITR. Every migration PR must state which of the three applies.</p>
+<h3>4.7 Optional release item — index &amp; constraint package</h3>
+<p><code>docs/db-optimization/</code> contains Phase 1 (41 indexes, built <code>CONCURRENTLY</code>, no data change) and Phase 2 (11 CHECKs + 2 foreign keys, <code>NOT VALID</code> then validated, pre-check required). Deploy it as its own change after the application release is stable; follow its <code>08-deployment-runbook.md</code>. Run the <code>_concurrent</code> files with <code>psql</code> on the direct connection — they cannot go through the migrator or a transaction pooler.</p>
+
+<!-- ───────────── 5 ───────────── -->
+<h2>5. Server &amp; Infrastructure Deployment</h2>
+<h3>5.1 Environment configuration</h3>
+<table class="small">
+  <tr><th style="width:22%">Variable</th><th style="width:24%">staging</th><th style="width:24%">prod</th><th>Notes</th></tr>
+  <tr><td><code>NODE_ENV</code></td><td>production</td><td>production</td><td>Enables the safety checks below; staging must behave like prod.</td></tr>
+  <tr><td><code>PORT</code></td><td>3001</td><td>3001</td><td>Listens on 0.0.0.0.</td></tr>
+  <tr><td><code>DATABASE_URL</code></td><td>&lt;STG_POOLED_URL&gt;</td><td>&lt;PROD_POOLED_URL&gt;</td><td>Pooled endpoint; <code>?sslmode=require</code>. From vault.</td></tr>
+  <tr><td><code>JWT_SECRET</code></td><td>unique per env</td><td>unique, ≥ 32 chars</td><td><b>App refuses to start</b> if missing/short in production.</td></tr>
+  <tr><td><code>JWT_EXPIRES_IN</code></td><td>8h</td><td>8h</td><td>Session length.</td></tr>
+  <tr><td><code>CORS_ORIGIN</code></td><td>https://&lt;STG_DOMAIN&gt;</td><td>https://&lt;APP_DOMAIN&gt;</td><td><b>Required in production, not "*"</b> — app refuses to start. Same origin as the SPA.</td></tr>
+  <tr><td><code>TRUST_PROXY</code></td><td>1</td><td>number of proxy hops (e.g. 2 with CDN + LB)</td><td>Needed so rate limits and login lockout see the real client IP.</td></tr>
+  <tr><td><code>APP_URL</code></td><td>https://&lt;STG_DOMAIN&gt;</td><td>https://&lt;APP_DOMAIN&gt;</td><td>Used in e-mail links.</td></tr>
+  <tr><td><code>PAYMENT_PROVIDER</code></td><td>mock + <code>ALLOW_MOCK_PAYMENTS=1</code> + <code>MOCK_PAYMENT_SECRET</code></td><td><b>razorpay</b></td><td>Prod <b>refuses to start</b> on the built-in test gateway. Needs <code>RAZORPAY_KEY_ID/_SECRET/_WEBHOOK_SECRET</code>.</td></tr>
+  <tr><td><code>SMTP_HOST/PORT/SECURE/USER/PASS</code>, <code>MAIL_FROM</code></td><td>test relay</td><td>&lt;SMTP_*&gt;</td><td>Empty host = e-mails are only stored in the outbox, never sent.</td></tr>
+  <tr><td><code>BILLING_JOB_ENABLED</code></td><td>0</td><td>unset/1 on <b>one</b> instance, <b>0</b> on the others</td><td>Billing/dunning timer (every 6 h, in-process, <b>on by default</b>). See §5.4.</td></tr>
+  <tr><td><code>BUSINESS_UTC_OFFSET_MINUTES</code></td><td>330</td><td>330</td><td>"Business day" boundary (IST). Do not change after go-live.</td></tr>
+  <tr><td><code>ALLOW_PROD_SEED</code>, <code>ARCHIVE_RETENTION_DAYS</code>, <code>DB_LOG_QUERIES</code></td><td>unset</td><td><b>unset</b></td><td>Test/diagnostic switches; must be unset in prod.</td></tr>
+  <tr><td><code>DB_DNS_FALLBACK</code></td><td>1</td><td>1</td><td>Public-DNS fallback if the resolver cannot find the DB host.</td></tr>
+</table>
+<h3>5.2 Container image (proposed Dockerfile)</h3>
+<pre><code>FROM node:22-bookworm-slim AS build
+WORKDIR /app
+COPY package*.json ./
+COPY frontend/package*.json frontend/
+RUN npm ci &amp;&amp; npm ci --prefix frontend
+COPY . .
+RUN npm run build &amp;&amp; npm prune --omit=dev
+
+FROM node:22-bookworm-slim
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/drizzle ./drizzle
+USER node
+EXPOSE 3001
+HEALTHCHECK --interval=15s --timeout=3s CMD node -e "fetch('http://127.0.0.1:3001/health').then(r=&gt;process.exit(r.ok?0:1),()=&gt;process.exit(1))"
+CMD ["node","dist/index.js"]</code></pre>
+<h3>5.3 Kubernetes (or equivalent container service) — minimal manifest</h3>
+<pre><code>apiVersion: apps/v1
+kind: Deployment
+metadata: { name: &lt;APP_NAME&gt; }
+spec:
+  replicas: 2
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  template:
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: app
+        image: &lt;REGISTRY&gt;/&lt;APP_NAME&gt;:&lt;RELEASE_VERSION&gt;
+        ports: [{ containerPort: 3001 }]
+        envFrom: [{ secretRef: { name: &lt;APP_NAME&gt;-env } }]     # synced from &lt;VAULT&gt;
+        resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { cpu: "1", memory: 1Gi } }
+        readinessProbe: { httpGet: { path: /health, port: 3001 }, periodSeconds: 5 }
+        livenessProbe:  { httpGet: { path: /health, port: 3001 }, periodSeconds: 15, failureThreshold: 3 }
+        lifecycle: { preStop: { exec: { command: ["sleep","10"] } } }   # drain before SIGTERM (see G3)</code></pre>
+<p>On a plain VM use the same image under systemd/Compose with <code>restart: always</code> and two instances behind the load balancer.</p>
+<h3>5.4 Scaling and statefulness</h3>
+<ul>
+  <li><b>CPU-bound work:</b> password hashing (bcrypt) on login and invoice OCR. Start at 2 replicas × 1 vCPU / 1 GiB; horizontal autoscaler on CPU 65 % (min 2, max <code>&lt;MAX_REPLICAS&gt;</code>). Uploads are limited by <code>MAX_UPLOAD_BYTES</code> (<code>invoice.routes.ts</code>); allow that body size at the load balancer.</li>
+  <li><b>No sticky sessions needed</b> (JWT bearer tokens).</li>
+  <li><b>Per-instance state (G6):</b> login throttle and rate limits are in memory — limits multiply by replica count. The billing/dunning timer (every 6 h) also runs inside <b>every</b> process unless <code>BILLING_JOB_ENABLED=0</code>. Reminders are guarded by a unique index (<code>uq_dunning_once</code>), so duplicates are prevented, but run it on one instance (set <code>=0</code> on the rest) to avoid wasted work and racing invoice generation.</li>
+  <li><b>DB connections:</b> pooled endpoint; keep <code>replicas × pool size</code> below the pooler's limit. Each cash bill makes ≈ 24 queries, so app and database must be in the same region (§10.3).</li>
+</ul>
+<h3>5.5 Networking, load balancer and TLS</h3>
+<ul>
+  <li><b>Load balancer</b> (L7): terminate TLS, HTTP→HTTPS 301, health check <code>GET /health</code> (expect 200), idle timeout ≥ 60 s, request body limit ≥ <code>MAX_UPLOAD_BYTES</code>, forward <code>X-Forwarded-For/Proto</code> and set <code>TRUST_PROXY</code> to the hop count.</li>
+  <li><b>Certificates:</b> managed certificate (ACM / Let's Encrypt) for <code>&lt;APP_DOMAIN&gt;</code>, auto-renew, alert 21 days before expiry. TLS 1.2+ only; HSTS (<code>max-age ≥ 31536000</code>) at the edge — verify the header in §10.</li>
+  <li>The app server is <b>not</b> publicly addressable: only the load balancer may reach port 3001.</li>
+</ul>
+
+<!-- ───────────── 6 ───────────── -->
+<h2>6. Hosting &amp; Domain Configuration</h2>
+<h3>6.1 Provider and DNS</h3>
+<table>
+  <tr><th style="width:22%">Item</th><th>Value</th></tr>
+  <tr><td>Hosting provider / region</td><td>&lt;HOSTING_PROVIDER&gt; / &lt;REGION&gt; (co-locate with the database region)</td></tr>
+  <tr><td>Database</td><td>&lt;DB_HOST&gt; (hosted Postgres, pooled + direct endpoints, PITR on)</td></tr>
+  <tr><td>Registrar / DNS</td><td>&lt;DNS_PROVIDER&gt;; TTL lowered to 300 s one day before cut-over</td></tr>
+</table>
+<table>
+  <tr><th>Record</th><th>Type</th><th>Value</th><th>Purpose</th></tr>
+  <tr><td><code>&lt;APP_DOMAIN&gt;</code></td><td>CNAME / A (alias)</td><td>&lt;LB_OR_CDN_HOSTNAME&gt;</td><td>The app (UI + API, one origin)</td></tr>
+  <tr><td><code>&lt;STG_DOMAIN&gt;</code></td><td>CNAME</td><td>&lt;STG_LB_HOSTNAME&gt;</td><td>Staging</td></tr>
+  <tr><td><code>&lt;APP_DOMAIN&gt;</code></td><td>CAA</td><td><code>0 issue "&lt;CA&gt;"</code></td><td>Restrict who may issue certificates</td></tr>
+  <tr><td><code>&lt;MAIL_DOMAIN&gt;</code></td><td>TXT (SPF, DKIM, DMARC)</td><td>per mail provider</td><td>Billing / password-reset e-mail deliverability</td></tr>
+</table>
+<h3>6.2 CDN (optional but recommended)</h3>
+<ul>
+  <li>Origin = the load balancer. <b>Cache</b> <code>/assets/*</code> and other hashed files from <code>dist/frontend</code> (long TTL, <code>immutable</code>). <b>Do not cache</b> <code>/api/*</code> or <code>/index.html</code> (short/no-cache), so a release is visible immediately.</li>
+  <li>Forward <code>Authorization</code> and all methods on <code>/api/*</code>; pass client IP in <code>X-Forwarded-For</code> (counts as one more proxy hop for <code>TRUST_PROXY</code>).</li>
+  <li>Enable the CDN's WAF managed rules and bot/rate protection in front of <code>/api/v1/auth/login</code>.</li>
+</ul>
+<h3>6.3 Firewall and security-group rules</h3>
+<table class="small">
+  <tr><th>Direction</th><th>Source → Destination : port</th><th>Rule</th></tr>
+  <tr><td>Inbound</td><td>Internet/CDN → Load balancer : 443</td><td>Allow</td></tr>
+  <tr><td>Inbound</td><td>Internet → Load balancer : 80</td><td>Allow, redirect to 443 only</td></tr>
+  <tr><td>Inbound</td><td>Load balancer → App : 3001</td><td>Allow (security-group reference); deny all else</td></tr>
+  <tr><td>Inbound</td><td>Razorpay → <code>/api/v1/webhooks/razorpay</code> (443)</td><td>Allow; the request is authenticated by the webhook signature (<code>RAZORPAY_WEBHOOK_SECRET</code>)</td></tr>
+  <tr><td>Outbound</td><td>App → Database : 5432</td><td>Allow to &lt;DB_HOST&gt; only (use the database allow-list / private link if offered)</td></tr>
+  <tr><td>Outbound</td><td>App → SMTP : 587, Razorpay API : 443</td><td>Allow to named destinations</td></tr>
+  <tr><td>Outbound</td><td>App → branch printers : 9100</td><td><b>Block / not used.</b> A cloud server cannot reach shop LAN printers; set branches to <b>print via agent</b> (local print agent polls the API over HTTPS).</td></tr>
+  <tr><td>Admin</td><td>Bastion / CI runner → App hosts : 22, DB : 5432</td><td>Allow from fixed IPs / SSM only; no public SSH</td></tr>
+</table>
+
+<!-- ───────────── 7 ───────────── -->
+<h2>7. Security &amp; Compliance</h2>
+<h3>7.1 Controls</h3>
+<table>
+  <tr><th style="width:24%">Area</th><th>Control (and what the code already does)</th></tr>
+  <tr><td>Secrets</td><td>From <code>&lt;VAULT&gt;</code> at deploy time; image contains none; CI uses short-lived tokens; secret scanning on every push. The app refuses to start with a missing/short <code>JWT_SECRET</code>, a wildcard <code>CORS_ORIGIN</code>, or the test payment gateway in production.</td></tr>
+  <tr><td>HTTPS</td><td>Enforced at LB/CDN (301 + HSTS). The API also sends <code>helmet</code> security headers. Cookies are not used for auth (bearer JWT) — keep tokens out of URLs and logs.</td></tr>
+  <tr><td>AuthN / AuthZ</td><td>bcrypt password hashes; role + permission checks re-read the user from the DB on every request, so deactivation is immediate; login lockout and per-IP rate limit (needs correct <code>TRUST_PROXY</code>).</td></tr>
+  <tr><td>Access logging</td><td>Structured request logs (Fastify/pino JSON on stdout) shipped to the log platform; LB access logs on; admin actions in <code>audit_log</code> (Super Admin → Audit Log). <b>Never log</b> Authorization headers, passwords, tokens or card data.</td></tr>
+  <tr><td>Data protection</td><td>Encryption in transit (TLS to DB) and at rest (provider default). The database holds customer phone numbers and uploaded supplier-invoice files (<code>invoice_attachments</code>): treat dumps/backups as sensitive and encrypt them.</td></tr>
+  <tr><td>Domain compliance</td><td>Bills and journal vouchers are never deleted (void/reverse only) and an audit trail records every stock change — retain per <code>&lt;RETENTION_POLICY&gt;</code> (GST / excise rules). Permanent business deletion is possible only for the Super Admin after the archive period (don't set <code>ARCHIVE_RETENTION_DAYS</code> in prod).</td></tr>
+</table>
+<h3>7.2 Backup policy</h3>
+<table>
+  <tr><th>Backup</th><th>Frequency</th><th>Retention</th><th>Target</th></tr>
+  <tr><td>Continuous WAL / PITR</td><td>continuous</td><td>&lt;PITR_DAYS&gt; (≥ 7)</td><td>RPO &lt;RPO&gt;</td></tr>
+  <tr><td>Logical dump (<code>pg_dump -Fc</code>)</td><td>daily + before every release</td><td>30 d daily, 12 monthly</td><td>separate account/bucket, encrypted, write-once</td></tr>
+  <tr><td>Restore test</td><td>quarterly + before first go-live</td><td>—</td><td>staging; RTO &lt;RTO&gt; measured and recorded</td></tr>
+</table>
+<h3>7.3 Vulnerability scanning</h3>
+<ul>
+  <li>Every build: <code>npm audit</code>, Trivy (image + OS packages), gitleaks, dependency-update PRs weekly.</li>
+  <li>Before go-live and yearly: external penetration test of the public surface (login, upload, webhook); fix High/Critical before launch.</li>
+  <li>Patch SLA: Critical 48 h, High 7 d, Medium 30 d.</li>
+</ul>
+
+<!-- ───────────── 8 ───────────── -->
+<h2>8. Monitoring, Logging &amp; Alerting</h2>
+<h3>8.1 Health checks</h3>
+<table>
+  <tr><th>Check</th><th>Endpoint / method</th><th>Frequency</th></tr>
+  <tr><td>Liveness / LB health</td><td><code>GET /health</code> → <code>{"status":"ok"}</code> (process only — G2)</td><td>5–15 s</td></tr>
+  <tr><td>Uptime (external)</td><td><code>GET https://&lt;APP_DOMAIN&gt;/api/v1/health</code> and <code>GET /</code> (SPA loads)</td><td>1 min, from ≥ 2 locations</td></tr>
+  <tr><td>Synthetic transaction (the real DB signal)</td><td>Log in as a dedicated test cashier and call <code>GET /api/v1/me</code> + <code>GET /api/v1/products</code></td><td>5 min</td></tr>
+  <tr><td>Certificate expiry</td><td>TLS probe</td><td>daily</td></tr>
+</table>
+<h3>8.2 Metrics, logs and alert thresholds</h3>
+<table class="small">
+  <tr><th style="width:26%">Signal</th><th style="width:30%">Alert threshold</th><th style="width:10%">Severity</th><th>Responsible</th></tr>
+  <tr><td>Uptime / synthetic login fails</td><td>2 consecutive failures</td><td>P1</td><td>On-call SRE</td></tr>
+  <tr><td>HTTP 5xx rate</td><td>&gt; 1 % for 5 min</td><td>P1</td><td>On-call SRE</td></tr>
+  <tr><td>Bill-create p95 latency</td><td>&gt; &lt;P95_MS&gt; ms for 10 min (baseline in §10)</td><td>P2</td><td>Backend on-call</td></tr>
+  <tr><td>Bills created in opening hours</td><td>0 for 30 min across all outlets</td><td>P1</td><td>On-call SRE + Support</td></tr>
+  <tr><td>CPU / memory per instance</td><td>&gt; 80 % for 10 min; OOM kill</td><td>P2</td><td>SRE</td></tr>
+  <tr><td>DB: connections, CPU, storage</td><td>&gt; 80 % of limit; storage &gt; 80 %</td><td>P2</td><td>DBA</td></tr>
+  <tr><td>DB: replication / PITR status; failed backup</td><td>any failure</td><td>P2</td><td>DBA</td></tr>
+  <tr><td>Print queue (<code>print_jobs</code> PENDING)</td><td>oldest pending &gt; 10 min</td><td>P2</td><td>Support / Backend</td></tr>
+  <tr><td>Payment webhook failures; e-mail <code>FAILED</code> in <code>email_outbox</code></td><td>&gt; 3 in 15 min</td><td>P2</td><td>Backend on-call</td></tr>
+  <tr><td>Auth: login 429 / lockouts</td><td>spike &gt; 5× baseline</td><td>P3 (possible attack)</td><td>Security</td></tr>
+  <tr><td>Certificate / domain expiry</td><td>&lt; 21 days</td><td>P3</td><td>SRE</td></tr>
+</table>
+<p><b>Logs:</b> container stdout (JSON) → <code>&lt;LOG_PLATFORM&gt;</code>; retain 30 d hot / 12 months archive; index by request id, route, status, branch. For a database round-trip investigation set <code>DB_LOG_QUERIES=1</code> briefly on one instance (never left on). <b>Escalation:</b> P1 page immediately, P2 within 30 min in hours, P3 next business day — contacts in Appendix C.</p>
+
+<!-- ───────────── 9 ───────────── -->
+<h2>9. Deployment Procedure (Release Runbook)</h2>
+<p>Window: <code>&lt;WINDOW&gt;</code> (outside outlet trading hours). Roles: <b>RM</b> release manager, <b>SRE</b>, <b>DBA</b>, <b>DEV</b> developer on call, <b>QA</b>, <b>SUP</b> support. Durations are planning estimates — replace with measured values after the staging rehearsal.</p>
+<table class="small">
+  <tr><th style="width:4%">#</th><th style="width:40%">Task</th><th style="width:9%">Role</th><th style="width:8%">Est.</th><th>Command / evidence</th></tr>
+  <tr><td colspan="5" style="background:#e3eee8"><b>T-1 day</b></td></tr>
+  <tr><td>1</td><td>Go/no-go meeting; confirm test baseline, scan results, change ticket approved</td><td>RM</td><td>30 m</td><td>Ticket updated</td></tr>
+  <tr><td>2</td><td>Rehearse the release on staging with a restored prod copy; time the migration</td><td>SRE, DBA, QA</td><td>2 h</td><td>Staging report</td></tr>
+  <tr><td>3</td><td>Lower DNS TTL to 300 s (only if DNS changes); notify outlets of the window</td><td>SRE, SUP</td><td>10 m</td><td>—</td></tr>
+  <tr><td colspan="5" style="background:#e3eee8"><b>T-0 (release window)</b></td></tr>
+  <tr><td>4</td><td>Freeze merges; verify the tag and image digest match the approved build</td><td>RM</td><td>10 m</td><td><code>docker manifest inspect …@sha256:…</code></td></tr>
+  <tr><td>5</td><td>Open status communication ("maintenance started")</td><td>SUP</td><td>5 m</td><td>§11.4 template</td></tr>
+  <tr><td>6</td><td><b>Backup gate:</b> snapshot + <code>pg_dump</code>, verify readable</td><td>DBA</td><td>15 m</td><td>§4.4; record snapshot id</td></tr>
+  <tr><td>7</td><td>Pre-migration validation: <code>t02</code> and <code>t03</code> clean; save fingerprint</td><td>DBA</td><td>10 m</td><td>§4.6</td></tr>
+  <tr><td>8</td><td>Run the migration (additive) on the direct endpoint</td><td>DBA / SRE</td><td>5–10 m</td><td><code>npm run db:migrate</code></td></tr>
+  <tr><td>9</td><td>Post-migration validation: migration count, <code>t02</code>, <code>t03</code></td><td>DBA</td><td>10 m</td><td>§4.6</td></tr>
+  <tr><td>10</td><td>Set/verify secrets and env (§5.1) in the vault → platform</td><td>SRE</td><td>10 m</td><td>diff against the env table</td></tr>
+  <tr><td>11</td><td>Deploy the new image: rolling update, 1 surge, 0 unavailable</td><td>SRE</td><td>10 m</td><td><code>kubectl set image deploy/&lt;APP_NAME&gt; app=…:&lt;RELEASE_VERSION&gt;</code>; <code>kubectl rollout status</code></td></tr>
+  <tr><td>12</td><td>Confirm all instances ready; check logs for startup errors (config refusals appear here)</td><td>SRE, DEV</td><td>10 m</td><td><code>kubectl logs -l app=&lt;APP_NAME&gt; --tail=100</code></td></tr>
+  <tr><td>13</td><td>Run the smoke suite on production (§10.1)</td><td>QA</td><td>30 m</td><td>Checklist signed</td></tr>
+  <tr><td>14</td><td>Confirm exactly one instance runs the billing timer (<code>BILLING_JOB_ENABLED=0</code> elsewhere); confirm webhook delivery</td><td>SRE, DEV</td><td>10 m</td><td>Razorpay dashboard test event</td></tr>
+  <tr><td>15</td><td>Go / no-go decision; announce "release complete" or invoke rollback (§11)</td><td>RM</td><td>10 m</td><td>Sign-off table §10.4</td></tr>
+  <tr><td>16</td><td>Start the 24–72 h monitoring window; unfreeze merges</td><td>RM, SRE</td><td>—</td><td>§12</td></tr>
+</table>
+<p><b>Total in-window estimate:</b> about 2.5–3.5 hours including smoke tests, with the rollback decision point no later than step 13.</p>
+
+<!-- ───────────── 10 ───────────── -->
+<h2>10. Testing &amp; Verification</h2>
+<h3>10.1 Smoke tests (production, after step 12)</h3>
+<table class="small">
+  <tr><th style="width:4%">#</th><th>Check</th><th style="width:32%">Pass criterion</th></tr>
+  <tr><td>1</td><td><code>GET /health</code>, <code>/api/v1/health</code>, <code>GET /</code> over HTTPS; HTTP redirects to HTTPS; HSTS header present</td><td>200 / 301; valid certificate</td></tr>
+  <tr><td>2</td><td>Log in as each role (cashier, manager, owner) with the test accounts; wrong password shows the attempts-left message</td><td>Lands on the right dashboard</td></tr>
+  <tr><td>3</td><td>POS: open shift → scan/add item → cash bill → receipt shows; stock decreases by the sold quantity</td><td>Bill number issued; one stock-audit row</td></tr>
+  <tr><td>4</td><td>Void that bill (manager, with reason)</td><td>Stock restored; reversing voucher posted</td></tr>
+  <tr><td>5</td><td>CREDIT sale to a test khata customer, then a repayment</td><td>Balance returns to start</td></tr>
+  <tr><td>6</td><td>Counter-sheet: draft → post (manager); Tables/KOT: open table → order → bill</td><td>Stock and revenue update; no 5xx</td></tr>
+  <tr><td>7</td><td>Daily closing preview/submit on the test outlet</td><td>Figures equal the bills just rung</td></tr>
+  <tr><td>8</td><td>Accounting: trial balance and Tally export load; totals balance</td><td>Debits = credits</td></tr>
+  <tr><td>9</td><td>Supplier invoice upload (small test file); bank-statement preview</td><td>Parsed without 5xx</td></tr>
+  <tr><td>10</td><td>Print: queue a bill print for the test branch; print agent picks it up</td><td>Job leaves PENDING</td></tr>
+  <tr><td>11</td><td>Payments: live Razorpay test order/webhook; password-reset e-mail delivered</td><td>Invoice marked paid; mail received</td></tr>
+  <tr><td>12</td><td>Offline queue: bill while the network is cut, then restore</td><td>Bill synced once (idempotent <code>clientRef</code>)</td></tr>
+</table>
+<p>Delete or void test data afterwards using the dedicated test outlet; never use real customers' records.</p>
+<h3>10.2 Integration checks</h3>
+<ul>
+  <li>The e2e suite (Playwright) runs against staging with the release image; compare with the recorded baseline (G4). Do <b>not</b> run it against production or against any server that points at a real database.</li>
+  <li>Data checks from §4.6 remain clean; no new <code>5xx</code> in the first hour.</li>
+</ul>
+<h3>10.3 Performance baseline</h3>
+<p>Record before and after each release on staging (and read-only on prod): bill-create p50/p95, bills-list p95, trial-balance p95, DB CPU, and API CPU at expected peak (&lt;PEAK_BILLS_PER_MIN&gt;). Because a cash bill issues ≈ 24 queries, each ≈ 100–250 ms when the app is far from a hosted database, <b>place the app in the database's region</b> and keep pre-checks in one parallel wave. Acceptance: p95 within +20 % of the previous release.</p>
+<h3>10.4 Sign-off criteria</h3>
+<table>
+  <tr><th>Criterion</th><th>Owner</th><th>Signed</th></tr>
+  <tr><td>Migration applied; <code>t02</code>/<code>t03</code> clean</td><td>DBA</td><td>☐</td></tr>
+  <tr><td>All instances ready; no error-level startup logs</td><td>SRE</td><td>☐</td></tr>
+  <tr><td>Smoke tests 1–12 pass (or documented, accepted exceptions)</td><td>QA</td><td>☐</td></tr>
+  <tr><td>Performance within threshold; alerts firing correctly (test alert sent)</td><td>SRE</td><td>☐</td></tr>
+  <tr><td>Backup taken and restore point recorded</td><td>DBA</td><td>☐</td></tr>
+  <tr><td>Release approved to stay live</td><td>RM / Eng Lead</td><td>☐</td></tr>
+</table>
+
+<!-- ───────────── 11 ───────────── -->
+<h2>11. Rollback Plan</h2>
+<h3>11.1 Triggers (any one)</h3>
+<ul>
+  <li>Smoke test 3–7 or 12 fails and is not fixable in 20 minutes.</li>
+  <li>5xx rate &gt; 2 % for 5 minutes, or bill-create p95 &gt; 2× baseline, or no bills can be created.</li>
+  <li>Data-integrity check (<code>t02</code>/<code>t03</code>) reports a violation after the release.</li>
+  <li>Security finding rated High/Critical introduced by the release.</li>
+</ul>
+<p>Decision-maker: RM with the Engineering Lead. Time-box: decide within 15 minutes of the first trigger; prefer rolling back to fixing forward during trading hours.</p>
+<h3>11.2 Application rollback (default path, ~10 min)</h3>
+<pre><code>kubectl rollout undo deploy/&lt;APP_NAME&gt;                    # or redeploy the previous immutable tag
+kubectl rollout status deploy/&lt;APP_NAME&gt;
+# restore the previous env set from the vault if it changed; re-run smoke tests 1–5</code></pre>
+<p>Safe because the schema is additive and backward-compatible with release N-1 (§4.2). Do <b>not</b> run the migrator in reverse.</p>
+<h3>11.3 Database rollback (only if the schema/data change itself is the fault)</h3>
+<table>
+  <tr><th style="width:5%">#</th><th>Step</th></tr>
+  <tr><td>1</td><td>Stop writes: scale the app to 0 (or enable maintenance mode at the LB) and tell outlets to use the offline queue.</td></tr>
+  <tr><td>2</td><td>Prefer the release's tested <code>*_down.sql</code> (e.g. <code>docs/db-optimization/sql/002_integrity_down.sql</code>, then <code>001_indexes_down_concurrent.sql</code>) — no data impact.</td></tr>
+  <tr><td>3</td><td>If data was corrupted: restore to the pre-release snapshot/PITR timestamp into a <b>new</b> database, validate with <code>t01–t03</code>, then repoint <code>DATABASE_URL</code>. <b>Writes made after the restore point are lost</b> — export bills/vouchers created since the snapshot first (<code>created_at &gt; &lt;SNAPSHOT_TIME&gt;</code>) and re-key or replay them under finance supervision.</td></tr>
+  <tr><td>4</td><td>Deploy the previous image against the restored database; run the smoke suite; re-open traffic.</td></tr>
+  <tr><td>5</td><td>Record exactly what was lost/replayed in the incident ticket.</td></tr>
+</table>
+<h3>11.4 Communication plan</h3>
+<table class="small">
+  <tr><th>When</th><th>Audience</th><th>Channel</th><th>Owner</th><th>Message</th></tr>
+  <tr><td>T-1 day</td><td>Outlet owners/managers</td><td>E-mail / WhatsApp / in-app</td><td>SUP</td><td>Window, expected impact, offline-queue reminder, support number</td></tr>
+  <tr><td>Start / end of window</td><td>Internal + outlets</td><td>Status page, chat</td><td>RM</td><td>"Maintenance started / complete"</td></tr>
+  <tr><td>Rollback decided</td><td>Eng lead, ops, outlets</td><td>Chat + phone for P1</td><td>RM</td><td>Reason, ETA, workaround (ring bills on paper / offline queue)</td></tr>
+  <tr><td>Post-incident</td><td>Stakeholders</td><td>E-mail</td><td>RM</td><td>Summary, data impact, next steps within 24 h</td></tr>
+</table>
+
+<!-- ───────────── 12 ───────────── -->
+<h2>12. Post-Deployment Tasks</h2>
+<table>
+  <tr><th style="width:22%">Task</th><th>Detail</th><th style="width:14%">Owner</th><th style="width:12%">When</th></tr>
+  <tr><td>Monitoring window</td><td>Heightened watch: dashboards open, on-call present; review 5xx, latency, print queue, e-mail/webhook failures; first real <b>daily closing</b> of each outlet checked against bills</td><td>SRE, SUP</td><td>24–72 h</td></tr>
+  <tr><td>Cleanup</td><td>Remove test accounts/data and temporary access; revoke DB admin grants; delete temporary tokens; unfreeze merges; restore DNS TTL</td><td>SRE, DBA</td><td>Day 1</td></tr>
+  <tr><td>Backups</td><td>Confirm the first scheduled backup after release succeeded; keep the pre-release dump for 30 days</td><td>DBA</td><td>Day 1–2</td></tr>
+  <tr><td>Documentation</td><td>Update this plan with measured durations, the final env table, runbook corrections; update <code>AGENTS.md</code>/README for any new behaviour; archive the evidence</td><td>RM, DEV</td><td>Week 1</td></tr>
+  <tr><td>Follow-ups</td><td>Close gaps G1–G7 (§1.4); schedule the optional database index/constraint package (§4.7); review unused indexes after a week of real traffic</td><td>Eng Lead</td><td>Week 1–2</td></tr>
+  <tr><td>Retrospective</td><td>Blameless review: timeline vs plan, what slowed us, alert quality, rollback readiness; actions with owners and dates</td><td>RM</td><td>≤ 5 working days</td></tr>
+</table>
+
+<!-- ───────────── APPENDIX ───────────── -->
+<h2 class="pb">Appendix A. Checklist Summary</h2>
+<table class="small">
+  <tr><th style="width:18%">Phase</th><th>Item</th><th style="width:8%">Done</th></tr>
+  <tr><td>Before</td><td>All <code>&lt;PLACEHOLDERS&gt;</code> filled; contacts confirmed; migrations 0017–0024 committed (G5)</td><td>☐</td></tr>
+  <tr><td>Before</td><td>Dockerfile + CI pipeline in place (G1); health/readiness and graceful shutdown decided (G2, G3); test baseline recorded (G4)</td><td>☐</td></tr>
+  <tr><td>Before</td><td>Secrets in vault; <code>JWT_SECRET</code> ≥ 32 chars; <code>CORS_ORIGIN</code> exact; <code>PAYMENT_PROVIDER=razorpay</code>; <code>ALLOW_PROD_SEED</code> unset</td><td>☐</td></tr>
+  <tr><td>Before</td><td>Staging rehearsal with restored prod copy; migration timed; restore tested</td><td>☐</td></tr>
+  <tr><td>Before</td><td>DNS/CDN/TLS/firewall configured and verified; alerts and on-call rota live</td><td>☐</td></tr>
+  <tr><td>During</td><td>Backup + snapshot verified → migrate → validate → deploy → smoke tests → sign-off</td><td>☐</td></tr>
+  <tr><td>During</td><td>Rollback decision made by the time-box; communications sent</td><td>☐</td></tr>
+  <tr><td>After</td><td>Monitoring window complete; cleanup; docs updated; retrospective held</td><td>☐</td></tr>
+</table>
+
+<h2>Appendix B. Glossary</h2>
+<table class="small">
+  <tr><th style="width:20%">Term</th><th>Meaning</th></tr>
+  <tr><td>POS</td><td>Point of sale — the counter billing screen.</td></tr>
+  <tr><td>KOT</td><td>Kitchen order ticket — bar/restaurant table orders.</td></tr>
+  <tr><td>Khata</td><td>Customer credit ledger (sales on credit and repayments).</td></tr>
+  <tr><td>Counter sheet</td><td>Daily Opening + Inward + Transfer − Closing stock sheet that books unbilled sales.</td></tr>
+  <tr><td>Syndicate / outlet</td><td>A business (tenant) and its shops (branches).</td></tr>
+  <tr><td>Super Admin</td><td>The software provider's platform owner; has no shop screens.</td></tr>
+  <tr><td>Print agent</td><td>Local program at a shop that polls the API and prints to LAN printers.</td></tr>
+  <tr><td>Drizzle</td><td>ORM/migration tool; migrations are SQL files tracked in <code>drizzle/meta/_journal.json</code>.</td></tr>
+  <tr><td>PITR</td><td>Point-in-time recovery — restore the database to any moment in a window.</td></tr>
+  <tr><td>RPO / RTO</td><td>Maximum tolerable data loss / time to restore service.</td></tr>
+  <tr><td>Expand → contract</td><td>Add new schema first, remove old in a later release, so old and new code both work.</td></tr>
+  <tr><td>CONCURRENTLY</td><td>Postgres option to build an index without blocking writes; cannot run inside a transaction.</td></tr>
+  <tr><td>HSTS</td><td>Header telling browsers to use HTTPS only.</td></tr>
+</table>
+
+<h2>Appendix C. Contact Matrix</h2>
+<table class="small">
+  <tr><th>Role</th><th>Name</th><th>Phone / chat</th><th>Backup</th><th>Escalation for</th></tr>
+  <tr><td>Release manager</td><td>&lt;NAME&gt;</td><td>&lt;PHONE&gt; / &lt;CHAT&gt;</td><td>&lt;NAME&gt;</td><td>Go/no-go, rollback decision</td></tr>
+  <tr><td>Engineering lead</td><td>&lt;NAME&gt;</td><td>&lt;PHONE&gt;</td><td>&lt;NAME&gt;</td><td>Code defects, scope</td></tr>
+  <tr><td>On-call SRE</td><td>&lt;NAME&gt;</td><td>&lt;PAGER&gt;</td><td>&lt;NAME&gt;</td><td>P1/P2 infrastructure</td></tr>
+  <tr><td>DBA</td><td>&lt;NAME&gt;</td><td>&lt;PHONE&gt;</td><td>&lt;NAME&gt;</td><td>Migration, backup, restore</td></tr>
+  <tr><td>QA lead</td><td>&lt;NAME&gt;</td><td>&lt;PHONE&gt;</td><td>&lt;NAME&gt;</td><td>Smoke/e2e results</td></tr>
+  <tr><td>Security</td><td>&lt;NAME&gt;</td><td>&lt;PHONE&gt;</td><td>&lt;NAME&gt;</td><td>Incidents, secret exposure</td></tr>
+  <tr><td>Support lead</td><td>&lt;NAME&gt;</td><td>&lt;PHONE&gt;</td><td>&lt;NAME&gt;</td><td>Outlet communication</td></tr>
+  <tr><td>Hosting provider support</td><td>&lt;PROVIDER&gt;</td><td>&lt;TICKET URL / PHONE&gt;</td><td>—</td><td>Platform outage</td></tr>
+  <tr><td>Database provider support</td><td>&lt;PROVIDER&gt;</td><td>&lt;TICKET URL&gt;</td><td>—</td><td>Database outage, PITR restore</td></tr>
+  <tr><td>Payment gateway (Razorpay)</td><td>&lt;ACCOUNT MANAGER&gt;</td><td>&lt;DASHBOARD / PHONE&gt;</td><td>—</td><td>Webhook / settlement issues</td></tr>
+</table>
+
+</body>
+</html>

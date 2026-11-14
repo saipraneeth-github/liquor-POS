@@ -24,7 +24,8 @@ import { resolveTaxRate } from '../billing/billing.engine.js';
 import { counterQuantity, explicitTotal, rowTypeId } from '../saletypes/saletype.engine.js';
 import { explicitSums, resolveSaleType } from '../saletypes/saletype.service.js';
 import { onDomainEvent, type Tx } from '../../lib/domain-events.js';
-import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
+import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
+import { logAudit } from '../../lib/audit.js';
 import { businessDateOf, businessDayBounds, isIsoDate } from '../../lib/business-day.js';
 import { roleRank, ROLE_RANK } from '../../middleware/auth.guard.js';
 import type { JwtPayload } from '../auth/auth.service.js';
@@ -57,6 +58,8 @@ export const UpdateLinesSchema = z.object({
     productId:         z.string().uuid(),
     closingBottles:    BOTTLES,
     inwardBottles:     BOTTLES.optional(),
+    openingBottles:    BOTTLES.optional(),      // needs the counter.opening permission
+
     approveAdjustment: z.boolean().optional(),
   })).min(1).max(5000),
 }).refine((d) => new Set(d.lines.map((l) => l.productId)).size === d.lines.length, {
@@ -477,10 +480,11 @@ export async function createSheet(user: JwtPayload, branchId: string, sheetDate:
 
 // ─── UPDATE LINES ────────────────────────────────────────────────────────────
 
-export async function updateSheetLines(user: JwtPayload, sheetId: string, input: UpdateLinesInput) {
+export async function updateSheetLines(user: JwtPayload, sheetId: string, input: UpdateLinesInput, canEditOpening = false) {
   const isManager = roleRank(user.role) >= ROLE_RANK.manager;
+  const openingChanges: { productId: string; from: number; to: number }[] = [];
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [sheet] = await tx.select().from(dailyCounterSheets).where(eq(dailyCounterSheets.id, sheetId)).for('update');
     if (!sheet) throw new NotFoundError('Counter sheet not found');
     if (sheet.status !== 'DRAFT') throw new ConflictError('Counter sheet is already posted');
@@ -497,8 +501,13 @@ export async function updateSheetLines(user: JwtPayload, sheetId: string, input:
         throw new BusinessRuleError(`Only a manager can change the inward count for product ${input_.productId}`);
       }
 
+      // The opening is worked out from yesterday's close; a shop that does not bill every sale may need to correct it
+      const opening = input_.openingBottles ?? line.openingBottles;
+      if (opening !== line.openingBottles && !canEditOpening) {
+        throw new ForbiddenError('You do not have permission to change the opening stock. Ask the owner to give you "Change the opening stock on the counter sheet".');
+      }
       const values = {
-        opening: line.openingBottles,
+        opening,
         inward:  input_.inwardBottles ?? line.inwardBottles,
         closing: input_.closingBottles,
         rate:    line.sellingRate,
@@ -520,7 +529,13 @@ export async function updateSheetLines(user: JwtPayload, sheetId: string, input:
         throw err;
       }
 
+      // Remember what the system had worked out, and who changed it; putting it back clears the mark
+      const systemOpening = line.openingSystem ?? line.openingBottles;
+      const openingEdit = opening === line.openingBottles ? {} : (opening === systemOpening ? { openingSystem: null, openingEditedById: null } : { openingSystem: systemOpening, openingEditedById: user.sub });
+      if (opening !== line.openingBottles) openingChanges.push({ productId: line.productId, from: line.openingBottles, to: opening });
       await tx.update(dailyCounterSheetLines).set({
+        ...openingEdit,
+        openingBottles:         opening,
         inwardBottles:          values.inward,
         closingBottles:         values.closing,
         soldBottles:            result.sold,
@@ -534,6 +549,10 @@ export async function updateSheetLines(user: JwtPayload, sheetId: string, input:
     await tx.update(dailyCounterSheets).set({ totalRevenue }).where(eq(dailyCounterSheets.id, sheetId));
     return getSheet(sheetId, tx);
   });
+  if (openingChanges.length > 0) {
+    await logAudit(user.sub, 'counter.opening.edit', { type: 'counter_sheet', id: sheetId }, { changes: openingChanges });
+  }
+  return result;
 }
 
 // ─── POST ────────────────────────────────────────────────────────────────────
@@ -828,9 +847,12 @@ export async function syncSheetWithSales(sheetId: string, txHandle?: Tx, targetP
     const { start, end } = businessDayBounds(sheet.sheetDate);
     // If targetProductIds is supplied (e.g. from a bill sale), only calculate lines for those products
     const hasTargets = targetProductIds && targetProductIds.length > 0;
-    const inwardMap = sheet.saleTypeId === null ? await inwardByProduct(tx, sheet.branchId, start, end, targetProductIds) : new Map<string, number>();
-    const transferMap = await transferByProduct(tx, sheet.branchId, start, end, sheet.saleTypeId, targetProductIds);
-    const salesMap = await salesByProduct(tx, sheet.branchId, start, end, sheet.saleTypeId, targetProductIds);
+    // three independent reads: one round trip, not three
+    const [inwardMap, transferMap, salesMap] = await Promise.all([
+      sheet.saleTypeId === null ? inwardByProduct(tx, sheet.branchId, start, end, targetProductIds) : Promise.resolve(new Map<string, number>()),
+      transferByProduct(tx, sheet.branchId, start, end, sheet.saleTypeId, targetProductIds),
+      salesByProduct(tx, sheet.branchId, start, end, sheet.saleTypeId, targetProductIds),
+    ]);
 
     const lineConditions = [eq(dailyCounterSheetLines.sheetId, sheetId)];
     if (hasTargets) {

@@ -55,14 +55,22 @@ if (!url) {
   throw new Error('DATABASE_URL environment variable is required');
 }
 
+/**
+ * DB_LOG_QUERIES=1 collects every statement in globalThis.__dbQueries (for counting round trips in a test);
+ * DB_LOG_QUERIES=print also prints them. Off by default.
+ */
+const queryLogger = process.env.DB_LOG_QUERIES
+  ? { logQuery(query: string) { ((globalThis as { __dbQueries?: string[] }).__dbQueries ??= []).push(query); if (process.env.DB_LOG_QUERIES === 'print') console.log('[sql]', query.slice(0, 160)); } }
+  : undefined;
+
 function createDb(databaseUrl: string) {
   if (databaseUrl.startsWith('pglite://')) {
     const target = databaseUrl.slice('pglite://'.length);
     const client = target === 'memory' || target === '' ? new PGlite() : new PGlite(target);
-    return drizzlePglite(client, { schema });
+    return drizzlePglite(client, { schema, logger: queryLogger });
   }
-  const sql = postgres(databaseUrl, { max: 10, idle_timeout: 30 });
-  return drizzlePg(sql, { schema });
+  const sql = postgres(databaseUrl, { max: 10, idle_timeout: 300, connect_timeout: 30 });
+  return drizzlePg(sql, { schema, logger: queryLogger });
 }
 
 // Both drivers expose the same query-builder API; type as the postgres-js flavour.

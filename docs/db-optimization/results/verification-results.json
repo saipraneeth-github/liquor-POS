@@ -1,0 +1,734 @@
+{
+  "scale": 15000,
+  "phases": {
+    "phase1_ms": 3735.6206999999704
+  },
+  "bench": [
+    {
+      "name": "Q01 POS: today's bills, newest first (GET /bills)",
+      "before": {
+        "ms": 37.397,
+        "buffers": 1836,
+        "scans": [
+          "Seq:bills"
+        ],
+        "result": {
+          "n": 50,
+          "h": "439a3dac1e82cfef1f06dd6663ea5a82"
+        }
+      },
+      "after": {
+        "ms": 0.687,
+        "buffers": 55,
+        "scans": [
+          "Index:idx_bills_branch_created"
+        ],
+        "result": {
+          "n": 50,
+          "h": "439a3dac1e82cfef1f06dd6663ea5a82"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q02 Closing: one day's sales by payment mode",
+      "before": {
+        "ms": 37.104,
+        "buffers": 1836,
+        "scans": [
+          "Seq:bills"
+        ],
+        "result": {
+          "n": 4,
+          "h": "eef15cab1d966d2bb3129ac9aa15297f"
+        }
+      },
+      "after": {
+        "ms": 0.536,
+        "buffers": 44,
+        "scans": [
+          "Bitmap Heap:bills",
+          "Bitmap Index:idx_bills_branch_created"
+        ],
+        "result": {
+          "n": 4,
+          "h": "eef15cab1d966d2bb3129ac9aa15297f"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q03 Bill detail / void / receipt: lines of one bill",
+      "before": {
+        "ms": 40.492,
+        "buffers": 1608,
+        "scans": [
+          "Seq:bill_items"
+        ],
+        "result": {
+          "n": 1,
+          "h": "08cf2268fc85a90460a201c69bddfcbb"
+        }
+      },
+      "after": {
+        "ms": 0.078,
+        "buffers": 4,
+        "scans": [
+          "Bitmap Heap:bill_items",
+          "Bitmap Index:idx_bill_items_bill"
+        ],
+        "result": {
+          "n": 1,
+          "h": "08cf2268fc85a90460a201c69bddfcbb"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q04 Dashboard: top sellers, last 7 days",
+      "before": {
+        "ms": 387.44,
+        "buffers": 65077,
+        "scans": [
+          "Seq:bill_items",
+          "Index:bills_pkey"
+        ],
+        "result": {
+          "n": 10,
+          "h": "69566692a68c3338d00844f45f5c93f5"
+        }
+      },
+      "after": {
+        "ms": 15.327,
+        "buffers": 1827,
+        "scans": [
+          "Bitmap Heap:bills",
+          "Bitmap Index:idx_bills_branch_created",
+          "Index:idx_bill_items_bill"
+        ],
+        "result": {
+          "n": 10,
+          "h": "69566692a68c3338d00844f45f5c93f5"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q05 Shift close: totals of one shift",
+      "before": {
+        "ms": 27.509,
+        "buffers": 1836,
+        "scans": [
+          "Seq:bills"
+        ],
+        "result": {
+          "n": 1,
+          "h": "1b9cea9e01dc39c108b0275e12971398"
+        }
+      },
+      "after": {
+        "ms": 1.301,
+        "buffers": 142,
+        "scans": [
+          "Bitmap Heap:bills",
+          "Bitmap Index:idx_bills_shift"
+        ],
+        "result": {
+          "n": 1,
+          "h": "1b9cea9e01dc39c108b0275e12971398"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q06 Stock audit of one product",
+      "before": {
+        "ms": 46.804,
+        "buffers": 1731,
+        "scans": [
+          "Seq:stock_audit"
+        ],
+        "result": {
+          "n": 100,
+          "h": "696797366be9e37272bfa72d50cf98c6"
+        }
+      },
+      "after": {
+        "ms": 1.114,
+        "buffers": 10,
+        "scans": [
+          "Bitmap Heap:stock_audit",
+          "Bitmap Index:idx_stock_audit_branch_product"
+        ],
+        "result": {
+          "n": 100,
+          "h": "696797366be9e37272bfa72d50cf98c6"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q07 Counter sheet: movements it wrote (by reference)",
+      "before": {
+        "ms": 50.04,
+        "buffers": 1731,
+        "scans": [
+          "Seq:stock_audit"
+        ],
+        "result": {
+          "n": 1,
+          "h": "974ab35915525e547f3d17185999f1bb"
+        }
+      },
+      "after": {
+        "ms": 0.086,
+        "buffers": 4,
+        "scans": [
+          "Bitmap Heap:stock_audit",
+          "Bitmap Index:idx_stock_audit_reference"
+        ],
+        "result": {
+          "n": 1,
+          "h": "974ab35915525e547f3d17185999f1bb"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q08 Trial balance: one month",
+      "before": {
+        "ms": 397.285,
+        "buffers": 46663,
+        "scans": [
+          "Seq:journal_lines",
+          "Index:journal_vouchers_pkey"
+        ],
+        "result": {
+          "n": 3,
+          "h": "22eb27d2dd01d419311b4caedc256fb9"
+        }
+      },
+      "after": {
+        "ms": 49.019,
+        "buffers": 7999,
+        "scans": [
+          "Bitmap Heap:journal_vouchers",
+          "Bitmap Index:idx_journal_vouchers_branch_date",
+          "Index:idx_journal_lines_voucher"
+        ],
+        "result": {
+          "n": 3,
+          "h": "22eb27d2dd01d419311b4caedc256fb9"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q09 Voucher detail: lines of one voucher",
+      "before": {
+        "ms": 47.788,
+        "buffers": 1487,
+        "scans": [
+          "Seq:journal_lines"
+        ],
+        "result": {
+          "n": 3,
+          "h": "4036974b51ee67f505da710bc8ff3887"
+        }
+      },
+      "after": {
+        "ms": 0.203,
+        "buffers": 6,
+        "scans": [
+          "Bitmap Heap:journal_lines",
+          "Bitmap Index:idx_journal_lines_voucher"
+        ],
+        "result": {
+          "n": 3,
+          "h": "4036974b51ee67f505da710bc8ff3887"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q10 Ledger entries: one ledger over a month",
+      "before": {
+        "ms": 160.62,
+        "buffers": 46665,
+        "scans": [
+          "Index:uq_ledger_branch_code",
+          "Seq:journal_lines",
+          "Index:journal_vouchers_pkey"
+        ],
+        "result": {
+          "n": 1259,
+          "h": "945e0618026e1aad4351e3f30477aa7a"
+        }
+      },
+      "after": {
+        "ms": 80.469,
+        "buffers": 1260,
+        "scans": [
+          "Index:uq_ledger_branch_code",
+          "Bitmap Heap:journal_lines",
+          "Bitmap Index:idx_journal_lines_ledger",
+          "Bitmap Heap:journal_vouchers",
+          "Bitmap Index:idx_journal_vouchers_branch_date"
+        ],
+        "result": {
+          "n": 1259,
+          "h": "945e0618026e1aad4351e3f30477aa7a"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q11 KOT: items of one order",
+      "before": {
+        "ms": 46.564,
+        "buffers": 1800,
+        "scans": [
+          "Seq:kot_items"
+        ],
+        "result": {
+          "n": 3,
+          "h": "0d99586703bd3e08a72d68093aedeaa8"
+        }
+      },
+      "after": {
+        "ms": 0.125,
+        "buffers": 6,
+        "scans": [
+          "Bitmap Heap:kot_items",
+          "Bitmap Index:idx_kot_items_order"
+        ],
+        "result": {
+          "n": 3,
+          "h": "0d99586703bd3e08a72d68093aedeaa8"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q12 Tables: open session of a table",
+      "before": {
+        "ms": 18.009,
+        "buffers": 556,
+        "scans": [
+          "Seq:table_sessions"
+        ],
+        "result": {
+          "n": 0,
+          "h": "d41d8cd98f00b204e9800998ecf8427e"
+        }
+      },
+      "after": {
+        "ms": 0.084,
+        "buffers": 3,
+        "scans": [
+          "Index:idx_table_sessions_table_open"
+        ],
+        "result": {
+          "n": 0,
+          "h": "d41d8cd98f00b204e9800998ecf8427e"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q13 Khata: customer statement",
+      "before": {
+        "ms": 4.332,
+        "buffers": 160,
+        "scans": [
+          "Seq:credit_transactions"
+        ],
+        "result": {
+          "n": 20,
+          "h": "d42963d8ef7fd353783cbaf8e053d1b3"
+        }
+      },
+      "after": {
+        "ms": 0.385,
+        "buffers": 22,
+        "scans": [
+          "Bitmap Heap:credit_transactions",
+          "Bitmap Index:idx_credit_txn_customer_recorded"
+        ],
+        "result": {
+          "n": 20,
+          "h": "d42963d8ef7fd353783cbaf8e053d1b3"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q14 Supplier invoice: its lines",
+      "before": {
+        "ms": 5.81,
+        "buffers": 193,
+        "scans": [
+          "Seq:supplier_invoice_items"
+        ],
+        "result": {
+          "n": 6,
+          "h": "2206cd00f9a0580f400dbebf509c01b2"
+        }
+      },
+      "after": {
+        "ms": 0.184,
+        "buffers": 8,
+        "scans": [
+          "Bitmap Heap:supplier_invoice_items",
+          "Bitmap Index:idx_supplier_invoice_items_invoice"
+        ],
+        "result": {
+          "n": 6,
+          "h": "2206cd00f9a0580f400dbebf509c01b2"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q15 Supplier invoices list, newest first",
+      "before": {
+        "ms": 5.581,
+        "buffers": 41,
+        "scans": [
+          "Seq:supplier_invoices"
+        ],
+        "result": {
+          "n": 50,
+          "h": "a754f77c41e8c31b5a41f3d79409ead9"
+        }
+      },
+      "after": {
+        "ms": 0.727,
+        "buffers": 5,
+        "scans": [
+          "Index:idx_supplier_invoices_branch_created"
+        ],
+        "result": {
+          "n": 50,
+          "h": "a754f77c41e8c31b5a41f3d79409ead9"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q16 Print queue: pending network jobs",
+      "before": {
+        "ms": 8.88,
+        "buffers": 231,
+        "scans": [
+          "Seq:print_jobs"
+        ],
+        "result": {
+          "n": 5,
+          "h": "400f32a54d1834e0faaa43b0fc1a15ed"
+        }
+      },
+      "after": {
+        "ms": 0.113,
+        "buffers": 2,
+        "scans": [
+          "Index:idx_print_jobs_pending"
+        ],
+        "result": {
+          "n": 5,
+          "h": "400f32a54d1834e0faaa43b0fc1a15ed"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q17 Platform audit log, newest 100",
+      "before": {
+        "ms": 32.529,
+        "buffers": 171,
+        "scans": [
+          "Seq:audit_log"
+        ],
+        "result": {
+          "n": 100,
+          "h": "f52e2eb1e99c071a75a565e76bae4a82"
+        }
+      },
+      "after": {
+        "ms": 0.664,
+        "buffers": 4,
+        "scans": [
+          "Index:idx_audit_log_created"
+        ],
+        "result": {
+          "n": 100,
+          "h": "f52e2eb1e99c071a75a565e76bae4a82"
+        }
+      },
+      "sameResult": true
+    },
+    {
+      "name": "Q18 Khata: credit bills of a customer",
+      "before": {
+        "ms": 69.159,
+        "buffers": 3672,
+        "scans": [
+          "Seq:bills"
+        ],
+        "result": {
+          "n": 75,
+          "h": "e33ca007323b72332879b709345530a0"
+        }
+      },
+      "after": {
+        "ms": 0.501,
+        "buffers": 78,
+        "scans": [
+          "Bitmap Heap:bills",
+          "Index Only:idx_bills_customer",
+          "Bitmap Index:idx_bills_customer"
+        ],
+        "result": {
+          "n": 75,
+          "h": "e33ca007323b72332879b709345530a0"
+        }
+      },
+      "sameResult": true
+    }
+  ],
+  "tests": {
+    "baseline": {
+      "invariants": [
+        {
+          "invariant": "every PAID bill has at least one line",
+          "violations": 0
+        },
+        {
+          "invariant": "every voucher balances (debit = credit)",
+          "violations": 0
+        },
+        {
+          "invariant": "stock never negative",
+          "violations": 0
+        },
+        {
+          "invariant": "sum of explicit sale-type counters <= shop stock",
+          "violations": 0
+        },
+        {
+          "invariant": "customer balance = last credit_transactions.balance_after",
+          "violations": 0
+        },
+        {
+          "invariant": "bill numbers are unique",
+          "violations": 0
+        }
+      ],
+      "referentialIntegrity": []
+    },
+    "phase1": {
+      "dataFingerprintUnchanged": true,
+      "invariants": [
+        {
+          "invariant": "every PAID bill has at least one line",
+          "violations": 0
+        },
+        {
+          "invariant": "every voucher balances (debit = credit)",
+          "violations": 0
+        },
+        {
+          "invariant": "stock never negative",
+          "violations": 0
+        },
+        {
+          "invariant": "sum of explicit sale-type counters <= shop stock",
+          "violations": 0
+        },
+        {
+          "invariant": "customer balance = last credit_transactions.balance_after",
+          "violations": 0
+        },
+        {
+          "invariant": "bill numbers are unique",
+          "violations": 0
+        }
+      ],
+      "referentialIntegrity": []
+    },
+    "phase2": {
+      "precheckViolations": [],
+      "constraintEnforcement": [
+        {
+          "probe": "unknown payment mode",
+          "expected": "REJECTED",
+          "actual": "REJECTED",
+          "ok": true
+        },
+        {
+          "probe": "journal line with debit AND credit",
+          "expected": "REJECTED",
+          "actual": "REJECTED",
+          "ok": true
+        },
+        {
+          "probe": "negative journal amount",
+          "expected": "REJECTED",
+          "actual": "REJECTED",
+          "ok": true
+        },
+        {
+          "probe": "zero-quantity bill line",
+          "expected": "REJECTED",
+          "actual": "REJECTED",
+          "ok": true
+        },
+        {
+          "probe": "bank line whose account differs from its statement's",
+          "expected": "REJECTED",
+          "actual": "REJECTED",
+          "ok": true
+        },
+        {
+          "probe": "product pointing at a non-existent invoice",
+          "expected": "REJECTED",
+          "actual": "REJECTED",
+          "ok": true
+        },
+        {
+          "probe": "valid payment mode UPI",
+          "expected": "ACCEPTED",
+          "actual": "ACCEPTED",
+          "ok": true
+        },
+        {
+          "probe": "valid one-sided journal line",
+          "expected": "ACCEPTED",
+          "actual": "ACCEPTED",
+          "ok": true
+        }
+      ],
+      "referentialIntegrity": [],
+      "dataFingerprintUnchanged": true,
+      "invariants": [
+        {
+          "invariant": "every PAID bill has at least one line",
+          "violations": 0
+        },
+        {
+          "invariant": "every voucher balances (debit = credit)",
+          "violations": 0
+        },
+        {
+          "invariant": "stock never negative",
+          "violations": 0
+        },
+        {
+          "invariant": "sum of explicit sale-type counters <= shop stock",
+          "violations": 0
+        },
+        {
+          "invariant": "customer balance = last credit_transactions.balance_after",
+          "violations": 0
+        },
+        {
+          "invariant": "bill numbers are unique",
+          "violations": 0
+        }
+      ],
+      "precheckDetectsDirtyData": true
+    },
+    "rollback": {
+      "catalogIdenticalToOriginal": true,
+      "dataFingerprintUnchanged": true,
+      "catBefore": [
+        {
+          "part": "indexes",
+          "n": 114,
+          "h": "7a686fe0d9954e18934198f18d38e648"
+        },
+        {
+          "part": "constraints",
+          "n": 222,
+          "h": "6f956169721a1286faf1b83ec18af225"
+        },
+        {
+          "part": "columns",
+          "n": 665,
+          "h": "7c56e922cfdb66c97d959c6fc0884bae"
+        }
+      ],
+      "catAfterRollback": [
+        {
+          "part": "indexes",
+          "n": 114,
+          "h": "7a686fe0d9954e18934198f18d38e648"
+        },
+        {
+          "part": "constraints",
+          "n": 222,
+          "h": "6f956169721a1286faf1b83ec18af225"
+        },
+        {
+          "part": "columns",
+          "n": 665,
+          "h": "7c56e922cfdb66c97d959c6fc0884bae"
+        }
+      ]
+    },
+    "reapplyIdempotent": true
+  },
+  "rowCounts": {
+    "bills": 45000,
+    "bill_items": 112500,
+    "stock_audit": 112500,
+    "journal_lines": 135000,
+    "journal_vouchers": 45000,
+    "audit_log": 15000,
+    "kot_items": 135000
+  },
+  "writeMsBefore": 1878.874499999918,
+  "sizeBefore": {
+    "tables": "95 MB",
+    "indexes": "39 MB",
+    "idx_bytes": 40632320,
+    "tbl_bytes": 99270656
+  },
+  "writeMsAfter": 2261.480799999903,
+  "sizeAfter": {
+    "tables": "100 MB",
+    "indexes": "73 MB",
+    "idx_bytes": 76595200,
+    "tbl_bytes": 105037824
+  },
+  "indexesAdded": 41,
+  "indexesNotExercised": [
+    "idx_bill_items_product",
+    "idx_stock_audit_branch_created",
+    "idx_stock_by_type_sale_type",
+    "idx_expenses_branch_date",
+    "idx_bank_lines_voucher",
+    "idx_tables_branch",
+    "idx_table_sessions_branch_open",
+    "idx_table_sessions_bill",
+    "idx_kot_orders_session",
+    "idx_kot_orders_branch_created",
+    "idx_supplier_invoice_items_product",
+    "idx_schemes_branch_status",
+    "idx_scheme_purchases_scheme",
+    "idx_breakage_branch_created",
+    "idx_pour_counts_branch_created",
+    "idx_excise_quotas_branch",
+    "idx_shift_sessions_branch_opened",
+    "idx_credit_txn_bill",
+    "idx_branches_syndicate",
+    "idx_users_branch",
+    "idx_users_syndicate",
+    "idx_products_category",
+    "idx_subscription_invoices_syn",
+    "idx_payment_orders_invoice",
+    "idx_audit_log_actor"
+  ],
+  "resultHashesEqual": true,
+  "elapsedSeconds": 952.403
+}

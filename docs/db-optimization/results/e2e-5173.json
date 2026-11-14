@@ -1,0 +1,1095 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Users\\yarra\\AppData\\Local\\Volta\\tools\\image\\node\\22.22.2\\node.exe",
+      "D:\\AI Project\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "-c",
+      "docs/db-optimization/scripts/playwright.5173.config.ts",
+      "accounting-and-roles",
+      "credit-khata",
+      "dashboard-login",
+      "dialogs-and-manual-bill",
+      "full-journey",
+      "operational-lifecycle",
+      "platform-lifecycle"
+    ],
+    "configFile": "D:\\AI Project\\docs\\db-optimization\\scripts\\playwright.5173.config.ts",
+    "rootDir": "D:/AI Project/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 2
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "D:/AI Project/docs/db-optimization/results/e2e-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "D:/AI Project/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 90000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 2
+        },
+        "name": "chromium",
+        "testDir": "D:\\AI Project\\tests\\e2e",
+        "snapshotDir": "D:\\AI Project\\tests\\e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.@(spec|test).?(c|m)[jt]s?(x)",
+        "timeout": 90000,
+        "use": {
+          "baseURL": "http://localhost:5173",
+          "trace": "off",
+          "screenshot": "only-on-failure",
+          "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.4 Safari/537.36",
+          "viewport": {
+            "width": 1280,
+            "height": 720
+          },
+          "screen": {
+            "width": 1920,
+            "height": 1080
+          },
+          "deviceScaleFactor": 1,
+          "isMobile": false,
+          "hasTouch": false,
+          "defaultBrowserType": "chromium"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "chromium"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "../results/e2e-5173.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 2,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "accounting-and-roles.spec.ts",
+      "file": "accounting-and-roles.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "accounting: trial balance is balanced after sales; P&L and Tally export work",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9422,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:22:42.234Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b594252665e25aab59ee-f25883a856ecd58af012",
+          "file": "accounting-and-roles.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "role gating: steward cannot see accounting or billing; cashier cannot open manager screens",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 20129,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#userDisplay')\nExpected substring: \u001b[32m\"\u001b[7ms\u001b[27mteward\"\u001b[39m\nReceived string:    \u001b[31m\"\u001b[7mFloor Steward (S\u001b[27mteward\u001b[7m)\u001b[27m\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#userDisplay') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#userDisplay')\u001b[22m\n\u001b[2m    33 × locator resolved to <div id=\"userDisplay\" class=\"font-semibold\">Floor Steward (Steward)</div>\u001b[22m\n\u001b[2m       - unexpected value \"Floor Steward (Steward)\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#userDisplay')\nExpected substring: \u001b[32m\"\u001b[7ms\u001b[27mteward\"\u001b[39m\nReceived string:    \u001b[31m\"\u001b[7mFloor Steward (S\u001b[27mteward\u001b[7m)\u001b[27m\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#userDisplay') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#userDisplay')\u001b[22m\n\u001b[2m    33 × locator resolved to <div id=\"userDisplay\" class=\"font-semibold\">Floor Steward (Steward)</div>\u001b[22m\n\u001b[2m       - unexpected value \"Floor Steward (Steward)\"\u001b[22m\n\n    at D:\\AI Project\\tests\\e2e\\accounting-and-roles.spec.ts:31:46",
+                    "location": {
+                      "file": "D:\\AI Project\\tests\\e2e\\accounting-and-roles.spec.ts",
+                      "column": 46,
+                      "line": 31
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 29 |\u001b[39m test(\u001b[32m'role gating: steward cannot see accounting or billing; cashier cannot open manager screens'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\n \u001b[90m 30 |\u001b[39m   \u001b[36mawait\u001b[39m login(page\u001b[33m,\u001b[39m \u001b[32m'steward@liquor.com'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 31 |\u001b[39m   \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'#userDisplay'\u001b[39m))\u001b[33m.\u001b[39mtoContainText(\u001b[32m'steward'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                              \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 32 |\u001b[39m   \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'#nav-dashboard'\u001b[39m))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m 33 |\u001b[39m   \u001b[36mfor\u001b[39m (\u001b[36mconst\u001b[39m tab \u001b[36mof\u001b[39m [\u001b[32m'accounting'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'pos'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'bills'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'closing'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'schemes'\u001b[39m]) {\n \u001b[90m 34 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m`#nav-${tab}`\u001b[39m))\u001b[33m.\u001b[39mtoHaveCount(\u001b[35m0\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "D:\\AI Project\\tests\\e2e\\accounting-and-roles.spec.ts",
+                        "column": 46,
+                        "line": 31
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#userDisplay')\nExpected substring: \u001b[32m\"\u001b[7ms\u001b[27mteward\"\u001b[39m\nReceived string:    \u001b[31m\"\u001b[7mFloor Steward (S\u001b[27mteward\u001b[7m)\u001b[27m\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#userDisplay') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#userDisplay')\u001b[22m\n\u001b[2m    33 × locator resolved to <div id=\"userDisplay\" class=\"font-semibold\">Floor Steward (Steward)</div>\u001b[22m\n\u001b[2m       - unexpected value \"Floor Steward (Steward)\"\u001b[22m\n\n\n  29 | test('role gating: steward cannot see accounting or billing; cashier cannot open manager screens', async ({ page }) => {\n  30 |   await login(page, 'steward@liquor.com');\n> 31 |   await expect(page.locator('#userDisplay')).toContainText('steward');\n     |                                              ^\n  32 |   await expect(page.locator('#nav-dashboard')).toBeVisible();\n  33 |   for (const tab of ['accounting', 'pos', 'bills', 'closing', 'admin', 'schemes']) {\n  34 |     await expect(page.locator(`#nav-${tab}`)).toHaveCount(0);\n    at D:\\AI Project\\tests\\e2e\\accounting-and-roles.spec.ts:31:46"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:22:42.259Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\accounting-and-roles-role--69fa3-cannot-open-manager-screens-chromium\\test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\accounting-and-roles-role--69fa3-cannot-open-manager-screens-chromium\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "D:\\AI Project\\tests\\e2e\\accounting-and-roles.spec.ts",
+                    "column": 46,
+                    "line": 31
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "b594252665e25aab59ee-c701d4002927c1a832a2",
+          "file": "accounting-and-roles.spec.ts",
+          "line": 29,
+          "column": 1
+        },
+        {
+          "title": "expired or invalid session returns to the login page with a message",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3769,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:22:52.183Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b594252665e25aab59ee-a7baaf62a61be5955a2a",
+          "file": "accounting-and-roles.spec.ts",
+          "line": 57,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "credit-khata.spec.ts",
+      "file": "credit-khata.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "CREDIT sale to khata customer Ravi Kumar, then a repayment",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7800,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m18000\u001b[39m\nReceived: \u001b[31m16000\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m18000\u001b[39m\nReceived: \u001b[31m16000\u001b[39m\n    at D:\\AI Project\\tests\\e2e\\credit-khata.spec.ts:41:30",
+                    "location": {
+                      "file": "D:\\AI Project\\tests\\e2e\\credit-khata.spec.ts",
+                      "column": 30,
+                      "line": 41
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 39 |\u001b[39m   \u001b[90m// Khata now owes ₹180 more\u001b[39m\n \u001b[90m 40 |\u001b[39m   \u001b[36mconst\u001b[39m afterSale \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m openRaviStatement(page)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 41 |\u001b[39m   expect(afterSale \u001b[33m-\u001b[39m before)\u001b[33m.\u001b[39mtoBe(\u001b[35m18000\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                              \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 42 |\u001b[39m   \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'#custEntries'\u001b[39m))\u001b[33m.\u001b[39mtoContainText(\u001b[32m'PURCHASE'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 43 |\u001b[39m\n \u001b[90m 44 |\u001b[39m   \u001b[90m// Repay ₹180 in cash → back to the original balance\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "D:\\AI Project\\tests\\e2e\\credit-khata.spec.ts",
+                        "column": 30,
+                        "line": 41
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m18000\u001b[39m\nReceived: \u001b[31m16000\u001b[39m\n\n  39 |   // Khata now owes ₹180 more\n  40 |   const afterSale = await openRaviStatement(page);\n> 41 |   expect(afterSale - before).toBe(18000);\n     |                              ^\n  42 |   await expect(page.locator('#custEntries')).toContainText('PURCHASE');\n  43 |\n  44 |   // Repay ₹180 in cash → back to the original balance\n    at D:\\AI Project\\tests\\e2e\\credit-khata.spec.ts:41:30"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:22:56.020Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\credit-khata-CREDIT-sale-t-59ddb-Ravi-Kumar-then-a-repayment-chromium\\test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\credit-khata-CREDIT-sale-t-59ddb-Ravi-Kumar-then-a-repayment-chromium\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "D:\\AI Project\\tests\\e2e\\credit-khata.spec.ts",
+                    "column": 30,
+                    "line": 41
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "bb9c3618868bfbdffedf-32f5a17e0d76156e811c",
+          "file": "credit-khata.spec.ts",
+          "line": 19,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dashboard-login.spec.ts",
+      "file": "dashboard-login.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "login: shows server status, reveals the password, and says how many tries are left",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 5399,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:23:07.361Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "80c93e2c753d5dfe4769-ad8851e194a19de52cb1",
+          "file": "dashboard-login.spec.ts",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "manager dashboard: figures, attention strip and New bill shortcut",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 5042,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:23:07.276Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "80c93e2c753d5dfe4769-9c40c1f713e2dff037b8",
+          "file": "dashboard-login.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "owner dashboard: all-outlets view and switch to a single outlet",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 18560,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#dashTitle')\nExpected substring: \u001b[32m\"All outlets\"\u001b[39m\nReceived string:    \u001b[31m\"Welcome to Main Counter Branch\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#dashTitle') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#dashTitle')\u001b[22m\n\u001b[2m    33 × locator resolved to <h2 id=\"dashTitle\">Welcome to Main Counter Branch</h2>\u001b[22m\n\u001b[2m       - unexpected value \"Welcome to Main Counter Branch\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#dashTitle')\nExpected substring: \u001b[32m\"All outlets\"\u001b[39m\nReceived string:    \u001b[31m\"Welcome to Main Counter Branch\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#dashTitle') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#dashTitle')\u001b[22m\n\u001b[2m    33 × locator resolved to <h2 id=\"dashTitle\">Welcome to Main Counter Branch</h2>\u001b[22m\n\u001b[2m       - unexpected value \"Welcome to Main Counter Branch\"\u001b[22m\n\n    at D:\\AI Project\\tests\\e2e\\dashboard-login.spec.ts:38:44",
+                    "location": {
+                      "file": "D:\\AI Project\\tests\\e2e\\dashboard-login.spec.ts",
+                      "column": 44,
+                      "line": 38
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 36 |\u001b[39m   \u001b[90m// A syndicate owner may first be asked to pick a branch; the toggle appears once on the dashboard.\u001b[39m\n \u001b[90m 37 |\u001b[39m   \u001b[36mawait\u001b[39m expect(toggle)\u001b[33m.\u001b[39mtoBeVisible({ timeout\u001b[33m:\u001b[39m \u001b[35m15000\u001b[39m })\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 38 |\u001b[39m   \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'#dashTitle'\u001b[39m))\u001b[33m.\u001b[39mtoContainText(\u001b[32m'All outlets'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                            \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 39 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'#dashScope-branch'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 40 |\u001b[39m   \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'#dashNewBill'\u001b[39m))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m 41 |\u001b[39m })\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "D:\\AI Project\\tests\\e2e\\dashboard-login.spec.ts",
+                        "column": 44,
+                        "line": 38
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#dashTitle')\nExpected substring: \u001b[32m\"All outlets\"\u001b[39m\nReceived string:    \u001b[31m\"Welcome to Main Counter Branch\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#dashTitle') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#dashTitle')\u001b[22m\n\u001b[2m    33 × locator resolved to <h2 id=\"dashTitle\">Welcome to Main Counter Branch</h2>\u001b[22m\n\u001b[2m       - unexpected value \"Welcome to Main Counter Branch\"\u001b[22m\n\n\n  36 |   // A syndicate owner may first be asked to pick a branch; the toggle appears once on the dashboard.\n  37 |   await expect(toggle).toBeVisible({ timeout: 15000 });\n> 38 |   await expect(page.locator('#dashTitle')).toContainText('All outlets');\n     |                                            ^\n  39 |   await page.click('#dashScope-branch');\n  40 |   await expect(page.locator('#dashNewBill')).toBeVisible();\n  41 | });\n    at D:\\AI Project\\tests\\e2e\\dashboard-login.spec.ts:38:44"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:23:12.833Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\dashboard-login-owner-dash-4bd46-d-switch-to-a-single-outlet-chromium\\test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\dashboard-login-owner-dash-4bd46-d-switch-to-a-single-outlet-chromium\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "D:\\AI Project\\tests\\e2e\\dashboard-login.spec.ts",
+                    "column": 44,
+                    "line": 38
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "80c93e2c753d5dfe4769-350657e0bb85a9b5ce85",
+          "file": "dashboard-login.spec.ts",
+          "line": 33,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "dialogs-and-manual-bill.spec.ts",
+      "file": "dialogs-and-manual-bill.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "dialogs open in the middle of the window, on a tall screen and on a short one",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6624,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:23:13.333Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6d95ed84bc211a86dc7d-69ac01b4f47866df295c",
+          "file": "dialogs-and-manual-bill.spec.ts",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "forgot password: the form sits a little above the middle, not pushed down",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1861,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:23:20.018Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "6d95ed84bc211a86dc7d-f23ffd5de9493c4de558",
+          "file": "dialogs-and-manual-bill.spec.ts",
+          "line": 50,
+          "column": 1
+        },
+        {
+          "title": "a supplier bill typed in by hand can be confirmed into stock",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 4271,
+                  "error": {
+                    "message": "Error: locator.click: Error: strict mode violation: getByRole('button', { name: 'Add Supplier Bill' }) resolved to 2 elements:\n    1) <button type=\"button\" class=\"px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer text-gray-700 hover:text-gray-900 hover:bg-gray-100\">Add Supplier Bill</button> aka getByRole('button', { name: 'Add Supplier Bill', exact: true })\n    2) <button type=\"button\" class=\"px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-sm flex items-center gap-2 cursor-pointer self-start sm:self-auto\">…</button> aka getByRole('button', { name: '＋ Add Supplier Bill' })\n\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'Add Supplier Bill' })\u001b[22m\n",
+                    "stack": "Error: locator.click: Error: strict mode violation: getByRole('button', { name: 'Add Supplier Bill' }) resolved to 2 elements:\n    1) <button type=\"button\" class=\"px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer text-gray-700 hover:text-gray-900 hover:bg-gray-100\">Add Supplier Bill</button> aka getByRole('button', { name: 'Add Supplier Bill', exact: true })\n    2) <button type=\"button\" class=\"px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-sm flex items-center gap-2 cursor-pointer self-start sm:self-auto\">…</button> aka getByRole('button', { name: '＋ Add Supplier Bill' })\n\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'Add Supplier Bill' })\u001b[22m\n\n    at D:\\AI Project\\tests\\e2e\\dialogs-and-manual-bill.spec.ts:68:65",
+                    "location": {
+                      "file": "D:\\AI Project\\tests\\e2e\\dialogs-and-manual-bill.spec.ts",
+                      "column": 65,
+                      "line": 68
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 66 |\u001b[39m\n \u001b[90m 67 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m'/invoices'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 68 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'Add Supplier Bill'\u001b[39m })\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                                                 \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 69 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgetByText(\u001b[32m'Enter bill items manually'\u001b[39m)\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 70 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'#invEditSupplier'\u001b[39m)\u001b[33m.\u001b[39mfill(\u001b[32m`Depot ${stamp}`\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 71 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'#invEditNumber'\u001b[39m)\u001b[33m.\u001b[39mfill(invNo)\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "D:\\AI Project\\tests\\e2e\\dialogs-and-manual-bill.spec.ts",
+                        "column": 65,
+                        "line": 68
+                      },
+                      "message": "Error: locator.click: Error: strict mode violation: getByRole('button', { name: 'Add Supplier Bill' }) resolved to 2 elements:\n    1) <button type=\"button\" class=\"px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer text-gray-700 hover:text-gray-900 hover:bg-gray-100\">Add Supplier Bill</button> aka getByRole('button', { name: 'Add Supplier Bill', exact: true })\n    2) <button type=\"button\" class=\"px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold shadow-sm flex items-center gap-2 cursor-pointer self-start sm:self-auto\">…</button> aka getByRole('button', { name: '＋ Add Supplier Bill' })\n\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'Add Supplier Bill' })\u001b[22m\n\n\n  66 |\n  67 |   await page.goto('/invoices');\n> 68 |   await page.getByRole('button', { name: 'Add Supplier Bill' }).click();\n     |                                                                 ^\n  69 |   await page.getByText('Enter bill items manually').click();\n  70 |   await page.locator('#invEditSupplier').fill(`Depot ${stamp}`);\n  71 |   await page.locator('#invEditNumber').fill(invNo);\n    at D:\\AI Project\\tests\\e2e\\dialogs-and-manual-bill.spec.ts:68:65"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:23:21.925Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\dialogs-and-manual-bill-a--46691-can-be-confirmed-into-stock-chromium\\test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\dialogs-and-manual-bill-a--46691-can-be-confirmed-into-stock-chromium\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "D:\\AI Project\\tests\\e2e\\dialogs-and-manual-bill.spec.ts",
+                    "column": 65,
+                    "line": 68
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "6d95ed84bc211a86dc7d-481be340caabe1251bbc",
+          "file": "dialogs-and-manual-bill.spec.ts",
+          "line": 60,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "full-journey.spec.ts",
+      "file": "full-journey.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "End-to-End Liquor Counter Application Journeys",
+          "file": "full-journey.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Journey 1: Public Login & Role-based authentication",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 4,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 18475,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#userDisplay')\nExpected substring: \u001b[32m\"\u001b[7mc\u001b[27mashier\"\u001b[39m\nReceived string:    \u001b[31m\"\u001b[7mCounter Cashier (C\u001b[27mashier\u001b[7m)\u001b[27m\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#userDisplay') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#userDisplay')\u001b[22m\n\u001b[2m    33 × locator resolved to <div id=\"userDisplay\" class=\"font-semibold\">Counter Cashier (Cashier)</div>\u001b[22m\n\u001b[2m       - unexpected value \"Counter Cashier (Cashier)\"\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#userDisplay')\nExpected substring: \u001b[32m\"\u001b[7mc\u001b[27mashier\"\u001b[39m\nReceived string:    \u001b[31m\"\u001b[7mCounter Cashier (C\u001b[27mashier\u001b[7m)\u001b[27m\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#userDisplay') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#userDisplay')\u001b[22m\n\u001b[2m    33 × locator resolved to <div id=\"userDisplay\" class=\"font-semibold\">Counter Cashier (Cashier)</div>\u001b[22m\n\u001b[2m       - unexpected value \"Counter Cashier (Cashier)\"\u001b[22m\n\n    at D:\\AI Project\\tests\\e2e\\full-journey.spec.ts:33:31",
+                        "location": {
+                          "file": "D:\\AI Project\\tests\\e2e\\full-journey.spec.ts",
+                          "column": 31,
+                          "line": 33
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 31 |\u001b[39m     \u001b[90m// 4. Check user info display\u001b[39m\n \u001b[90m 32 |\u001b[39m     \u001b[36mconst\u001b[39m userDisplay \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'#userDisplay'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 33 |\u001b[39m     \u001b[36mawait\u001b[39m expect(userDisplay)\u001b[33m.\u001b[39mtoContainText(\u001b[32m'cashier'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                               \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 34 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 35 |\u001b[39m\n \u001b[90m 36 |\u001b[39m   test(\u001b[32m'Journey 2: Catalog Loading & Real Database Products'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m ({ page }) \u001b[33m=>\u001b[39m {\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\AI Project\\tests\\e2e\\full-journey.spec.ts",
+                            "column": 31,
+                            "line": 33
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#userDisplay')\nExpected substring: \u001b[32m\"\u001b[7mc\u001b[27mashier\"\u001b[39m\nReceived string:    \u001b[31m\"\u001b[7mCounter Cashier (C\u001b[27mashier\u001b[7m)\u001b[27m\"\u001b[39m\nTimeout: 15000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#userDisplay') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#userDisplay')\u001b[22m\n\u001b[2m    33 × locator resolved to <div id=\"userDisplay\" class=\"font-semibold\">Counter Cashier (Cashier)</div>\u001b[22m\n\u001b[2m       - unexpected value \"Counter Cashier (Cashier)\"\u001b[22m\n\n\n  31 |     // 4. Check user info display\n  32 |     const userDisplay = page.locator('#userDisplay');\n> 33 |     await expect(userDisplay).toContainText('cashier');\n     |                               ^\n  34 |   });\n  35 |\n  36 |   test('Journey 2: Catalog Loading & Real Database Products', async ({ page }) => {\n    at D:\\AI Project\\tests\\e2e\\full-journey.spec.ts:33:31"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-13T15:23:29.978Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\full-journey-End-to-End-Li-a0de5-n-Role-based-authentication-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\full-journey-End-to-End-Li-a0de5-n-Role-based-authentication-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\AI Project\\tests\\e2e\\full-journey.spec.ts",
+                        "column": 31,
+                        "line": 33
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "de7404a9e48071788c25-8a3ab244c7864591c5e8",
+              "file": "full-journey.spec.ts",
+              "line": 17,
+              "column": 3
+            },
+            {
+              "title": "Journey 2: Catalog Loading & Real Database Products",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 5471,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "Rendered 163 products in catalog.\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-13T15:23:34.838Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "de7404a9e48071788c25-f245f799bbceb511233d",
+              "file": "full-journey.spec.ts",
+              "line": 36,
+              "column": 3
+            },
+            {
+              "title": "Journey 3: POS Cart addition, pricing calculation & Checkout",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 9610,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-13T15:23:40.751Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "de7404a9e48071788c25-161f8fb6876d2d9550d9",
+              "file": "full-journey.spec.ts",
+              "line": 54,
+              "column": 3
+            },
+            {
+              "title": "Journey 4: Navigation across modules without JS crashes",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 6,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 20892,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#page-stock')\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" locator('#page-stock') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#page-stock')\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#page-stock')\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" locator('#page-stock') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#page-stock')\u001b[22m\n\n    at D:\\AI Project\\tests\\e2e\\full-journey.spec.ts:103:53",
+                        "location": {
+                          "file": "D:\\AI Project\\tests\\e2e\\full-journey.spec.ts",
+                          "column": 53,
+                          "line": 103
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 101 |\u001b[39m     \u001b[36mfor\u001b[39m (\u001b[36mconst\u001b[39m [nav\u001b[33m,\u001b[39m pageId] \u001b[36mof\u001b[39m navTabs) {\n \u001b[90m 102 |\u001b[39m       \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m`#nav-${nav}`\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 103 |\u001b[39m       \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m`#page-${pageId}`\u001b[39m))\u001b[33m.\u001b[39mtoBeVisible()\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                                                     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 104 |\u001b[39m     }\n \u001b[90m 105 |\u001b[39m     \u001b[90m// …manager-only screens are not offered to a cashier\u001b[39m\n \u001b[90m 106 |\u001b[39m     \u001b[36mfor\u001b[39m (\u001b[36mconst\u001b[39m tab \u001b[36mof\u001b[39m [\u001b[32m'schemes'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'compliance'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'accounting'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'closing'\u001b[39m\u001b[33m,\u001b[39m \u001b[32m'admin'\u001b[39m]) {\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\AI Project\\tests\\e2e\\full-journey.spec.ts",
+                            "column": 53,
+                            "line": 103
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#page-stock')\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" locator('#page-stock') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#page-stock')\u001b[22m\n\n\n  101 |     for (const [nav, pageId] of navTabs) {\n  102 |       await page.click(`#nav-${nav}`);\n> 103 |       await expect(page.locator(`#page-${pageId}`)).toBeVisible();\n      |                                                     ^\n  104 |     }\n  105 |     // …manager-only screens are not offered to a cashier\n  106 |     for (const tab of ['schemes', 'compliance', 'accounting', 'closing', 'admin']) {\n    at D:\\AI Project\\tests\\e2e\\full-journey.spec.ts:103:53"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-13T15:23:53.581Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\full-journey-End-to-End-Li-4473d--modules-without-JS-crashes-chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\full-journey-End-to-End-Li-4473d--modules-without-JS-crashes-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\AI Project\\tests\\e2e\\full-journey.spec.ts",
+                        "column": 53,
+                        "line": 103
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "de7404a9e48071788c25-9872e3e53a7a6ddb447b",
+              "file": "full-journey.spec.ts",
+              "line": 90,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "operational-lifecycle.spec.ts",
+      "file": "operational-lifecycle.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "End-to-End Operational Lifecycle Tests",
+          "file": "operational-lifecycle.spec.ts",
+          "line": 3,
+          "column": 6,
+          "specs": [
+            {
+              "title": "Journey 5: Table Status Mutation (Open Table -> Occupied)",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 5433,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-13T15:23:50.435Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "1e5edc1f46fa55ecf3d3-f3970e589b36fbea521f",
+              "file": "operational-lifecycle.spec.ts",
+              "line": 8,
+              "column": 3
+            },
+            {
+              "title": "Journey 6: Day Closing Reconciliation Submission (Owner/Manager role)",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 5,
+                      "parallelIndex": 1,
+                      "status": "failed",
+                      "duration": 16808,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#closingStatusMsg')\nExpected substring: \u001b[32m\"Day Closed & Locked\"\u001b[39m\nReceived string:    \u001b[31m\"Failed: Closing figures differ from the system (cashSales: system 0.00 -> submitted 510.00; creditSales: system 0.00 -> submitted 160.00). Add a note (10+ characters) explaining why.\"\u001b[39m\nTimeout: 10000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#closingStatusMsg') with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('#closingStatusMsg')\u001b[22m\n\u001b[2m    5 × locator resolved to <div role=\"status\" id=\"closingStatusMsg\"></div>\u001b[22m\n\u001b[2m      - unexpected value \"\"\u001b[22m\n\u001b[2m    18 × locator resolved to <div role=\"status\" id=\"closingStatusMsg\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"Failed: Closing figures differ from the system (cashSales: system 0.00 -> submitted 510.00; creditSales: system 0.00 -> submitted 160.00). Add a note (10+ characters) explaining why.\"\u001b[22m\n",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#closingStatusMsg')\nExpected substring: \u001b[32m\"Day Closed & Locked\"\u001b[39m\nReceived string:    \u001b[31m\"Failed: Closing figures differ from the system (cashSales: system 0.00 -> submitted 510.00; creditSales: system 0.00 -> submitted 160.00). Add a note (10+ characters) explaining why.\"\u001b[39m\nTimeout: 10000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#closingStatusMsg') with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('#closingStatusMsg')\u001b[22m\n\u001b[2m    5 × locator resolved to <div role=\"status\" id=\"closingStatusMsg\"></div>\u001b[22m\n\u001b[2m      - unexpected value \"\"\u001b[22m\n\u001b[2m    18 × locator resolved to <div role=\"status\" id=\"closingStatusMsg\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"Failed: Closing figures differ from the system (cashSales: system 0.00 -> submitted 510.00; creditSales: system 0.00 -> submitted 160.00). Add a note (10+ characters) explaining why.\"\u001b[22m\n\n    at D:\\AI Project\\tests\\e2e\\operational-lifecycle.spec.ts:76:53",
+                        "location": {
+                          "file": "D:\\AI Project\\tests\\e2e\\operational-lifecycle.spec.ts",
+                          "column": 53,
+                          "line": 76
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 74 |\u001b[39m\n \u001b[90m 75 |\u001b[39m     \u001b[90m// 6. Verify success message\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 76 |\u001b[39m     \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'#closingStatusMsg'\u001b[39m))\u001b[33m.\u001b[39mtoContainText(\u001b[32m'Day Closed & Locked'\u001b[39m\u001b[33m,\u001b[39m { timeout\u001b[33m:\u001b[39m \u001b[35m10000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                                     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 77 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 78 |\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m 79 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\AI Project\\tests\\e2e\\operational-lifecycle.spec.ts",
+                            "column": 53,
+                            "line": 76
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#closingStatusMsg')\nExpected substring: \u001b[32m\"Day Closed & Locked\"\u001b[39m\nReceived string:    \u001b[31m\"Failed: Closing figures differ from the system (cashSales: system 0.00 -> submitted 510.00; creditSales: system 0.00 -> submitted 160.00). Add a note (10+ characters) explaining why.\"\u001b[39m\nTimeout: 10000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#closingStatusMsg') with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('#closingStatusMsg')\u001b[22m\n\u001b[2m    5 × locator resolved to <div role=\"status\" id=\"closingStatusMsg\"></div>\u001b[22m\n\u001b[2m      - unexpected value \"\"\u001b[22m\n\u001b[2m    18 × locator resolved to <div role=\"status\" id=\"closingStatusMsg\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"Failed: Closing figures differ from the system (cashSales: system 0.00 -> submitted 510.00; creditSales: system 0.00 -> submitted 160.00). Add a note (10+ characters) explaining why.\"\u001b[22m\n\n\n  74 |\n  75 |     // 6. Verify success message\n> 76 |     await expect(page.locator('#closingStatusMsg')).toContainText('Day Closed & Locked', { timeout: 10000 });\n     |                                                     ^\n  77 |   });\n  78 | });\n  79 |\n    at D:\\AI Project\\tests\\e2e\\operational-lifecycle.spec.ts:76:53"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-13T15:23:55.915Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\operational-lifecycle-End--1df68-mission-Owner-Manager-role--chromium\\test-failed-1.png"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\operational-lifecycle-End--1df68-mission-Owner-Manager-role--chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\AI Project\\tests\\e2e\\operational-lifecycle.spec.ts",
+                        "column": 53,
+                        "line": 76
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "1e5edc1f46fa55ecf3d3-801966edcb203b30028e",
+              "file": "operational-lifecycle.spec.ts",
+              "line": 41,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "platform-lifecycle.spec.ts",
+      "file": "platform-lifecycle.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Archive, restore, export and delete a business",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 30924,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  locator('#deleteOk')\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeEnabled\" locator('#deleteOk') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#deleteOk')\u001b[22m\n\u001b[2m    33 × locator resolved to <button disabled type=\"button\" id=\"deleteOk\" class=\"px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-lg cursor-pointer\">Delete permanently</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  locator('#deleteOk')\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeEnabled\" locator('#deleteOk') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#deleteOk')\u001b[22m\n\u001b[2m    33 × locator resolved to <button disabled type=\"button\" id=\"deleteOk\" class=\"px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-lg cursor-pointer\">Delete permanently</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n\n    at D:\\AI Project\\tests\\e2e\\platform-lifecycle.spec.ts:82:43",
+                    "location": {
+                      "file": "D:\\AI Project\\tests\\e2e\\platform-lifecycle.spec.ts",
+                      "column": 43,
+                      "line": 82
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 80 |\u001b[39m\n \u001b[90m 81 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mcheck(\u001b[32m'#deleteAck'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 82 |\u001b[39m   \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'#deleteOk'\u001b[39m))\u001b[33m.\u001b[39mtoBeEnabled()\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                           \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 83 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'#deleteOk'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 84 |\u001b[39m   \u001b[36mawait\u001b[39m expect(page\u001b[33m.\u001b[39mlocator(\u001b[32m'#deleteForm'\u001b[39m))\u001b[33m.\u001b[39mtoHaveCount(\u001b[35m0\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 85 |\u001b[39m   \u001b[36mawait\u001b[39m expect(row)\u001b[33m.\u001b[39mtoHaveCount(\u001b[35m0\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "D:\\AI Project\\tests\\e2e\\platform-lifecycle.spec.ts",
+                        "column": 43,
+                        "line": 82
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  locator('#deleteOk')\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeEnabled\" locator('#deleteOk') with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for locator('#deleteOk')\u001b[22m\n\u001b[2m    33 × locator resolved to <button disabled type=\"button\" id=\"deleteOk\" class=\"px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-lg cursor-pointer\">Delete permanently</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n\n\n  80 |\n  81 |   await page.check('#deleteAck');\n> 82 |   await expect(page.locator('#deleteOk')).toBeEnabled();\n     |                                           ^\n  83 |   await page.click('#deleteOk');\n  84 |   await expect(page.locator('#deleteForm')).toHaveCount(0);\n  85 |   await expect(row).toHaveCount(0);\n    at D:\\AI Project\\tests\\e2e\\platform-lifecycle.spec.ts:82:43"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:24:17.163Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\platform-lifecycle-Archive-4edbb-xport-and-delete-a-business-chromium\\test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "D:\\AI Project\\docs\\db-optimization\\results\\e2e-artifacts\\platform-lifecycle-Archive-4edbb-xport-and-delete-a-business-chromium\\error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "D:\\AI Project\\tests\\e2e\\platform-lifecycle.spec.ts",
+                    "column": 43,
+                    "line": 82
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "8480b1aa9545b75f12b6-42df566080b06ee5e314",
+          "file": "platform-lifecycle.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "Tenants: on a phone the table becomes cards with the actions folded away",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4821,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-13T15:24:18.732Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8480b1aa9545b75f12b6-a692dad31d18504f5f06",
+          "file": "platform-lifecycle.spec.ts",
+          "line": 95,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-13T15:22:38.450Z",
+    "duration": 131244.799,
+    "expected": 10,
+    "skipped": 0,
+    "unexpected": 8,
+    "flaky": 0
+  }
+}

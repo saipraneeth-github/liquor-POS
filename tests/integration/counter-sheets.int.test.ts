@@ -520,3 +520,45 @@ describe('stock movements recorded outside the sheet day', () => {
     expect(pastRevertFail.json().error).toContain('Counter sheet can only be reverted to draft on the day it was posted');
   });
 });
+
+describe('opening stock can be changed by someone who holds the permission', () => {
+  const day = businessDateOf(new Date(Date.now() - 5 * 86_400_000));
+  let sheetId = '';
+  let opening = 0;
+
+  it('a cashier without it is refused, and nothing changes', async () => {
+    const created = await app.inject({ method: 'POST', url: `/api/v1/counter-sheets/${ctx.branchId}`, headers: ctx.auth('cashier'), payload: { sheetDate: day } });
+    expect(created.statusCode).toBe(201);
+    sheetId = created.json().id;
+    opening = lineOf(created.json(), beerId).openingBottles;
+
+    const res = await putLines(sheetId, [{ productId: beerId, closingBottles: 10, openingBottles: opening + 20 }]);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toMatch(/opening stock/i);
+    const again = await app.inject({ method: 'GET', url: `/api/v1/counter-sheets/sheet/${sheetId}`, headers: ctx.auth('cashier') });
+    expect(lineOf(again.json(), beerId).openingBottles).toBe(opening);
+  });
+
+  it('with the permission the opening changes, sold follows it, and the original is kept with who changed it', async () => {
+    await ctx.db.insert(ctx.schema.userPermissions).values({ userId: ctx.users.cashier.id, permission: 'counter.opening', allowed: true });
+    const res = await putLines(sheetId, [{ productId: beerId, closingBottles: 10, openingBottles: opening + 20 }]);
+    expect(res.statusCode, res.body).toBe(200);
+    const line = lineOf(res.json(), beerId);
+    expect(line).toMatchObject({ openingBottles: opening + 20, openingSystem: opening, openingEditedById: ctx.users.cashier.id });
+    expect(line.soldBottles).toBe(opening + 20 - 10);                      // the bottles that left, counted from the corrected opening
+    expect(line.lineRevenue).toBe(((opening + 20 - 10) * 200).toFixed(2));
+
+    // putting the system's number back clears the mark
+    const back = await putLines(sheetId, [{ productId: beerId, closingBottles: 10, openingBottles: opening }]);
+    expect(lineOf(back.json(), beerId)).toMatchObject({ openingBottles: opening, openingSystem: null, openingEditedById: null });
+  });
+
+  it('is recorded in the audit log and refused once the sheet is posted', async () => {
+    await putLines(sheetId, [{ productId: beerId, closingBottles: 10, openingBottles: opening + 5 }]);
+    const rows = await ctx.db.select().from(ctx.schema.auditLog).where(eq(ctx.schema.auditLog.action, 'counter.opening.edit'));
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(rows[rows.length - 1].meta)).toContain(String(opening + 5));
+    await ctx.db.delete(ctx.schema.userPermissions).where(and(eq(ctx.schema.userPermissions.userId, ctx.users.cashier.id), eq(ctx.schema.userPermissions.permission, 'counter.opening')));
+    expect((await putLines(sheetId, [{ productId: beerId, closingBottles: 10, openingBottles: opening }])).statusCode).toBe(403);   // permission withdrawn
+  });
+});

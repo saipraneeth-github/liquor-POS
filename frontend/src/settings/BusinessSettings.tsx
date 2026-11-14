@@ -28,7 +28,7 @@ interface Branch {
 
 interface TenantSummary {
   name: string;
-  plan: 'TRIAL' | 'STANDARD' | 'PRO';
+  plan: string;
   maxBranches: number;
   branchCount: number;
   trialEndsAt: string | null;

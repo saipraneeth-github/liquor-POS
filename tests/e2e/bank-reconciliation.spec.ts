@@ -49,7 +49,7 @@ test.beforeAll(async ({ request }) => {
 test('add an account, upload a statement from any bank, see it verified, and reconcile it into the books', async ({ page }) => {
   await reactLogin(page, 'manager@liquor.com');
   await page.click('#nav-bank');
-  await expect(page.getByRole('heading', { name: 'Bank Reconciliation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Match Bank Statement' })).toBeVisible();
 
   // Add the account (a manager cannot choose the whole-business scope)
   await page.click('#bankAddAccount');
@@ -77,6 +77,8 @@ test('add an account, upload a statement from any bank, see it verified, and rec
   await expect(page.locator('#bankPreviewTable')).toContainText('CASH DEP BY SELF');
   await expect(page.locator('#bankImportBtn')).toBeEnabled();
   await page.click('#bankImportBtn');
+  await page.click('#bankViewTable');
+  await page.click('#bankWorkingsToggle');
 
   // Reconcile: nothing is "reconciled" while lines are still missing from the books
   await expect(page.locator('#bankLinesTable')).toBeVisible();
@@ -108,11 +110,20 @@ test('add an account, upload a statement from any bank, see it verified, and rec
   // when the totals still differ the app asks first; this statement may or may not tie out, so accept either way
   const anyway = page.locator('#bankFinalizeAnyway');
   if (await anyway.isVisible({ timeout: 1500 }).catch(() => false)) await anyway.click();
-  await expect(page.getByText('Reconciled', { exact: true }).first()).toBeVisible();
-  await expect(page.locator('#bankFinalize')).toBeDisabled();
 
-  // The same file again is refused, and the statement list shows it as reconciled
-  await page.getByRole('button', { name: '← All statements' }).click();
+  // Once submitted/reconciled, it comes out of the page and navigates to Transactions & search
+  await expect(page.locator('#txnSearch')).toBeVisible();
+
+  // Switch to Statements tab and verify it shows as Reconciled
+  await page.click('#bankTabStatements');
+  await expect(page.locator('#bankStatements [data-statement]')).toHaveCount(1);
+  await expect(page.locator('#bankStatements')).toContainText('Reconciled');
+
+  // Viewing a reconciled statement has Accept-All and Submit disabled, and Close button returns out
+  await page.click('[data-action="open-statement"]');
+  await expect(page.locator('#bankFinalize')).toBeDisabled();
+  await expect(page.locator('#bankAcceptAll')).toBeDisabled();
+  await page.click('#bankCloseStatement');
   await expect(page.locator('#bankStatements [data-statement]')).toHaveCount(1);
   await expect(page.locator('#bankStatements')).toContainText('Reconciled');
   await page.click('#bankUploadBtn');
@@ -138,6 +149,7 @@ test('personal transactions: ignore with a reason, in bulk, save a rule, and the
   ])));
   await expect(page.locator('#bankBalanceCheck')).toHaveAttribute('data-status', 'PASS');
   await page.click('#bankImportBtn');
+  await page.click('#bankViewTable');
   const rows = page.locator('#bankLinesTable tbody tr');
   await expect(rows).toHaveCount(5);
 
@@ -168,6 +180,7 @@ test('personal transactions: ignore with a reason, in bulk, save a rule, and the
   await expect(page.locator('#bankLinesTable')).toContainText('Personal');
   await expect(page.locator('#bankLinesTable')).toContainText('Another business');
   await expect(page.locator('#bankLinesTable')).toContainText('Owner meals');
+  await page.click('#bankWorkingsToggle');
   await expect(page.locator('#bankIgnoredSummary')).toContainText('3 lines');
 
   // A later statement: the saved rule ignores Swiggy by itself, and says so
@@ -180,6 +193,7 @@ test('personal transactions: ignore with a reason, in bulk, save a rule, and the
   ])));
   await expect(page.locator('#bankPreviewTable tbody tr')).toHaveCount(3);
   await page.click('#bankImportBtn');
+  await page.click('#bankViewTable');
   await expect(rows).toHaveCount(2);                                                  // Swiggy did not need attention
   await page.locator('[data-filter="IGNORED"]').click();
   await expect(rows).toHaveCount(1);
@@ -199,8 +213,8 @@ test('personal transactions: ignore with a reason, in bulk, save a rule, and the
   await expect(ruleRow).toContainText('money out only');
   await ruleRow.locator('[data-rule-action]').selectOption('SUGGEST');
   await expect(ruleRow.locator('[data-rule-action]')).toHaveValue('SUGGEST');
-  page.once('dialog', (d) => void d.accept());
   await ruleRow.locator('[data-rule-delete]').click();
+  await page.locator('div.fixed', { hasText: 'Delete the rule' }).getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.locator('[data-rule="SWIGGY"]')).toHaveCount(0);
 });
 

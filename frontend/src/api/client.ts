@@ -20,6 +20,12 @@ function getActionCopy(url: string, method: string): { title: string; subtitle: 
   if (url.includes('/approve')) {
     return { title: 'Approving Invoice & Inwarding…', subtitle: 'Adding stock bottles and posting purchase ledgers…' };
   }
+  if (url.includes('/bills') && url.includes('/void')) {
+    return { title: 'Voiding Bill…', subtitle: 'Returning the bottles to stock and posting the reversing entry…' };
+  }
+  if (url.includes('/invoices') && url.includes('/reverse')) {
+    return { title: 'Reversing Supplier Invoice…', subtitle: 'Taking the stock back out and posting the reversing entries…' };
+  }
   if (url.includes('/bills') && method === 'POST') {
     return { title: 'Processing Counter Bill…', subtitle: 'Recording payment & deducting live store stock…' };
   }
@@ -27,7 +33,7 @@ function getActionCopy(url: string, method: string): { title: string; subtitle: 
     return { title: 'Reading Bank Statement…', subtitle: 'Detecting columns and checking that the balances add up…' };
   }
   if (url.includes('/bank/')) {
-    return { title: 'Updating Bank Reconciliation…', subtitle: 'Matching the statement line with your books…' };
+    return { title: 'Updating bank statement match…', subtitle: 'Matching the statement line with your books…' };
   }
   if (url.includes('/closing')) {
     return { title: 'Finalizing Daily Closing…', subtitle: 'Reconciling tender totals and locking registers…' };

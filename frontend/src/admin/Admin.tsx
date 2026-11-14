@@ -11,8 +11,12 @@ interface UserItem {
   name: string;
   email: string;
   role: string;
+  roleId?: string | null;
+  roleName?: string | null;
   isActive: boolean;
 }
+
+interface AssignableRole { id: string; name: string; level: string; isSystem: boolean; description: string | null; permissions: string[] }
 
 interface TerminalItem {
   id: string;
@@ -67,6 +71,8 @@ const ROLE_RANK: Record<string, number> = { steward: 1, cashier: 2, manager: 3, 
 interface PermissionRow { key: string; label: string; description: string; roleDefault: boolean; override: boolean | null; effective: boolean }
 interface PermissionData {
   role: string;
+  roleId?: string | null;
+  roleName?: string | null;
   unrestricted: boolean;
   permissions: PermissionRow[];
   discountCapPct: number | null;
@@ -91,6 +97,10 @@ export function Admin() {
   const [nuEmail, setNuEmail] = useState('');
   const [nuPass, setNuPass] = useState('');
   const [nuRole, setNuRole] = useState(isOwner || isOfficeAdmin ? 'manager' : 'cashier');
+  const [assignRoles, setAssignRoles] = useState<AssignableRole[]>([]);
+  const [nuCustomRole, setNuCustomRole] = useState('');
+  const [pickRole, setPickRole] = useState('');
+  const [changingRole, setChangingRole] = useState(false);
   const [creatingUser, setCreatingUser] = useState(false);
 
   // New terminal form
@@ -126,6 +136,7 @@ export function Admin() {
         api.get<any[]>('/sale-types/' + branchId + '?all=1').catch(() => []),
       ]);
       setUsers(uRes);
+      api.get<{ roles: AssignableRole[] }>('/roles').then((r) => setAssignRoles(r.roles)).catch(() => setAssignRoles([]));
       setTerminals(tRes);
       setSaleTypes(stRes || []);
     } catch (err: any) {
@@ -165,12 +176,14 @@ export function Admin() {
         email: nuEmail.trim(),
         password: nuPass,
         role: nuRole,
+        ...(nuCustomRole ? { roleId: nuCustomRole } : {}),
         branchId,
       });
       showToast('User created: ' + nuEmail.trim(), 'success');
       setNuName('');
       setNuEmail('');
       setNuPass('');
+      setNuCustomRole('');
       await loadData();
     } catch (err: any) {
       showToast('Could not create user: ' + err.message, 'error');
@@ -205,8 +218,25 @@ export function Admin() {
     }
   };
 
+  const changeRole = async () => {
+    if (!editingUserId || !pickRole) return;
+    setChangingRole(true);
+    try {
+      await api.put(`/users/${editingUserId}/role`, { roleId: pickRole });
+      showToast('Role changed.', 'success');
+      setPickRole('');
+      await loadData();
+      await openPagesModal(editingUserId);
+    } catch (err: any) {
+      showToast('Could not change the role: ' + err.message, 'error');
+    } finally {
+      setChangingRole(false);
+    }
+  };
+
   const openPagesModal = async (id: string) => {
     setEditingUserId(id);
+    setPickRole('');
     setLoadingPages(true);
     const targetUser = users.find((u) => u.id === id);
     const rank = ROLE_RANK[targetUser?.role || 'cashier'] || 2;
@@ -311,7 +341,7 @@ export function Admin() {
                       <b>{u.name}</b>
                       <div className="muted small text-xs text-gray-500">{u.email}</div>
                     </td>
-                    <td className="py-2 px-3 font-medium">{u.role === 'office_admin' ? 'Office Admin' : u.role}</td>
+                    <td className="py-2 px-3 font-medium" data-cell="role">{u.roleName ?? (u.role === 'office_admin' ? 'Office Admin' : u.role)}</td>
                     <td className="py-2 px-3">
                       <span
                         className={`badge text-xs px-2 py-0.5 rounded font-medium ${
@@ -409,7 +439,7 @@ export function Admin() {
               id="nuRole"
               className="input p-2 border rounded text-sm"
               value={nuRole}
-              onChange={(e) => setNuRole(e.target.value)}
+              onChange={(e) => { setNuRole(e.target.value); setNuCustomRole(''); }}
             >
               {roles.map((r) => (
                 <option key={r} value={r}>
@@ -418,6 +448,15 @@ export function Admin() {
               ))}
             </select>
           </label>
+          {assignRoles.some((r) => !r.isSystem && r.level === nuRole) && (
+            <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="nuCustomRole">
+              Custom role (optional)
+              <select id="nuCustomRole" className="input p-2 border rounded text-sm" value={nuCustomRole} onChange={(e) => setNuCustomRole(e.target.value)}>
+                <option value="">Plain {nuRole === 'office_admin' ? 'Office Admin' : nuRole}</option>
+                {assignRoles.filter((r) => !r.isSystem && r.level === nuRole).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </label>
+          )}
           <div className="col-span-full">
             <ProtectedButton
               type="submit"
@@ -571,6 +610,22 @@ export function Admin() {
               <BeerBottleLoader inline size="sm" title="Loading Permissions…" subtitle="Fetching page access rights…" />
             ) : (
               <div className="flex flex-col gap-3" id="modalBody">
+                {permData && !permData.unrestricted && (
+                  <div id="roleSection" className="pb-3 border-b space-y-2">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Role</div>
+                    <div className="text-sm">Now: <b id="currentRole">{permData.roleName ?? permData.role}</b>{permData.roleName ? <span className="text-xs text-gray-500"> ({permData.role} level)</span> : null}</div>
+                    {assignRoles.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select id="roleChoice" className="input p-2 border rounded text-sm" value={pickRole} onChange={(e) => setPickRole(e.target.value)}>
+                          <option value="">Change to…</option>
+                          {assignRoles.map((r) => <option key={r.id} value={r.id}>{r.name}{r.isSystem ? ' (built-in)' : ''}</option>)}
+                        </select>
+                        <button type="button" id="roleChange" disabled={!pickRole || changingRole} onClick={() => void changeRole()} className="px-3 py-2 text-sm border rounded disabled:opacity-50 cursor-pointer">Change role</button>
+                      </div>
+                    )}
+                    <div className="text-xs text-gray-500">A custom role brings its own permissions below; exceptions you set for this person stay on top of it.</div>
+                  </div>
+                )}
                 <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pages</div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   {PAGE_KEYS.map((k) => (

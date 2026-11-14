@@ -20,3 +20,7 @@ await runMigrations();
 await seedDatabase();
 
 await import('./index.js');
+
+// Keep process alive indefinitely in non-interactive / background runners
+process.stdin.resume();
+

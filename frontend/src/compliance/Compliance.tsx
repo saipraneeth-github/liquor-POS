@@ -117,7 +117,7 @@ export function Compliance() {
     <section className="page active" id="page-compliance" aria-labelledby="complianceTitle">
       <div className="row between flex justify-between items-center mb-4">
         <div>
-          <h2 className="h1 text-2xl font-bold" id="complianceTitle">Excise Compliance &amp; Lifting</h2>
+          <h2 className="h1 text-2xl font-bold" id="complianceTitle">Excise, Quota &amp; Breakage</h2>
           <div className="muted small text-xs text-gray-500">
             Excise quotas, lifting progress, breakage and stock audit ledger.
           </div>

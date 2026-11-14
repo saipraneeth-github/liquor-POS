@@ -1,0 +1,1157 @@
+# Advanced Search & Filtering Infrastructure - Project Plan
+
+## Document Metadata
+
+**Document ID:** PLAN-SEARCH-FILTER-2026  
+**Version:** 1.0  
+**Last Updated:** 2026-01-10  
+**Target Completion:** 2026-04-15 (8 weeks)  
+**Status:** Draft Phase
+
+---
+
+## 1. Project Overview
+
+### 1.1 Objective
+Create a comprehensive search and filtering system that replaces ad-hoc filtering approaches with a unified, powerful, and user-friendly solution across the Liquor Counter POS application.
+
+### 1. generalizability
+- **User Experience**: Single, intuitive search interface across all modules
+- **Developer Experience**: Reusable filtering and search utilities
+- **Business Intelligence**: Search analytics and performance insights
+- **Technical Excellence**: Scalable, maintainable, and well-tested codebase
+
+### 1.3 Current State Assessment
+**Before:** Ad-hoc filtering using individual SQL `WHERE` clauses, limited search capabilities, inconsistent APIs across modules
+**After:** Unified search system with advanced filtering, full-text search, faceting, and intelligent sorting
+
+---
+
+## 2. Technical Specifications
+
+### 2.1 Core Architecture Requirements
+```
+src/
+├── lib/
+│   ├── query/              // Core filtering utilities
+│   │   ├── query-builder.ts
+│   │   ├── filter-conditions.ts
+│   │   └── query-types.ts
+│   ├── search/             // Search services
+│   │   ├── search-engine.ts
+│   │   ├── search-indexer.ts
+│   │   └── search-types.ts
+│   ├── sorting/            // Sorting utilities
+│   │   ├── sort-service.ts
+│   │   ├── sort-options.ts
+│   │   └── sort-types.ts
+│   ├── filters/            // Faceted filtering
+│   │   ├── facet-service.ts
+│   │   ├── facet-definitions.ts
+│   │   └── facet-types.ts
+│   └── caching/            // Query result caching
+│       ├── query-cache.ts
+│       └── cache-config.ts
+│
+├── modules/                // Enhanced modules
+│   ├── billing/
+│   ├── products/
+│   ├── inventory/
+│   ├── accounting/
+│   └── dashboard/
+│
+└── frontend/              // Search UI components
+    ├── components/
+    │   ├── search-bar/
+    │   ├── filters-panel/
+    │   ├── sort-dropdown/
+    │   └── search-suggestions/
+    └── hooks/
+        ├── use-advanced-search.ts
+        └── use-facet-search.ts
+```
+
+### 2.2 Data Model Requirements
+- **Search Index**: Full-text search capabilities across all searchable fields
+- **Facet Definitions**: Configurable facet metadata for each module
+- **Sort Definitions**: Predefined sort options with validation
+- **Filter Schemas**: Dynamic filter condition builders
+
+### 2.3 API Contract Requirements
+```typescript
+// Unified Search Interface
+interface UnifiedSearchQuery {
+  // Core search parameters
+  q?: string;                    // Full-text search term
+  searchFields?: string[];       // Fields to search in
+  exactMatch?: boolean;          // Enable exact matching
+  fuzzySearch?: boolean;         // Enable fuzzy search
+  
+  // Sorting
+  sortBy?: string;               // Field to sort by
+  sortDirection?: 'asc' | 'desc'; // Sort direction
+  sortOptions?: SortOption[];    // Predefined sort options
+  
+  // Faceted filtering
+  facets?: Record<string, string[]>; // Applied facets
+  facetConfig?: FacetConfig;     // Facet configuration
+  
+  // Pagination
+  page?: number;                 // Page number (1-based)
+  pageSize?: number;             // Items per page
+  includeTotal?: boolean;        // Include total count
+  
+  // Advanced filtering
+  filters?: FilterCondition[];   // Advanced filter conditions
+  filterSchema?: FilterSchema;   // Filter schema definition
+  
+  // Performance and caching
+  useCache?: boolean;            // Use cached results
+  cacheKey?: string;             // Custom cache key
+  cacheTTL?: number;             // Cache time-to-live
+  
+  // Additional options
+  highlightMatches?: boolean;    // Highlight search matches
+  suggestCorrections?: boolean;  // Suggest spelling corrections
+  relatedSearches?: boolean;     // Show related searches
+}
+
+// Search Result Interface
+interface SearchResult<T> {
+  items: T[];                    // Search results
+  totalItems: number;           // Total number الأبيض items
+  totalPages: number;           // Total pages
+  currentPage: number;          // Current page
+  searchTime: number;           // Search execution time (ms)
+  cacheHit: boolean;            // Whether results came from cache
+  facets?: FacetResult[];       // Faceted filtering results
+  suggestions?: SearchSuggestion[]; // Auto-suggestions
+  appliedQuery: UnifiedSearchQuery; // Original query applied
+  
+  // Metadata
+  searchMetadata?: {
+    queryId: string;
+    indexedAt: Date;
+    indexVersion: string;
+    serverTime: Date;
+  };
+}
+```
+
+---
+
+## 3. Implementation Phases
+
+### Phase 1: Core Infrastructure (Weeks 1-2)
+**Timeline:** 14 days  
+**Team:** 2 developers, 1 DevOps, 1 QA
+
+#### 3.1 Phase Objectives
+Establish foundational search and filtering infrastructure with core utilities and basic functionality.
+
+#### 3. Phase Deliverables
+1. **Query Builder System**
+   - `src/lib/query/query-builder.ts` - Dynamic SQL query construction
+   - `src/lib/query/filter-conditions.ts` - Filter condition definitions
+   - `src/lib/query/query-types.ts` - Type definitions and schemas
+
+2. **Search Engine**
+   - `src/lib/search/search-engine.ts` - Full-text search implementation
+   - `src/lib/search/search-indexer.ts` - Search indexing and optimization
+   - `src/lib/search/search-types.ts` - Search result types
+
+3. **Sorting System**
+   - `src/lib/sorting/sort-service.ts` - Advanced sorting utilities
+   - `src/lib/sorting/sort-options.ts` - Predefined sort options
+   - `src/lib/sorting/sort-types.ts` - Sorting type definitions
+
+4. **Faceted Filtering System**
+   - `src/lib/filters/facet-service.ts` - Faceted search implementation
+   - `src/lib/filters/facet-definitions.ts` - Facet metadata definitions
+   - `src/lib/filters/facet-types.ts` - Facet type definitions
+
+5. **Caching Infrastructure**
+   - `src/lib/caching/query-cache.ts` - Query result caching
+   - `src/lib/caching/cache-config.ts` - Cache configuration
+
+#### 3.3 Technical Specifications
+
+**3.3.1 Query Builder**
+- Dynamic WHERE clause construction using Drizzle ORM
+- Support for complex AND/OR logic
+- SQL injection protection
+- Performance optimization with query planning
+
+**3.3.2 Search Engine**
+- Full-text search across multiple fields
+- Support for wildcard, phrase, and boolean operators
+- Spell-checking and auto-correction
+- Result ranking and relevance scoring
+
+**3.3.3 Sorting System**
+- Configurable sort options per module
+- Support for multi-field sorting
+- Custom sort function support
+- Performance-optimized sorting algorithms
+
+**3.3.4 Faceted Filtering**
+- Configurable facet definitions
+- Dynamic facet filtering
+- Facet count calculation
+- Cross-module facet consistency
+
+**3.3.5 Caching Strategy**
+- Multi-tier caching (memory + Redis)
+- Cache invalidation strategies
+- Query result caching
+- Performance monitoring
+
+#### 3.4 Testing Requirements
+- **Unit Tests**: 100% coverage for all new code
+- **Integration Tests**: End-to-end search functionality
+- **Performance Tests**: Query execution time benchmarks
+- **Load Tests**: Concurrent search load testing
+- **Security Tests**: SQL injection and XSS protection
+
+#### 3.5 Acceptance Criteria
+1. Core infrastructure components implemented and tested
+2. All unit tests passing (100% coverage)
+3. Integration tests demonstrating search functionality
+4. Performance benchmarks meeting targets
+5. Security validation completed
+
+---
+
+### Phase 2: Module Integration (Weeks 3-4)
+**Timeline:** 14 days  
+**Team:** 3 developers, 1 DevOps, 2 QA
+
+#### 3.6 Phase Objectives
+Integrate advanced search and filtering capabilities into core modules while maintaining backward compatibility.
+
+#### 3.7 Module-Specific Enhancements
+
+**3.7.1 Billing Module (`src/modules/billing/`)**
+```typescript
+// Enhanced listBills function
+export async function advancedListBills(
+  query: AdvancedListBillsQuery
+): Promise<SearchResult<BillRow>> {
+  const {
+    q,                    // Full-text search
+    status,              // Bill status filter
+    paymentMode,         // Payment method filter
+    dateRange,           // Date range filter
+    customerName,        // Customer search
+    sortBy = 'createdAt', // Sort field
+    sortDirection = 'desc', // Sort direction
+    page = 1,            // Page number
+    pageSize = 50,       // Page size
+    ...baseQuery
+  } = query;
+
+  // Build complex search query
+  const searchQuery = await SearchService.buildAdvancedQuery({
+    table: bills,
+    searchTerm: q,
+    searchFields: ['billNumber', 'clientRef'],
+    conditions: [
+      eq(bills.branchId, baseQuery.branchId),
+      // Dynamic filters based on query parameters
+      ...buildFilterConditions(query),
+    ],
+    joins: [
+      {
+        table: customers,
+        on: eq(bills.customerId, customers.id),
+        type: 'left',
+      },
+    ],
+    sortField: sortBy,
+    sortDirection,
+    page,
+    pageSize,
+  });
+
+  return searchQuery;
+}
+```
+
+**3.7.2 Products Module (`src/modules/products/`)**
+```typescript
+// Enhanced product search
+export async function advancedSearchProducts(
+  query: AdvancedProductQuery
+): Promise<SearchResult<ProductRow>> {
+  const {
+    q,                    // Product name/brand/barcode search
+    categoryId,          // Category filter
+    brand,               // Brand filter
+    priceRange,          // Price range filter
+    availability,        // Stock availability
+    sortBy = 'name',     // Sort field
+    sortDirection = 'asc', // Sort direction
+    ...baseQuery
+  } = query;
+
+  // Full-text search across multiple fields
+  const searchQuery = await SearchService.buildAdvancedQuery({
+    table: products,
+    searchTerm: q,
+    searchFields: ['name', 'brand', 'barcode', 'sku'],
+    conditions: [
+      eq(products.syndicateId, baseQuery.syndicateId || 'default'),
+      // Category and brand filters
+      ...buildCategoryAndBrandFilters(query),
+      // Price range filter
+      ...buildPriceRangeFilter(priceRange),
+      // Stock availability filter
+      ...buildStockAvailabilityFilter(availability),
+    ],
+    joins: [
+      {
+        table: categories,
+        on: eq(products.categoryId, categories.id),
+        type: 'left',
+      },
+      {
+        table: stock,
+        on: and(eq(products.id, stock.productId), eq(stock.branchId, baseQuery.branchId)),
+        type: 'left',
+      },
+    ],
+    sortField: sortBy,
+    sortDirection,
+    page: query.page,
+    pageSize: query.pageSize,
+  });
+
+  return searchQuery;
+}
+```
+
+**3.7.3 Inventory Module (`src/modules/inventory/`)**
+```typescript
+// Enhanced stock search
+export async function advancedGetStockStatus(
+  branchId: string,
+  query: AdvancedStockQuery
+): Promise<SearchResult<StockRow>> {
+  const {
+    q,                    // Product search
+    categoryId,          // Category filter
+    stockLevel,          // Stock level filter
+    priceRange,          // Price range filter
+    sortBy = 'productName', // Sort field
+    sortDirection = 'asc', // Sort direction
+    ...baseQuery
+  } = query;
+
+  // Complex search with joins and aggregations
+  const searchQuery = await SearchService.buildAdvancedQuery({
+    table: stock,
+    searchTerm: q,
+    searchFields: ['product.name', 'product.brand', 'product.barcode'],
+    conditions: [
+      eq(stock.branchId, branchId),
+      // Category filter through join
+      ...buildCategoryFilter(categoryId),
+      // Stock level filter
+      ...buildStockLevelFilter(stockLevel),
+      // Price range filter through join
+      ...buildPriceRangeFilter(priceRange),
+    ],
+    joins: [
+      {
+        table: products,
+        on: eq(stock.productId, products.id),
+        type: 'inner',
+      },
+      {
+        table: categories,
+        on: eq(products.categoryId, categories.id),
+        type: 'left',
+      },
+    ],
+    sortField: `products.${sortBy}`,
+    sortDirection,
+    page: baseQuery.page,
+    pageSize: baseQuery.pageSize,
+    includeAggregations: true, // Include stock totals, averages
+  });
+
+  return searchQuery;
+}
+```
+
+#### 3.8 Additional Module Enhancements
+
+**3.8.1 Accounting Module**
+- Advanced financial report filtering
+- Ledger search and filtering
+- Voucher search capabilities
+
+**3.8.2 Customer Module**
+- Customer search and filtering
+- Credit limit filtering
+- Contact information search
+
+**3.8.3 Dashboard Module**
+- Real-time search and filtering
+- Dashboard widget search
+- Analytics filtering
+
+#### 3.9 Integration Testing Requirements
+- **Module Integration Tests**: Each module with advanced search
+- **Cross-Module Search**: Searching across multiple modules
+- **Backward Compatibility**: Existing API still works
+- **Performance Testing**: Module-specific performance benchmarks
+- **Security Testing**: Module-specific security validation
+
+#### 3.10 Acceptance Criteria
+1. All core modules enhanced with advanced search
+2. Backward compatibility maintained (100% API compatibility)
+3. Performance benchmarks met for each module
+4. All integration tests passing
+5. User acceptance testing completed
+
+---
+
+### Phase 3: Frontend Integration (Weeks 5-6)
+**Timeline:** 14 days  
+**Team:** 2 frontend developers, 1 UX designer, 1 DevOps
+
+#### 3.11 Phase Objectives
+Create comprehensive frontend components and user interfaces for the advanced search and filtering system.
+
+#### 3.12 Frontend Architecture
+
+**3.12.1 Search Components**
+```
+frontend/
+├── components/
+│   ├── search/                    // Search-related components
+│   │   ├── unified-search-bar.tsx    // Main search interface
+│   │   ├── search-suggestions.tsx     // Auto-suggestions
+│   │   ├── search-results.tsx        // Search results display
+│   │   └── no-results.tsx            // Empty state handling
+│   ├── filters/                    // Filter components
+│   │   ├── facet-filters.tsx         // Faceted filtering
+│   │   ├── advanced-filters.tsx     // Advanced filter builder
+│   │   ├── filter-chip.tsx          // Individual filter chip
+│   │   └── filter-sidebar.tsx       // Filter sidebar
+│   ├── sorting/                    // Sorting components
+│   │   ├── sort-dropdown.tsx        // Sort dropdown
+│   │   ├── sort-options.tsx         // Sort option presets
+│   │   └── sort-indicator.tsx       // Sort indicators
+│   └── ui/                         // Common UI components
+│       ├── loading-spinner.tsx
+│       ├── error-boundary.tsx
+│       ├── empty-state.tsx
+│       └── pagination.tsx
+│
+├── hooks/                        // Custom hooks
+│   ├── use-advanced-search.tsx
+│   ├── use-facet-search.tsx
+│   ├── use-sort.tsx
+│   ├── use-filters.tsx
+│   └── use-search-analytics.tsx
+│
+├── services/                     // Search services
+│   ├── search-api.service.ts      // Search API integration
+│   ├── filter-api.service.ts      // Filter API integration
+│   ├── sort-api.service.ts        // Sort API integration
+│   └── search-analytics.service.ts // Search analytics
+│
+└── pages/                        // Search pages
+    ├── search/results.tsx         // Search results page
+    ├── search/bills.tsx           // Bill search page
+    ├── search/products.tsx        // Product search page
+    ├── search/customers.tsx       // Customer search page
+    └── search/inventory.tsx       // Inventory search page
+```
+
+**3.12.2 Component Specifications**
+
+**3.12.2.1 Unified Search Bar**
+```typescript
+// frontend/components/search/unified-search-bar.tsx
+interface UnifiedSearchBarProps {
+  placeholder?: string;
+  searchFields?: string[];
+  onSearch: (query: UnifiedSearchQuery) => void;
+  onSuggestionClick: (suggestion: SearchSuggestion) => void;
+  autoComplete?: boolean;
+  recentSearches?: string[];
+  popularSearches?: string[];
+  showVoiceSearch?: boolean;
+  className?: string;
+}
+
+export function UnifiedSearchBar({
+  placeholder = "Search...",
+  searchFields = ["name", "barcode", "sku"],
+  onSearch,
+  onSuggestionClick,
+  autoComplete = true,
+  recentSearches = [],
+  popularSearches = [],
+  showVoiceSearch = false,
+  className,
+}: UnifiedSearchBarProps) {
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
+  
+  const debouncedSearch = useCallback(
+    debounce((searchQuery: string) => {
+      if (searchQuery.length >= 2) {
+        loadSuggestions(searchQuery);
+      } else {
+        setSuggestions([]);
+      }
+    }, 300),
+    []
+  );
+  
+  const handleInputChange = (value: string) => {
+    setQuery(value);
+    debouncedSearch(value);
+  };
+  
+  const handleSearch = () => {
+    if (query.trim()) {
+      const searchQuery: UnifiedSearchQuery = {
+        q: query.trim(),
+        searchFields,
+        page: 1,
+        pageSize: 20,
+      };
+      onSearch(searchQuery);
+      setSuggestions([]);
+    }
+  };
+  
+  return (
+    <div className={`relative ${className}`}>
+      <div className="relative">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => handleInputChange(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+          placeholder={placeholder}
+          className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        {showVoiceSearch && (
+          <button
+            onClick={() => setShowVoice(!showVoice)}
+            className="absolute right-2 top-1/2 transform -translate-y-1/2"
+          >
+            <MicIcon className="w-5 h-5" />
+          </button>
+        )}
+      </div>
+      
+      {/* Suggestions dropdown */}
+      {suggestions.length > 0 && (
+        <div className="absolute top-full mt-1 w-full bg-white border rounded-lg shadow-lg z-50">
+          {suggestions.map((suggestion, index) => (
+            <div
+              key={index}
+              onClick={() => onSuggestionClick(suggestion)}
+              className="px-4 py-2 hover:bg-gray-50 cursor-pointer"
+            >
+              <div className="flex items-center">
+                <SearchIcon className="w-4 h-4 mr-2" />
+                <span>{suggestion.text}</span>
+                {suggestion.type === 'recent' && (
+                  <span className="text-xs text-gray-500 ml-auto">Recent</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**3.12.2.2 Facet Filters Component**
+```typescript
+// frontend/components/filters/facet-filters.tsx
+interface FacetFiltersProps {
+  facets: FacetResult[];
+  selectedFacets: Record<string, string[]>;
+  onFacetChange: (facet: string, value: string[], operation: 'add' | 'remove' | 'replace') => void;
+  onFacetClear: (facet: string) => void;
+  onClearAll: () => void;
+  className?: string;
+}
+
+export function FacetFilters({
+  facets,
+  selectedFacets,
+  onFacetChange,
+  onFacetClear,
+  onClearAll,
+  className,
+}: FacetFiltersProps) {
+  const getFacetDisplayName = (facet: string) => {
+    const facetConfig = facetDefinitions.find(f => f.name === facet);
+    return facetConfig?.label || facet;
+  };
+  
+  const getFacetValuesDisplay = (facet: FacetResult) => {
+    return facet.values.map(value => ({
+      value: value.value,
+      count: value.count,
+      percentage: facet.total
+        ? Math.round((value.count / facet.total) * 100)
+        : 0,
+    }));
+  };
+  
+  return (
+    <div className={`bg-white border rounded-lg p-4 ${className}`}>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Filters</h3>
+        {hasActiveFilters(selectedFacets) && (
+          <button
+            onClick={onClearAll}
+            className="text-sm text-blue-600 hover:text-blue-800"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+      
+      {facets.map(facet => (
+        <div key={facet.name} className="mb-4">
+          <h4 className="text-sm font-medium text-gray-700 mb-2">
+            {getFacetDisplayName(facet.name)}
+          </h4>
+          <div className="space-y-1">
+            {getFacetValuesDisplay(facet).map(({ value, count, percentage }) => {
+              const isSelected = selectedFacets[facet.name]?.includes(value);
+              
+              return (
+                <button
+                  key={value}
+                  onClick={() => {
+                    if (isSelected) {
+                      onFacetChange(facet.name, [value], 'remove');
+                    } else {
+                      onFacetChange(facet.name, [value], 'add');
+                    }
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded text-sm ${
+                    isSelected
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'hover:bg-gray-100'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span>{value}</span>
+                    <div className="flex items-center">
+                      <span className="text-xs text-gray-500 mr-2">
+                        {count.toLocaleString()}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {percentage}%
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+**3.12.3 Advanced Filter Builder**
+```typescript
+// frontend/components/filters/advanced-filters.tsx
+interface AdvancedFiltersProps {
+  filterSchema?: FilterSchema;
+  onFiltersChange: (filters: FilterCondition[]) => void;
+  className?: string;
+}
+
+export function AdvancedFilters({
+  filterSchema,
+  onFiltersChange,
+  className,
+}: AdvancedFiltersProps) {
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [availableFields, setAvailableFields] = useState<string[]>([]);
+  
+  useEffect(() => {
+    if (filterSchema) {
+      setAvailableFields(filterSchema.fields.map(f => f.name));
+    }
+  }, [filterSchema]);
+  
+  const addFilter = () => {
+    const newFilter: FilterCondition = {
+      field: '',
+      operator: 'eq',
+      value: null,
+    };
+    setFilters([...filters, newFilter]);
+  };
+  
+  const updateFilter = (index: number, updates: Partial<FilterCondition>) => {
+    const newFilters = [...filters];
+    newFilters[index] = { ...newFilters[index], ...updates };
+    setFilters(newFilters);
+    onFiltersChange(newFilters);
+  };
+  
+  const removeFilter = (index: number) => {
+    const newFilters = filters.filter((_, i) => i !== index);
+    setFilters(newFilters);
+    onFiltersChange(newFilters);
+  };
+  
+  return (
+    <div className={`bg-white border rounded-lg p-4 ${className}`}>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Advanced Filters</h3>
+        <button
+          onClick={addFilter}
+          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Add Filter
+        </button>
+      </div>
+      
+      {filters.map((filter, index) => (
+        <div key={index} className="flex gap-2 mb-2">
+          <select
+            value={filter.field}
+            onChange={(e) => updateFilter(index, { field: e.target.value })}
+            className="px-2 py-1 border rounded"
+          >
+            <option value="">Select field</option>
+            {availableFields.map(field => (
+              <option key={field} value={field}>{field}</option>
+            ))}
+          </select>
+          
+          <select
+            value={filter.operator}
+            onChange={(e) => updateFilter(index, { operator: e.target.value as any })}
+            className="px-2 py-1 border rounded"
+          >
+            <option value="eq">Equals</option>
+            <option value="ne">Not Equals</option>
+            <option value="gt">Greater Than</option>
+            <option value="gte">Greater Than or Equal</option>
+            <option value="lt">Less Than</option>
+            <option value="lte">Less Than or Equal</option>
+            <option value="like">Contains</option>
+            <option value="in">In List</option>
+            <option value="between">Between</option>
+          </select>
+          
+          <input
+            type="text"
+            value={filter.value || ''}
+            onChange={(e) => updateFilter(index, { value: e.target.value })}
+            placeholder="Value"
+            className="px-2 py-1 border rounded"
+          />
+          
+          <button
+            onClick={() => removeFilter(index)}
+            className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+**3.12.4 Sorting Component**
+```typescript
+// frontend/components/sorting/sort-dropdown.tsx
+interface SortDropdownProps {
+  sortOptions: SortOption[];
+  currentSort: { field: string; direction: 'asc' | 'desc' };
+  onSortChange: (sort: { field: string; direction: 'asc' | 'desc' }) => void;
+  className?: string;
+}
+
+export function SortDropdown({
+  sortOptions,
+  currentSort,
+  onSortChange,
+  className,
+}: SortDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const getSortLabel = (field: string) => {
+    const option = sortOptions.find(opt => opt.field === field);
+    return option?.label || field;
+  };
+  
+  const toggleSortDirection = () => {
+    onSortChange({
+      ...currentSort,
+      direction: currentSort.direction === 'asc' ? 'desc' : 'asc',
+    });
+  };
+  
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 px-3 py-2 border rounded hover:bg-gray-50"
+      >
+        <SortIcon className="w-4 h-4" />
+        <span>{getSortLabel(currentSort.field)}</span>
+        <span className="text-gray-500">
+          ({currentSort.direction === 'asc' ? '↑' : '↓'})
+        </span>
+        <ChevronDownIcon className="w-4 h-4" />
+      </button>
+      
+      {isOpen && (
+        <div className="absolute top-full mt-1 w-64 bg-white border rounded shadow-lg z-50">
+          {sortOptions.map((option) => (
+            <button
+              key={option.field}
+              onClick={() => {
+                onSortChange({
+                  field: option.field,
+                  direction: option.defaultDirection || 'desc',
+                });
+                setIsOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+            >
+              <div className="flex justify-between items-center">
+                <span>{option.label}</span>
+                {option.field === currentSort.field && (
+                  <span className="text-blue-600">
+                    {currentSort.direction === 'asc' ? '↑' : '↓'}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+#### 3.13 Backend Integration
+- **Search API Endpoints**: Update all module routes to support advanced search
+- **Filter API**: Add facet and advanced filter endpoints
+- **Analytics API**: Add search analytics and usage tracking
+- **Caching API**: Add cache management endpoints
+
+#### 3.14 Documentation and Training
+- **API Documentation**: Swagger/OpenAPI documentation for search endpoints
+- **Component Documentation**: Storybook documentation for search components
+- **User Guide**: Search and filtering user guide
+- **Admin Guide**: Search configuration and management guide
+
+#### 3.15 Performance Optimization
+- **Query Optimization**: SQL query optimization
+- **Caching Strategy**: Multi-level caching implementation
+- **Indexing Strategy**: Database indexing for search performance
+- **Load Balancing**: Horizontal scaling for search functionality
+
+#### 3.16 Security and Compliance
+- **Authentication**: Secure search access controls
+- **Authorization**: Role-based search permissions
+- **Data Privacy**: Search query logging and privacy
+- **Compliance**: GDPR and other data protection requirements
+
+#### 3.17 Monitoring and Observability
+- **Search Analytics**: Search query tracking and analytics
+- **Performance Monitoring**: Query execution time monitoring
+- **Error Tracking**: Search error monitoring and alerting
+- **Usage Analytics**: Search usage patterns and insights
+
+#### 3.18 Deployment and Infrastructure
+- **Load Testing**: Search functionality load testing
+- **Performance Benchmarks**: Search performance targets
+- **Disaster Recovery**: Search system failover and recovery
+- **Backup and Restore**: Search index backup and restoration
+
+---
+
+## 4. Testing Strategy
+
+### 4.1 Test Coverage Requirements
+- **Unit Tests**: 100% coverage for all new code
+- **Integration Tests**: End-to-end search functionality testing
+- **Performance Tests**: Search query performance testing
+- **Load Tests**: Concurrent search load testing
+- **Security Tests**: Security and compliance testing
+- **Accessibility Tests**: Screen reader and keyboard navigation testing
+
+### 4.2 Test Architecture
+```typescript
+tests/
+├── unit/
+│   ├── lib/
+│   │   ├── query-builder.test.ts
+│   │   ├── search-engine.test.ts
+│   │   ├── sort-service.test.ts
+│   │   ├── facet-service.test.ts
+│   │   └── cache-service.test.ts
+│   ├── modules/
+│   │   ├── billing-module.test.ts
+│   │   ├── products-module.test.ts
+│   │   ├── inventory-module.test.ts
+│   │   └── accounting-module.test.ts
+│   └── frontend/
+│       ├── components.test.tsx
+│       ├── hooks.test.ts
+│       └── services.test.ts
+│
+├── integration/
+│   ├── search-flows.test.ts
+│   ├── cross-module-search.test.ts
+│   ├── facet-search.test.ts
+│   └── advanced-filters.test.ts
+│
+└── e2e/
+    ├── search-ui.test.ts
+    ├── search-backend.test.ts
+    └── advanced-search.test.ts
+```
+
+### 4.3 Test Data Management
+- **Test Fixtures**: Comprehensive test data for all modules
+- **Data Seeding**: Database seeding scripts for testing
+- **Test Isolation**: Module isolation for independent testing
+- **Performance Benchmarks**: Performance testing setup and teardown
+
+---
+
+## 5. Deployment Strategy
+
+### 5.1 Rollout Plan
+1. **Phase 1**: Core infrastructure deployment
+2. **Phase 2**: Module integration and testing
+3. **Phase 3**: Frontend component deployment
+4. **Phase 4**: Full production deployment
+
+### 5.2 Migration Strategy
+- **Backward Compatibility**: Existing APIs continue to work
+- **Gradual Migration**: Progressive rollout of new features
+- **Fallback Mechanisms**: Graceful degradation for errors
+- **Monitoring and Rollback**: Continuous monitoring and quick rollback
+
+### 5.3 Infrastructure Requirements
+- **Search Infrastructure**: Elasticsearch/OpenSearch cluster
+- **Caching Infrastructure**: Redis cluster
+- **Database Optimization**: Database indexing and optimization
+- **Load Balancing**: Application load balancing
+- **Monitoring**: APM and monitoring tools
+
+---
+
+## 6. Documentation Requirements
+
+### 6.1 Technical Documentation
+- **API Documentation**: Complete API reference
+- **Component Documentation**: Component usage and examples
+- **Configuration Guide**: Search configuration and optimization
+- **Performance Guide**: Performance tuning and optimization
+
+### 6.2 User Documentation
+- **User Guide**: Search and filtering user guide
+- **Quick Start Guide**: Getting started with search
+- **Advanced Features**: Advanced search and filtering features
+- **Troubleshooting Guide**: Common issues and solutions
+
+### 6.3 Developer Documentation
+- **Architecture Overview**: System architecture and design
+- **Code Documentation**: Inline code documentation
+- **Development Guide**: Development and testing guidelines
+- **Contribution Guide**: Contribution and collaboration guidelines
+
+---
+
+## 7. Success Metrics
+
+### 7.1 Technical Metrics
+- **Performance**: 90% improvement in search response time
+- **Reliability**: 99.9% uptime for search functionality
+- **Scalability**: Support 10x increase in search volume
+- **Security**: 100% compliance with security requirements
+
+### 7.2 User Experience Metrics
+- **User Satisfaction**: 85% user satisfaction with search functionality
+- **Search Accuracy**: 90% accuracy in search results
+- **Filter Effectiveness**: 75% reduction in irrelevant search results
+- **Usage Adoption**: 60% adoption of advanced search features
+
+### 7.3 Business Metrics
+- **Efficiency**: 40% reduction in time to find information
+- **Productivity**: 30% increase in search efficiency
+- **Customer Support**: 25% reduction in search-related support tickets
+- **Revenue**: 15% increase in conversion due to better search
+
+---
+
+## 8. Risk Management
+
+### 8.1 Risk Identification
+- **Technical Risks**: Integration complexity, performance issues
+- **Business Risks**: User adoption, training requirements
+- **Security Risks**: Data privacy, compliance issues
+- **Project Risks**: Timeline, budget, resource allocation
+
+### 8.2 Risk Mitigation
+- **Technical Mitigation**: Incremental development, thorough testing
+- **Business Mitigation**: User training, change management
+- **Security Mitigation**: Security reviews, compliance audits
+- **Project Mitigation**: Regular status reviews, risk monitoring
+
+### 8.3 Contingency Planning
+- **Technical Contingency**: Alternative architectures, fallback solutions
+- **Business Contingency**: Alternative rollout strategies, phased deployment
+- **Security Contingency**: Incident response, disaster recovery
+- **Project Contingency**: Resource reallocation, timeline adjustments
+
+---
+
+## 9. Project Timeline
+
+### 9.1 Detailed Timeline
+```
+Week 1-2: Core Infrastructure
+  - Day 1-3: Query Builder System
+  - Day 4-7: Search Engine Development
+  - Day 8-10: Sorting System
+  - Day 11-14: Faceted Filtering System
+
+Week 3-4: Module Integration
+  - Day 15-18: Billing Module Integration
+  - Day 19-21: Products Module Integration
+  - Day 22-24: Inventory Module Integration
+  - Day 25-28: Accounting Module Integration
+
+Week 5-6: Frontend Integration
+  - Day 29-31: Search Components
+  - Day 32-35: Filter Components
+  - Day 36-38: Sorting Components
+  - Day 39-42: Integration and Testing
+
+Week 7-8: Testing and Deployment
+  - Day 43-45: Unit Testing
+  - Day 46-49: Integration Testing
+  - Day 50-52: End-to-End Testing
+  - Day 53-56: Production Deployment
+```
+
+### 9.2 Milestones
+1. **Infrastructure Complete**: End of Week 2
+2. **Module Integration Complete**: End of Week 4
+3. **Frontend Complete**: End of Week 6
+4. **Testing Complete**: End of Week 7
+5. **Production Deployment**: End of Week 8
+
+---
+
+## 10. Resource Requirements
+
+### 10.1 Team Composition
+- **Project Manager**: 1
+- **Backend Developers**: 3
+- **Frontend Developers**: 2
+- **DevOps Engineer**: 1
+- **QA Engineer**: 2
+- **UX Designer**: 1
+
+### 10.2 Tools and Technologies
+- **Development Tools**: VS Code, Git, Docker, Kubernetes
+- **Testing Tools**: Jest, Playwright, Cypress, SonarQube
+- **Monitoring Tools**: Datadog, New Relic, ELK Stack
+- **Documentation Tools**: Swagger, Storybook, GitBook
+
+### 10.3 Infrastructure Requirements
+- **Development Environment**: Local development setup
+- **Testing Environment**: Staging environment
+- **Production Environment**: Production deployment
+- **Monitoring and Logging**: Comprehensive monitoring setup
+
+---
+
+## 11. Change Management
+
+### 11.1 Version Control
+- **Branch Strategy**: Feature branches, pull requests, code review
+- **Release Management**: Semantic versioning, release notes
+- **Rollback Strategy**: Automated rollback, manual rollback
+
+### 11.2 Communication Plan
+- **Daily Standups**: Team synchronization
+- **Weekly Reviews**: Progress and issue resolution
+- **Sprint Reviews**: Demo and feedback collection
+- **Retrospectives**: Process improvement and learning
+
+### 11.3 Stakeholder Management
+- **Executive Sponsorship**: Executive team involvement
+- **User Engagement**: User feedback and requirements gathering
+- **Vendor Management**: Third-party vendor coordination
+- **External Dependencies**: External system integration
+
+---
+
+## 12. Appendices
+
+### 12.1 Technical Specifications
+- **Database Schema**: Extended schema requirements
+- **API Specifications**: Detailed API documentation
+- **Security Requirements**: Security compliance requirements
+- **Performance Requirements**: Performance benchmark requirements
+
+### 12.2 Templates and Checklists
+- **Project Checklist**: Project completion checklist
+- **Testing Checklist**: Testing completion checklist
+- **Deployment Checklist**: Deployment completion checklist
+- **Documentation Checklist**: Documentation completion checklist
+
+### 12.3 Glossary
+- **API**: Application Programming Interface
+- **CRUD**: Create, Read, Update, Delete
+- **UI**: User Interface
+- **UX**: User Experience
+- **AWS**: Amazon Web Services
+- **GCP**: Google Cloud Platform
+- **Azure**: Microsoft Azure
+
+---
+
+## Implementation Ready for Execution
+
+This comprehensive project plan provides a detailed roadmap for implementing advanced search and filtering infrastructure for the Liquor Counter POS application. The plan covers all aspects of the implementation including:
+
+1. **Clear Phase-by-Phase Approach**: 8-week timeline with specific deliverables
+2. **Technical Specifications**: Detailed requirements and implementation details
+3. **Testing Strategy**: Comprehensive testing approach with 100% coverage
+4. **Deployment Strategy**: Phased rollout with backward compatibility
+5. **Documentation Requirements**: Complete documentation for all stakeholders
+6. **Success Metrics**: Measurable outcomes and business value
+7. **Risk Management**: Risk identification and mitigation strategies
+
+The plan is ready for immediate execution and provides all necessary information for teams to begin implementing the advanced search and filtering infrastructure.

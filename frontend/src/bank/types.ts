@@ -40,7 +40,7 @@ export type PreviewLine = {
 };
 
 export type Preview = {
-  source: 'CSV' | 'EXCEL' | 'PDF';
+  source: 'CSV' | 'EXCEL' | 'PDF' | 'OFX' | 'QIF';
   headers: string[];
   headerRow: number;
   mapping: ColumnMapping;
@@ -116,11 +116,17 @@ export type Suggestion =
   | { kind: 'IGNORE'; ruleId: string; pattern: string; ignoreReason: IgnoreReason; confidence: number; reason: string }
   | { kind: 'ONE_TO_ONE'; entryIds: string[]; confidence: number; reason: string }
   | { kind: 'SETTLEMENT'; entryIds: string[]; expected: string; fee: string; feePct: number; days: string[]; mode: string; confidence: number; reason: string }
-  | { kind: 'POST'; category: Category; confidence: number; reason: string };
+  | { kind: 'POST'; category: Category; confidence: number; reason: string; customTypeId?: string; customTypeName?: string };
 
 export type Category =
   | 'SETTLEMENT' | 'CASH_DEPOSIT' | 'CASH_WITHDRAWAL' | 'BANK_CHARGE' | 'INTEREST'
-  | 'SUPPLIER_PAYMENT' | 'OTHER_RECEIPT' | 'OTHER_PAYMENT';
+  | 'SUPPLIER_PAYMENT' | 'SUPPLIER_REFUND' | 'OWNER_CAPITAL' | 'OWNER_DRAWINGS'
+  | 'EXCISE_GOVT' | 'SALARY_WAGES' | 'RENT' | 'MISC_EXPENSES' | 'UTILITIES'
+  | 'INTER_ACCOUNT_IN' | 'INTER_ACCOUNT_OUT'
+  | 'OTHER_RECEIPT' | 'OTHER_PAYMENT';
+
+/** Types whose other side is an account the user picks (mirrors CATEGORY_NEEDS_LEDGER on the server). */
+export const NEEDS_LEDGER: ReadonlySet<Category> = new Set<Category>(['INTER_ACCOUNT_IN', 'INTER_ACCOUNT_OUT', 'OTHER_RECEIPT', 'OTHER_PAYMENT']);
 
 export type LineStatus = 'UNMATCHED' | 'SUGGESTED' | 'MATCHED' | 'IGNORED';
 
@@ -143,6 +149,19 @@ export type Line = {
   ignoreReason: IgnoreReason | null;
   ignoredByRuleId: string | null;
   suggestedPattern: string;
+  valueDate: string | null;
+  hash: string;
+  resolvedAt: string | null;
+};
+
+/** The extra detail shown when a statement line is expanded (GET /bank/lines/:id/detail). */
+export type LineDetail = {
+  valueDate: string | null;
+  hash: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  voucherNumber: string | null;
+  entries: { id: string; voucherNumber: string; date: string; narration: string; sourceType: string | null; debit: string; credit: string }[];
 };
 
 export type Candidate = { id: string; date: string; debit: string; credit: string; narration: string; sourceType: string | null };
@@ -176,8 +195,31 @@ export const CATEGORY_LABEL: Record<string, string> = {
   BANK_CHARGE: 'Bank charge / fee',
   INTEREST: 'Interest received',
   SUPPLIER_PAYMENT: 'Supplier payment',
+  SUPPLIER_REFUND: 'Supplier refund / credit',
+  OWNER_CAPITAL: 'Owner / partner money in',
+  OWNER_DRAWINGS: 'Owner / partner withdrawal',
+  EXCISE_GOVT: 'Excise / government payment',
+  SALARY_WAGES: 'Salary / wages',
+  RENT: 'Rent',
+  MISC_EXPENSES: 'Miscellaneous expense',
+  UTILITIES: 'Electricity & utilities',
+  INTER_ACCOUNT_IN: 'Transfer from own account',
+  INTER_ACCOUNT_OUT: 'Transfer to own account',
   OTHER_RECEIPT: 'Other receipt',
   OTHER_PAYMENT: 'Other payment',
 };
 
 export const isZero = (v: string | null | undefined) => !v || Number(v) === 0;
+
+/** A transaction type the customer added for a bank account (GET /bank/accounts/:id/types). */
+export type TxnType = {
+  id: string;
+  name: string;
+  direction: 'IN' | 'OUT' | 'EITHER';
+  ledgerId: string;
+  ledgerName: string;
+  matchText: string | null;
+  isActive: boolean;
+};
+
+export const CUSTOM_PREFIX = 'CUSTOM:';

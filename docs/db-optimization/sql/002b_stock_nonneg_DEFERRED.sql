@@ -1,0 +1,14 @@
+-- DEFERRED — do NOT run until the application change below is shipped. Kept for the record.
+--
+-- Why: counter.service.ts (lines ~648 and ~656) writes stock as
+--     INSERT INTO stock (branch_id, product_id, quantity) VALUES (.., .., <delta, may be negative>)
+--       ON CONFLICT (branch_id, product_id) DO UPDATE SET quantity = stock.quantity + EXCLUDED.quantity
+-- A CHECK (quantity >= 0) is evaluated on the PROPOSED row before ON CONFLICT is resolved, so a negative delta is rejected
+-- even though the stored result would be >= 0. Verified: with the constraint on, 4 counter-sheet integration tests fail (HTTP 500).
+--
+-- Required code change first: make that write an UPDATE ... SET quantity = quantity + delta for existing rows (and INSERT only
+-- GREATEST(delta,0) for brand-new rows), then these become safe:
+-- ALTER TABLE stock         ADD CONSTRAINT ck_stock_qty_nonneg     CHECK (quantity >= 0) NOT VALID;
+-- ALTER TABLE stock_by_type ADD CONSTRAINT ck_stock_by_type_nonneg CHECK (quantity >= 0) NOT VALID;
+-- ALTER TABLE stock         VALIDATE CONSTRAINT ck_stock_qty_nonneg;
+-- ALTER TABLE stock_by_type VALIDATE CONSTRAINT ck_stock_by_type_nonneg;

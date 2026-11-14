@@ -117,7 +117,7 @@ export function PourControl() {
   return (
     <section className="max-w-6xl mx-auto space-y-5" id="page-pour">
       <div>
-        <h1 className="text-2xl font-bold">Pour Control</h1>
+        <h1 className="text-2xl font-bold">Peg Control</h1>
         <p className="text-sm text-gray-500 mt-1">
           Dip-check the open bottle at close of day. The system compares it with what the pegs sold should have left.
         </p>

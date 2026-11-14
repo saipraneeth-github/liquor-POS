@@ -196,6 +196,14 @@ function invoiceLinesTotal(data: ActiveInvoiceData | null): string {
   return computed.toFixed(2);
 }
 
+interface BulkItem {
+  key: string;
+  name: string;
+  state: 'queued' | 'uploading' | 'done' | 'duplicate' | 'failed';
+  message: string;
+  invoiceId?: string;
+}
+
 export function InvoiceUpload() {
   const { user, branches, activeBranchId } = useAuth();
   const branchId = activeBranchId ?? user?.branchId ?? branches?.[0]?.id;
@@ -204,10 +212,9 @@ export function InvoiceUpload() {
   const isManager = isManagerLike(user);
   const canSeeCost = userCan(user, 'cost.view');     // supplier invoices and every buying price
 
-  // Navigation tab: 'upload' = Bill Inward Wizard, 'history' = Invoices History, 'all-invoices' = All Uploaded Invoices
-  const [activeTab, setActiveTab] = useState<'upload' | 'history' | 'all-invoices'>('upload');
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>('');
-  const [searchIcdc, setSearchIcdc] = useState<string>('');
+  // 'all-invoices' = the single All Invoices screen (list + search + actions); 'upload' = the bill wizard opened from it
+  const [activeTab, setActiveTab] = useState<'upload' | 'all-invoices'>('all-invoices');
+  const [, setSelectedInvoiceId] = useState<string>('');
   const [viewSnapshot, setViewSnapshot] = useState<ActiveInvoiceData | null>(null);
   const [loadingSnapshot, setLoadingSnapshot] = useState(false);
 
@@ -243,6 +250,8 @@ export function InvoiceUpload() {
   const [uploadNumber, setUploadNumber] = useState('');
   const [uploadDate, setUploadDate] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [bulkItems, setBulkItems] = useState<BulkItem[]>([]);
+  const [bulkDragging, setBulkDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -346,44 +355,28 @@ export function InvoiceUpload() {
     }
   };
 
-  const filteredAllInvoices = useMemo(() => {
-    if (!searchIcdc.trim()) return invoices;
-    const q = searchIcdc.trim().toLowerCase();
-    const cleanQ = q.replace(/^icdc/i, '');
-    return invoices.filter((inv) => {
-      const num = (inv.invoiceNumber || '').toLowerCase();
-      const cleanNum = num.replace(/^icdc/i, '');
-      return (
-        num.includes(q) ||
-        (cleanQ && cleanNum.includes(cleanQ)) ||
-        (inv.supplierName || '').toLowerCase().includes(q)
-      );
-    });
-  }, [invoices, searchIcdc]);
+  // The server does the matching (all words, any field, punctuation-insensitive);
+  // the list is already filtered by the time it gets here.
+  const filteredAllInvoices = invoices;
+  const searchIcdc = filterQ;
+  const setSearchIcdc = setFilterQ;
+
+  // Re-query shortly after typing stops, or straight away when the status filter changes.
+  const firstSearchRun = useRef(true);
+  useEffect(() => {
+    if (firstSearchRun.current) { firstSearchRun.current = false; return; }
+    const t = setTimeout(() => { loadInvoices(); }, 300);
+    return () => clearTimeout(t);
+  }, [filterQ, filterStatus]);
 
   const handleIcdcSearch = () => {
-    if (!searchIcdc.trim()) {
-      if (selectedInvoiceId) openSnapshot(selectedInvoiceId);
+    // Enter: open the top result.
+    if (invoices.length === 0) {
+      showToast(`No invoice found matching "${filterQ}"`, 'info');
       return;
     }
-    const q = searchIcdc.trim().toLowerCase();
-    const cleanQ = q.replace(/^icdc/i, '');
-    const found = invoices.find((inv) => {
-      const num = (inv.invoiceNumber || '').toLowerCase();
-      const cleanNum = num.replace(/^icdc/i, '');
-      return (
-        num === q ||
-        (cleanQ && cleanNum === cleanQ) ||
-        num.includes(q) ||
-        (cleanQ && cleanNum.includes(cleanQ))
-      );
-    });
-    if (found) {
-      setSelectedInvoiceId(found.id);
-      openSnapshot(found.id);
-    } else {
-      showToast(`No invoice found matching "${searchIcdc}"`, 'info');
-    }
+    setSelectedInvoiceId(invoices[0].id);
+    openSnapshot(invoices[0].id);
   };
 
   const getBrandCode = (it: InvoiceItem) => {
@@ -614,6 +607,48 @@ export function InvoiceUpload() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // ── Bulk upload (drop or pick many files on the All Invoices list) ────────
+  // Each file goes to the same /upload endpoint the wizard uses, one after another,
+  // so the server reads supplier / number / date / lines itself. Results land as drafts.
+  const runBulkUpload = async (files: File[]) => {
+    if (!branchId || files.length === 0) return;
+    const okExt = ['.pdf', '.xlsx', '.csv', '.png', '.jpg', '.jpeg'];
+    const batch: BulkItem[] = files.map((f, i) => ({
+      key: `${Date.now()}-${i}-${f.name}`,
+      name: f.name,
+      state: okExt.some((e) => f.name.toLowerCase().endsWith(e)) ? 'queued' : 'failed',
+      message: okExt.some((e) => f.name.toLowerCase().endsWith(e)) ? '' : 'Unsupported file type (use PDF, XLSX, CSV, JPG or PNG)',
+    }));
+    setBulkItems((prev) => [...batch, ...prev].slice(0, 50));
+    const patch = (key: string, p: Partial<BulkItem>) =>
+      setBulkItems((prev) => prev.map((b) => (b.key === key ? { ...b, ...p } : b)));
+    const token = localStorage.getItem('token');
+    for (let i = 0; i < files.length; i++) {
+      if (batch[i].state === 'failed') continue;
+      patch(batch[i].key, { state: 'uploading' });
+      try {
+        const fd = new FormData();
+        fd.append('file', files[i]);
+        const res = await fetch(`/api/v1/invoices/${branchId}/upload`, {
+          method: 'POST',
+          headers: token ? { Authorization: 'Bearer ' + token } : {},
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          patch(batch[i].key, { state: 'duplicate', message: data.error || data.message || 'Already uploaded', invoiceId: data.existingInvoiceId });
+        } else if (!res.ok) {
+          patch(batch[i].key, { state: 'failed', message: data.message || data.error || 'Could not read this file' });
+        } else {
+          patch(batch[i].key, { state: 'done', message: `${data.items?.length ?? 0} lines read`, invoiceId: data.invoice?.id });
+        }
+      } catch (err: any) {
+        patch(batch[i].key, { state: 'failed', message: err?.message || 'Network error' });
+      }
+    }
+    loadInvoices();
   };
 
   const openInvoice = async (id: string) => {
@@ -993,7 +1028,7 @@ export function InvoiceUpload() {
           window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
           setActiveInvoice(null);
           setWizardStep(1);
-          setActiveTab('history');
+          setActiveTab('all-invoices');
         } catch (err: any) {
           showToast('Approval failed: ' + err.message, 'error');
         } finally {
@@ -1064,7 +1099,6 @@ export function InvoiceUpload() {
           <p className="text-sm text-gray-500 mt-0.5">
             {activeTab === 'all-invoices' ? 'All uploaded supplier invoices with immutable snapshots and history.'
               : activeTab === 'upload' ? 'Upload or create a supplier invoice, map brand codes, and submit.'
-              : activeTab === 'history' ? 'Every supplier invoice, with its review and inward status.'
               : 'Live bottle counts, cost and margin for this store.'}
           </p>
         </div>
@@ -1086,20 +1120,6 @@ export function InvoiceUpload() {
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'history'
-                ? 'bg-purple-600 text-white shadow-sm font-semibold'
-                : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-            }`}
-            onClick={() => {
-              setActiveTab('history');
-              loadInvoices();
-            }}
-          >
-            Invoices History
-          </button>
-          <button
-            type="button"
-            className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'all-invoices'
                 ? 'bg-purple-600 text-white shadow-sm font-semibold'
                 : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
@@ -1109,7 +1129,7 @@ export function InvoiceUpload() {
               loadInvoices();
             }}
           >
-            All Invoices
+            Supplier Invoices
             <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-800 font-mono">
               {invoices.length}
             </span>
@@ -1127,7 +1147,7 @@ export function InvoiceUpload() {
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">All Uploaded Invoices</h2>
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                Select an invoice number to view its immutable snapshot, or browse all recorded invoices below.
+                Open a bill to see it as it was saved. To add bills, use the Add Supplier Bill button.
               </p>
             </div>
             <button
@@ -1139,17 +1159,17 @@ export function InvoiceUpload() {
                 setActiveTab('upload');
               }}
             >
-              <span>＋</span> Upload New Invoice
+              <span>＋</span> Add Supplier Bill
             </button>
           </div>
 
-          {/* ICDC Search Bar & View Button */}
+          {/* Search bar */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 bg-gray-50 dark:bg-slate-800/60 rounded-xl border dark:border-slate-700">
             <div className="flex-1 relative">
               <input
                 type="text"
                 id="searchIcdcInput"
-                placeholder="Search ICDC + <remaining number>"
+                placeholder="Search invoice no., supplier, amount or date"
                 className="w-full p-2.5 pl-3 pr-8 border dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 font-mono shadow-sm outline-none focus:ring-2 focus:ring-purple-500"
                 value={searchIcdc}
                 onChange={(e) => setSearchIcdc(e.target.value)}
@@ -1170,6 +1190,19 @@ export function InvoiceUpload() {
                 </button>
               )}
             </div>
+            <select
+              id="invFilterStatus"
+              className="p-2.5 border dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 font-medium"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="APPROVED">Added to Stock</option>
+              <option value="REVIEWED">Reviewed</option>
+              <option value="DRAFT">Draft</option>
+              <option value="REJECTED">Cancelled</option>
+              <option value="REVERSED">Reversed</option>
+            </select>
             <button
               type="button"
               id="viewIcdcSearchBtn"
@@ -1181,32 +1214,8 @@ export function InvoiceUpload() {
             </button>
           </div>
 
-          {/* Quick Dropdown selector (optional helper) */}
-          {invoices.length > 0 && !searchIcdc && (
-            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
-              <span>Or choose from list:</span>
-              <select
-                id="allInvoicesDropdown"
-                className="p-1.5 border dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-gray-800 dark:text-slate-200 font-mono"
-                value={selectedInvoiceId}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedInvoiceId(val);
-                  if (val) openSnapshot(val);
-                }}
-              >
-                <option value="">-- Choose an invoice to view snapshot --</option>
-                {invoices.map((inv) => (
-                  <option key={inv.id} value={inv.id}>
-                    {inv.invoiceNumber} · {inv.supplierName} ({inv.invoiceDate || inv.createdAt.slice(0, 10)}) — ₹{parseFloat(inv.totalAmount).toFixed(2)} [{inv.status}]
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {/* Invoices List Table */}
-          <div className="overflow-x-auto border dark:border-slate-800 rounded-xl">
+          <div id="invHistoryBox" className="overflow-x-auto border dark:border-slate-800 rounded-xl">
             {loadingInvoices ? (
               <BeerBottleLoader inline size="sm" title="Loading Invoices…" subtitle="Fetching all uploaded supplier invoices…" />
             ) : filteredAllInvoices.length === 0 ? (
@@ -1220,6 +1229,7 @@ export function InvoiceUpload() {
                     <th className="py-2.5 px-3">Invoice Number</th>
                     <th className="py-2.5 px-3">Depot / Supplier</th>
                     <th className="py-2.5 px-3">Invoice Date</th>
+                    <th className="py-2.5 px-3">Source</th>
                     <th className="py-2.5 px-3 text-right">Items</th>
                     <th className="py-2.5 px-3 text-right">Total Amount</th>
                     <th className="py-2.5 px-3">Status</th>
@@ -1228,7 +1238,7 @@ export function InvoiceUpload() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
                   {filteredAllInvoices.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-gray-50/70 dark:hover:bg-slate-800/60 transition-colors">
+                    <tr key={inv.id} className="inv-history-row hover:bg-gray-50/70 dark:hover:bg-slate-800/60 transition-colors" data-invoice-id={inv.id} data-invoice-number={inv.invoiceNumber}>
                       <td className="py-3 px-3">
                         <div className="font-bold text-gray-900 dark:text-slate-100 font-mono">{inv.invoiceNumber}</div>
                         {inv.originalFilename && (
@@ -1238,6 +1248,9 @@ export function InvoiceUpload() {
                       <td className="py-3 px-3 text-gray-800 dark:text-slate-200 font-medium">{inv.supplierName || '—'}</td>
                       <td className="py-3 px-3 text-xs text-gray-600 dark:text-slate-400">
                         {inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : new Date(inv.createdAt).toLocaleDateString('en-IN')}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-purple-100 text-purple-800">{inv.source}</span>
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-medium">{inv.lineCount}</td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-gray-900 dark:text-slate-100">
@@ -1252,10 +1265,16 @@ export function InvoiceUpload() {
                               ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
                               : inv.status === 'REJECTED'
                               ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                              : inv.status === 'REVERSED'
+                              ? 'bg-gray-200 text-gray-700'
                               : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
                           }`}
                         >
-                          {inv.status}
+                          {inv.status === 'APPROVED' ? 'Added to Stock'
+                            : inv.status === 'REVIEWED' ? 'Reviewed'
+                            : inv.status === 'REJECTED' ? 'Cancelled'
+                            : inv.status === 'REVERSED' ? 'Reversed'
+                            : 'Draft'}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right">
@@ -1276,6 +1295,40 @@ export function InvoiceUpload() {
                           >
                             Open
                           </button>
+                          {inv.status === 'DRAFT' && (
+                            <ProtectedButton
+                              type="button"
+                              permission="invoices.approve"
+                              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-semibold text-xs cursor-pointer"
+                              onClick={() => handleReviewInvoiceById(inv.id, inv.invoiceNumber)}
+                              title="Mark bill as reviewed"
+                            >
+                              ✓ Review
+                            </ProtectedButton>
+                          )}
+                          {inv.status === 'APPROVED' ? (
+                            <ProtectedButton
+                              type="button"
+                              permission="invoices.approve"
+                              title="Reverse this invoice: takes the stock back out and posts reversing entries"
+                              className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg font-semibold text-xs cursor-pointer"
+                              onClick={() => { setReverseReason(''); setReverseTarget({ id: inv.id, number: inv.invoiceNumber }); }}
+                            >
+                              Reverse
+                            </ProtectedButton>
+                          ) : inv.status === 'REVERSED' ? null : (
+                            <ProtectedButton
+                              variant="ghost"
+                              permission="invoices.approve"
+                              title="Delete bill"
+                              confirmMessage={`Delete invoice ${inv.invoiceNumber || 'draft'}? This action cannot be undone.`}
+                              confirmLabel="Delete"
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer"
+                              onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                            >
+                              <Trash2 size={16} />
+                            </ProtectedButton>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1356,7 +1409,9 @@ export function InvoiceUpload() {
                     onDrop={(e) => {
                       e.preventDefault();
                       setIsDragActive(false);
-                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      if (e.dataTransfer.files && e.dataTransfer.files.length > 1) {
+                        runBulkUpload(Array.from(e.dataTransfer.files));
+                      } else if (e.dataTransfer.files && e.dataTransfer.files[0]) {
                         handleFileChosen(e.dataTransfer.files[0]);
                       }
                     }}
@@ -1368,7 +1423,11 @@ export function InvoiceUpload() {
                       type="file"
                       className="hidden"
                       accept=".csv,.xlsx,.pdf,.png,.jpg,.jpeg"
-                      onChange={(e) => handleFileChosen(e.target.files?.[0] || null)}
+                      multiple
+                      onChange={(e) => {
+                        const picked = Array.from(e.target.files ?? []);
+                        if (picked.length > 1) { runBulkUpload(picked); e.target.value = ''; } else handleFileChosen(picked[0] || null);
+                      }}
                     />
 
                     {uploadFile ? (
@@ -1507,6 +1566,76 @@ export function InvoiceUpload() {
                   </button>
                 </div>
               </form>
+
+          {/* Several bills at once */}
+          <div className="pt-6 border-t border-gray-200 dark:border-gray-700 space-y-3">
+            <div>
+              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Have many bills? Add them together</h3>
+              <p className="text-xs text-gray-500">Each file is read on its own and saved as a draft you check later. Nothing reaches your stock until you approve it.</p>
+            </div>
+          <div
+            id="bulkDropZone"
+            className={`rounded-xl border-2 border-dashed px-4 py-5 text-center text-sm transition-colors ${
+              bulkDragging ? 'border-purple-500 bg-purple-50' : 'border-gray-300 dark:border-slate-700 bg-gray-50/60 dark:bg-slate-800/40'
+            }`}
+            onDragOver={(e) => { e.preventDefault(); setBulkDragging(true); }}
+            onDragLeave={() => setBulkDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setBulkDragging(false);
+              runBulkUpload(Array.from(e.dataTransfer.files));
+            }}
+          >
+            <span className="text-gray-600 dark:text-slate-300">Drop invoices here (one or many), or </span>
+            <label className="text-purple-700 font-semibold cursor-pointer underline">
+              choose files
+              <input
+                id="bulkFileInput"
+                type="file"
+                multiple
+                accept=".pdf,.xlsx,.csv,.png,.jpg,.jpeg"
+                className="hidden"
+                onChange={(e) => {
+                  runBulkUpload(Array.from(e.target.files ?? []));
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            <div className="text-[11px] text-gray-400 mt-1">PDF, Excel, CSV, JPG or PNG. Each file becomes a draft to review.</div>
+          </div>
+
+          {bulkItems.length > 0 && (
+            <div id="bulkTray" className="border dark:border-slate-700 rounded-xl divide-y dark:divide-slate-700 text-sm">
+              <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-slate-800/60 rounded-t-xl text-xs text-gray-500">
+                <span>
+                  {bulkItems.filter((b) => b.state === 'done').length} of {bulkItems.length} uploaded
+                  {bulkItems.some((b) => b.state === 'uploading' || b.state === 'queued') ? ' — working…' : ''}
+                </span>
+                <button type="button" className="font-semibold hover:text-gray-800 cursor-pointer" onClick={() => setBulkItems([])}>Clear</button>
+              </div>
+              {bulkItems.map((b) => (
+                <div key={b.key} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="truncate font-mono text-xs">{b.name}</span>
+                  <span className="flex items-center gap-2 shrink-0 text-xs">
+                    <span className={
+                      b.state === 'done' ? 'text-emerald-700'
+                      : b.state === 'failed' ? 'text-red-700'
+                      : b.state === 'duplicate' ? 'text-amber-700'
+                      : 'text-gray-500'
+                    }>
+                      {b.state === 'queued' ? 'Waiting' : b.state === 'uploading' ? 'Reading…' : b.state === 'done' ? `Ready · ${b.message}` : b.message}
+                    </span>
+                    {b.invoiceId && (
+                      <button type="button" className="font-semibold text-purple-700 hover:underline cursor-pointer" onClick={() => openInvoice(b.invoiceId!)}>
+                        Open
+                      </button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          </div>
             </div>
           )}
 
@@ -1773,6 +1902,23 @@ export function InvoiceUpload() {
                                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                                   <span className="font-semibold">{matchedProd?.name || mappedMapping?.productName || it.productName}</span>
                                   {vol ? <span className="text-[10px] font-mono text-gray-500">• {vol}ml</span> : null}
+                                  {it.matchStatus === 'SUGGESTED' && (
+                                    <>
+                                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Suggested, please confirm</span>
+                                      <button
+                                        type="button"
+                                        className="ie-confirm-match ml-auto px-2 py-0.5 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
+                                        onClick={() => {
+                                          if (!activeInvoice) return;
+                                          const nextItems = [...activeInvoice.items];
+                                          nextItems[idx] = { ...nextItems[idx], matchStatus: 'MANUAL' };
+                                          setActiveInvoice({ ...activeInvoice, items: nextItems });
+                                        }}
+                                      >
+                                        Confirm
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               ) : (
                                 <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg space-y-2 text-xs">
@@ -2122,10 +2268,10 @@ export function InvoiceUpload() {
                       onClick={() => {
                         setActiveInvoice(null);
                         setWizardStep(1);
-                        setActiveTab('history');
+                        setActiveTab('all-invoices');
                       }}
                     >
-                      <span>✓</span> View Invoices History
+                      <span>✓</span> View Supplier Invoices
                     </button>
                   ) : (
                     <button
@@ -2228,10 +2374,10 @@ export function InvoiceUpload() {
                       onClick={() => {
                         setActiveInvoice(null);
                         setWizardStep(1);
-                        setActiveTab('history');
+                        setActiveTab('all-invoices');
                       }}
                     >
-                      <span>✓</span> Inwarded — View Invoices History
+                      <span>✓</span> Inwarded — View Supplier Invoices
                     </button>
                   ) : (
                     <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -2275,192 +2421,6 @@ export function InvoiceUpload() {
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {/* TAB 2: INVOICE HISTORY                                                 */}
-      {/* ═══════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'history' && (
-        <div className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b">
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">Past Supplier Bills &amp; Inwards</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Search and review previous delivery challans recorded for this branch.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                id="invFilterStatus"
-                className="p-2 border rounded-lg text-xs bg-white font-medium"
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-              >
-                <option value="">All Statuses</option>
-                <option value="APPROVED">Added to Stock (APPROVED)</option>
-                <option value="REVIEWED">Ready for Inward (REVIEWED)</option>
-                <option value="DRAFT">Incomplete Draft (DRAFT)</option>
-                <option value="REJECTED">Cancelled (REJECTED)</option>
-              </select>
-
-              <input
-                id="invFilterQ"
-                className="p-2 border rounded-lg text-xs bg-white w-48 font-medium"
-                placeholder="Search bill number or depot"
-                value={filterQ}
-                onChange={(e) => setFilterQ(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    loadInvoices();
-                  }
-                }}
-              />
-
-              <button
-                type="button"
-                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-semibold text-xs border cursor-pointer"
-                onClick={loadInvoices}
-              >
-                Search
-              </button>
-            </div>
-          </div>
-
-          <div id="invHistoryBox" className="overflow-x-auto">
-            {loadingInvoices ? (
-              <BeerBottleLoader inline size="sm" title="Loading Supplier Bills…" subtitle="Fetching bill history, review status & inward totals…" />
-            ) : invoices.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 text-sm">No supplier bills found.</div>
-            ) : (
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-gray-500 bg-gray-50/70 uppercase tracking-wider">
-                    <th className="py-2.5 px-3">Bill Number</th>
-                    <th className="py-2.5 px-3">Depot / Supplier</th>
-                    <th className="py-2.5 px-3">Date</th>
-                    <th className="py-2.5 px-3">Source</th>
-                    <th className="py-2.5 px-3 text-right">Items</th>
-                    <th className="py-2.5 px-3 text-right">Total Amount</th>
-                    <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {invoices.map((inv) => (
-                    <tr
-                      key={inv.id}
-                      className="inv-history-row hover:bg-gray-50/70 transition-colors"
-                      data-invoice-id={inv.id}
-                      data-invoice-number={inv.invoiceNumber}
-                    >
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-gray-900 font-mono">{inv.invoiceNumber}</div>
-                        {inv.originalFilename && (
-                          <div className="text-[11px] text-gray-400 truncate max-w-xs">{inv.originalFilename}</div>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 text-gray-800 font-medium">{inv.supplierName || '—'}</td>
-                      <td className="py-3 px-3 text-xs text-gray-600">
-                        {inv.invoiceDate
-                          ? new Date(inv.invoiceDate).toLocaleDateString('en-IN', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric',
-                            })
-                          : new Date(inv.createdAt).toLocaleDateString('en-IN', {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric',
-                            })}
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="text-xs px-2 py-0.5 rounded font-medium bg-purple-100 text-purple-800">
-                          {inv.source}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-medium">{inv.lineCount}</td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-gray-900">
-                        ₹{parseFloat(inv.totalAmount).toFixed(2)}
-                      </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
-                            inv.status === 'APPROVED'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : inv.status === 'REVIEWED'
-                              ? 'bg-blue-100 text-blue-800'
-                              : inv.status === 'REJECTED'
-                              ? 'bg-red-100 text-red-800'
-                              : inv.status === 'REVERSED'
-                              ? 'bg-gray-200 text-gray-700'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {inv.status === 'APPROVED'
-                            ? 'Added to Stock'
-                            : inv.status === 'REVIEWED'
-                            ? 'Reviewed'
-                            : inv.status === 'REJECTED'
-                            ? 'Cancelled'
-                            : inv.status === 'REVERSED'
-                            ? 'Reversed'
-                            : 'Draft'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {inv.status === 'DRAFT' && (
-                            <ProtectedButton
-                              type="button"
-                              permission="invoices.approve"
-                              className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:hover:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded font-semibold text-xs cursor-pointer flex items-center gap-1 shadow-xs transition-colors"
-                              onClick={() => handleReviewInvoiceById(inv.id, inv.invoiceNumber)}
-                              title="Mark bill as reviewed"
-                            >
-                              <span>✓</span> Review
-                            </ProtectedButton>
-                          )}
-                          <button
-                            type="button"
-                            className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-gray-200 rounded font-semibold text-xs border dark:border-slate-700 cursor-pointer"
-                            onClick={() => openInvoice(inv.id)}
-                          >
-                            Open Bill
-                          </button>
-                          {inv.status === 'APPROVED' ? (
-                            <ProtectedButton
-                              type="button"
-                              permission="invoices.approve"
-                              title="Reverse this invoice: takes the stock back out and posts reversing entries"
-                              className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded font-semibold text-xs cursor-pointer"
-                              onClick={() => { setReverseReason(''); setReverseTarget({ id: inv.id, number: inv.invoiceNumber }); }}
-                            >
-                              Reverse
-                            </ProtectedButton>
-                          ) : inv.status === 'REVERSED' ? null : (
-                            <ProtectedButton
-                              variant="ghost"
-                              permission="invoices.approve"
-                              title="Delete bill"
-                              confirmMessage={`Delete invoice ${inv.invoiceNumber || 'draft'}? This action cannot be undone.`}
-                              confirmLabel="Delete"
-                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40 rounded transition-colors cursor-pointer"
-                              onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
-                            >
-                              <Trash2 size={16} />
-                            </ProtectedButton>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
         </div>
       )}
 

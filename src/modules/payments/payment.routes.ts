@@ -27,7 +27,8 @@ import { changePlanSelfService, generateInvoice } from '../platform/platform.ser
 import { runBillingCycle } from '../platform/dunning.service.js';
 
 const IdParams = z.object({ id: z.string().uuid() });
-const PlanSchema = z.object({ plan: z.enum(['STANDARD', 'PRO']) });
+// the trial is not something to buy: any other plan is checked against the catalog by the service
+const PlanSchema = z.object({ plan: z.string().trim().toUpperCase().min(2).max(30).refine((v) => v !== 'TRIAL') });
 const VerifySchema = z.object({ orderId: z.string().min(1), paymentId: z.string().min(1), signature: z.string().min(1) });
 const MockPaySchema = z.object({ orderId: z.string().min(1) });
 
@@ -50,7 +51,7 @@ export async function paymentRoutes(app: FastifyInstance) {
     const id = tenantId(req);
     if (!id) return reply.code(404).send({ error: 'No business is linked to this account' });
     const body = PlanSchema.safeParse(req.body);
-    if (!body.success) return reply.code(400).send({ error: 'Choose Standard or Pro' });
+    if (!body.success) return reply.code(400).send({ error: 'Choose a plan' });
     try {
       return await changePlanSelfService(id, body.data.plan, getUser(req).sub);
     } catch (err) {

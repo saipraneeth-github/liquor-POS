@@ -4,13 +4,16 @@
  */
 
 import { db } from '../../db/client.js';
-import { kotOrders, kotItems, tableSessions, products, productServings, categories, stock } from '../../db/schema.js';
-import { eq, and, inArray, isNull } from 'drizzle-orm';
+import { kotOrders, kotItems, tableSessions, products, productServings, categories, stock, stockAudit } from '../../db/schema.js';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
 import { canTransitionKotItem, consolidateKotOrders, type KotItemStatus, type KotOrder } from './kot.engine.js';
 import { resolveTaxRate } from '../billing/billing.engine.js';
 import { BusinessRuleError, NotFoundError } from '../../lib/errors.js';
 import { assertBranchCanSell } from '../menu/menu-access.js';
+import { deductMl, splitUnitsAndMl } from '../menu/serving.engine.js';
+import { explicitSums } from '../saletypes/saletype.service.js';
+import type { Tx } from '../../lib/domain-events.js';
 
 export interface CreateKotInput {
   tableSessionId: string;
@@ -49,7 +52,7 @@ export async function createKotOrder(input: CreateKotInput) {
       .select({
         id: products.id, name: products.name, mrp: products.mrp, isActive: products.isActive,
         taxRate: categories.taxRate, gstRate: products.gstRate, isAvailable: products.isAvailable,
-        syndicateId: products.syndicateId, trackStock: products.trackStock,
+        syndicateId: products.syndicateId, trackStock: products.trackStock, menuType: products.menuType,
       })
       .from(products)
       .leftJoin(categories, eq(products.categoryId, categories.id))
@@ -65,7 +68,15 @@ export async function createKotOrder(input: CreateKotInput) {
       : [];
     const servingMap = new Map(servingRows.map((s) => [s.id, s]));
 
-    const bottleItems = input.items.filter((i) => !i.servingId && productMap.get(i.productId)?.trackStock !== false);
+    // Stock is only verified for whole bottles sold at the bar (not kitchen dishes, peg servings, or non-tracked items)
+    const isKitchenOrder = input.destination === 'KITCHEN';
+    const bottleItems = isKitchenOrder
+      ? []
+      : input.items.filter((i) => {
+          if (i.servingId) return false;
+          const p = productMap.get(i.productId);
+          return p && p.trackStock === true && p.menuType !== 'KITCHEN';
+        });
     if (bottleItems.length > 0) {
       const stockEntries = await tx
         .select({ productId: stock.productId, quantity: stock.quantity })
@@ -117,18 +128,138 @@ export async function createKotOrder(input: CreateKotInput) {
   });
 }
 
+// ─── STOCK DEDUCTION ON SERVE ─────────────────────────────────────────────────
+
+async function deductStockForServedItems(
+  tx: Tx,
+  branchId: string,
+  itemsToServe: Array<{ id: string; productId: string; quantity: number; servingMl?: number | null; kotOrderId: string }>,
+  userId?: string,
+) {
+  const validItems = itemsToServe.filter((i) => i.quantity > 0);
+  if (validItems.length === 0) return;
+
+  const productIds = [...new Set(validItems.map((i) => i.productId))];
+  const productRows = await tx
+    .select({
+      id: products.id,
+      name: products.name,
+      trackStock: products.trackStock,
+      volumeMl: products.volumeMl,
+    })
+    .from(products)
+    .where(inArray(products.id, productIds));
+  const productMap = new Map(productRows.map((p) => [p.id, p]));
+
+  const trackedItems = validItems.filter((i) => productMap.get(i.productId)?.trackStock);
+  if (trackedItems.length === 0) return;
+
+  const { units, ml: mlByProduct } = splitUnitsAndMl(
+    trackedItems.map((i) => ({
+      productId: i.productId,
+      quantity: i.quantity,
+      servingMl: i.servingMl ?? null,
+    }))
+  );
+
+  const trackedProductIds = [...new Set([...units.keys(), ...mlByProduct.keys()])];
+  const reservedMap = await explicitSums(tx, branchId, trackedProductIds);
+
+  // 1. Whole units (bottles)
+  for (const [productId, quantity] of units) {
+    const prod = productMap.get(productId)!;
+    const reserved = reservedMap.get(productId) ?? 0;
+
+    const [row] = await tx
+      .select({ quantity: stock.quantity })
+      .from(stock)
+      .where(and(eq(stock.branchId, branchId), eq(stock.productId, productId)))
+      .for('update');
+
+    const totalQty = row?.quantity ?? 0;
+    const available = totalQty - reserved;
+    if (available < quantity) {
+      throw new BusinessRuleError(
+        `Insufficient stock: ${prod.name} (requested ${quantity}, available ${Math.max(0, available)})`
+      );
+    }
+
+    await tx
+      .update(stock)
+      .set({ quantity: sql`${stock.quantity} - ${quantity}` })
+      .where(and(eq(stock.branchId, branchId), eq(stock.productId, productId)));
+
+    const refOrderId = trackedItems.find((i) => i.productId === productId)?.kotOrderId;
+    await tx.insert(stockAudit).values({
+      branchId,
+      productId,
+      userId: userId ?? null,
+      changeQty: -quantity,
+      changeMl: 0,
+      reason: 'SALE',
+      referenceId: refOrderId,
+    });
+  }
+
+  // 2. Peg / ml servings
+  for (const [productId, totalMl] of mlByProduct) {
+    const prod = productMap.get(productId)!;
+    const reserved = reservedMap.get(productId) ?? 0;
+    const bottleSize = prod.volumeMl || 750;
+
+    const [row] = await tx
+      .select({ quantity: stock.quantity, openMl: stock.openMl })
+      .from(stock)
+      .where(and(eq(stock.branchId, branchId), eq(stock.productId, productId)))
+      .for('update');
+
+    if (!row) {
+      throw new BusinessRuleError(`Insufficient stock: ${prod.name} (${totalMl} ml requested, available 0)`);
+    }
+
+    const result = deductMl(row, totalMl, bottleSize);
+    if (!result || result.state.quantity < reserved) {
+      throw new BusinessRuleError(`Insufficient stock: ${prod.name} (${totalMl} ml requested)`);
+    }
+
+    await tx
+      .update(stock)
+      .set({ quantity: result.state.quantity, openMl: result.state.openMl })
+      .where(and(eq(stock.branchId, branchId), eq(stock.productId, productId)));
+
+    const refOrderId = trackedItems.find((i) => i.productId === productId)?.kotOrderId;
+    await tx.insert(stockAudit).values({
+      branchId,
+      productId,
+      userId: userId ?? null,
+      changeQty: -result.bottlesOpened,
+      changeMl: -totalMl,
+      reason: 'SALE',
+      referenceId: refOrderId,
+    });
+  }
+}
+
 // ─── UPDATE KOT ITEM STATUS ───────────────────────────────────────────────────
 
 export async function updateKotItemStatus(
   kotOrderId: string,
   itemId: string,
   newStatus: KotItemStatus,
-  branchId: string
+  branchId: string,
+  userId?: string,
 ) {
   return db.transaction(async (tx) => {
     // Item must belong to an order in the caller's branch
     const [item] = await tx
-      .select({ id: kotItems.id, status: kotItems.status })
+      .select({
+        id: kotItems.id,
+        status: kotItems.status,
+        productId: kotItems.productId,
+        quantity: kotItems.quantity,
+        servingMl: kotItems.servingMl,
+        kotOrderId: kotItems.kotOrderId,
+      })
       .from(kotItems)
       .innerJoin(kotOrders, eq(kotItems.kotOrderId, kotOrders.id))
       .where(and(
@@ -143,6 +274,11 @@ export async function updateKotItemStatus(
       throw new BusinessRuleError(
         `Invalid KOT item status transition: ${item.status} → ${newStatus}.`
       );
+    }
+
+    // Deduct stock when item is served
+    if (newStatus === 'SERVED' && item.status !== 'SERVED') {
+      await deductStockForServedItems(tx, branchId, [item], userId);
     }
 
     // Conditional update guards against concurrent transitions
@@ -161,13 +297,31 @@ export async function updateKotItemStatus(
 
 // ─── SERVE ALL KOT ITEMS (BATCH) ─────────────────────────────────────────────
 
-export async function serveAllKotOrderItems(kotOrderId: string, branchId: string) {
+export async function serveAllKotOrderItems(kotOrderId: string, branchId: string, userId?: string) {
   return db.transaction(async (tx) => {
     const [order] = await tx
       .select({ id: kotOrders.id })
       .from(kotOrders)
       .where(and(eq(kotOrders.id, kotOrderId), eq(kotOrders.branchId, branchId)));
     if (!order) throw new NotFoundError(`KOT order not found.`);
+
+    const itemsToServe = await tx
+      .select({
+        id: kotItems.id,
+        productId: kotItems.productId,
+        quantity: kotItems.quantity,
+        servingMl: kotItems.servingMl,
+        kotOrderId: kotItems.kotOrderId,
+      })
+      .from(kotItems)
+      .where(and(
+        eq(kotItems.kotOrderId, kotOrderId),
+        inArray(kotItems.status, ['PENDING', 'PREPARING']),
+      ));
+
+    if (itemsToServe.length > 0) {
+      await deductStockForServedItems(tx, branchId, itemsToServe, userId);
+    }
 
     const updated = await tx
       .update(kotItems)
@@ -195,7 +349,7 @@ export async function serveAllKotOrderItems(kotOrderId: string, branchId: string
   });
 }
 
-export async function serveAllSessionKotItems(tableSessionId: string, branchId: string) {
+export async function serveAllSessionKotItems(tableSessionId: string, branchId: string, userId?: string) {
   return db.transaction(async (tx) => {
     const orders = await tx
       .select({ id: kotOrders.id })
@@ -204,6 +358,24 @@ export async function serveAllSessionKotItems(tableSessionId: string, branchId: 
 
     if (!orders.length) return [];
     const orderIds = orders.map((o) => o.id);
+
+    const itemsToServe = await tx
+      .select({
+        id: kotItems.id,
+        productId: kotItems.productId,
+        quantity: kotItems.quantity,
+        servingMl: kotItems.servingMl,
+        kotOrderId: kotItems.kotOrderId,
+      })
+      .from(kotItems)
+      .where(and(
+        inArray(kotItems.kotOrderId, orderIds),
+        inArray(kotItems.status, ['PENDING', 'PREPARING']),
+      ));
+
+    if (itemsToServe.length > 0) {
+      await deductStockForServedItems(tx, branchId, itemsToServe, userId);
+    }
 
     const updated = await tx
       .update(kotItems)

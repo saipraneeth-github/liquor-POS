@@ -11,6 +11,7 @@ import { kotItems, kotOrders, tableSessions } from '../../db/schema.js';
 import { BusinessRuleError, NotFoundError } from '../../lib/errors.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import { createBill, PAYMENT_MODES } from '../billing/billing.service.js';
+import { serveAllSessionKotItems } from '../kot/kot.service.js';
 import { closeTable } from './table.service.js';
 
 export const CheckoutTableSchema = z.object({
@@ -35,6 +36,9 @@ export async function checkoutTable(tableId: string, input: CheckoutTableInput, 
     .limit(1);
   if (!session) throw new NotFoundError('No open session on this table');
 
+  // Any items not yet marked served are served now (validating availability and deducting stock)
+  await serveAllSessionKotItems(session.id, input.branchId, user.sub);
+
   const orders = await db.select({ id: kotOrders.id }).from(kotOrders).where(eq(kotOrders.tableSessionId, session.id));
   const items = orders.length === 0 ? [] : await db
     .select()
@@ -52,6 +56,7 @@ export async function checkoutTable(tableId: string, input: CheckoutTableInput, 
       customerId:    input.customerId,
       customerGstin: input.customerGstin,
       clientRef:     `table-session:${session.id}`,
+      skipStockDeduction: true,
       items: billable.map((i) => ({
         productId: i.productId,
         ...(i.servingId ? { servingId: i.servingId } : {}),

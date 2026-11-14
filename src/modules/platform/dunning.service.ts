@@ -10,6 +10,7 @@ import { sendMail } from '../notifications/mailer.js';
 import { dunningStage, needsInvoice } from './dunning.engine.js';
 import { reminderMessage } from './dunning.messages.js';
 import { generateInvoice } from './platform.service.js';
+import { applyDuePlanChanges } from './plans.service.js';
 
 export interface BillingRunSummary {
   tenants: number;
@@ -19,6 +20,7 @@ export interface BillingRunSummary {
 
 export async function runBillingCycle(now: Date = new Date()): Promise<BillingRunSummary> {
   const summary: BillingRunSummary = { tenants: 0, invoicesCreated: 0, emailsSent: 0 };
+  await applyDuePlanChanges();
   const tenants = await db.select().from(syndicates).where(eq(syndicates.isActive, true));
 
   for (const t of tenants) {

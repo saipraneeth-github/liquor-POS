@@ -22,6 +22,9 @@ interface CounterLine {
   sellingRate: string;
   lineRevenue: string;
   adjustmentApprovedById?: string | null;
+  /** Set when someone changed the opening: what the system had worked out. */
+  openingSystem?: number | null;
+  openingEditedById?: string | null;
 }
 
 interface CounterSheet {
@@ -55,6 +58,7 @@ export function Counter() {
   const branchId = user?.branchId;
   const isManager = isManagerLike(user);
   const canMoveStock = userCan(user, 'stock.move');
+  const canEditOpening = userCan(user, 'counter.opening');     // a shop that does not bill every sale may need to correct the opening count
   const isAdmin = user?.role === 'owner' || saasRole === 'admin' || saasRole === 'super_admin';
 
   const todayStr = businessDate();
@@ -75,6 +79,7 @@ export function Counter() {
   // Local overrides for live input
   const [closingCounts, setClosingCounts] = useState<Record<string, string>>({});
   const [inwardCounts, setInwardCounts] = useState<Record<string, string>>({});
+  const [openingCounts, setOpeningCounts] = useState<Record<string, string>>({});
   const [approvals, setApprovals] = useState<Record<string, boolean>>({});
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'SURPLUS' | 'SHORTAGE' | 'EXCESS' | 'MATCHED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -170,12 +175,15 @@ export function Counter() {
 
     const initialClosing: Record<string, string> = {};
     const initialInward: Record<string, string> = {};
+    const initialOpening: Record<string, string> = {};
     for (const l of sh.lines) {
       initialClosing[l.productId] = String(l.closingBottles);
       initialInward[l.productId] = String(l.inwardBottles);
+      initialOpening[l.productId] = String(l.openingBottles);
     }
     setClosingCounts(initialClosing);
     setInwardCounts(initialInward);
+    setOpeningCounts(initialOpening);
     const initialApprovals: Record<string, boolean> = {};
     for (const l of sh.lines) {
       if (l.adjustmentApprovedById || (isManager && l.closingBottles > l.openingBottles + l.inwardBottles + (l.transferBottles ?? 0))) {
@@ -289,6 +297,11 @@ export function Counter() {
     setDirty(true);
   };
 
+  const handleOpeningChange = (productId: string, val: string) => {
+    setOpeningCounts((prev) => ({ ...prev, [productId]: val }));
+    setDirty(true);
+  };
+
   const handleInwardChange = (productId: string, val: string) => {
     setInwardCounts((prev) => ({ ...prev, [productId]: val }));
     setDirty(true);
@@ -309,6 +322,16 @@ export function Counter() {
         closingBottles: closing,
       };
 
+      let openingNow = l.openingBottles;
+      if (canEditOpening) {
+        openingNow = parseInt(openingCounts[l.productId] ?? String(l.openingBottles), 10);
+        if (isNaN(openingNow) || openingNow < 0) {
+          showToast(`Opening for ${l.productName} must be a whole number.`, 'error');
+          return false;
+        }
+        if (openingNow !== l.openingBottles) linePayload.openingBottles = openingNow;
+      }
+
       if (isManager) {
         const rawInward = inwardCounts[l.productId] ?? String(l.inwardBottles);
         const inward = parseInt(rawInward, 10);
@@ -321,7 +344,7 @@ export function Counter() {
         }
       }
 
-      const available = l.openingBottles + (linePayload.inwardBottles ?? l.inwardBottles) + (l.transferBottles ?? 0);
+      const available = openingNow + (linePayload.inwardBottles ?? l.inwardBottles) + (l.transferBottles ?? 0);
       const isSurplus = closing > available;
       if (approvals[l.productId] || l.adjustmentApprovedById || (isManager && isSurplus)) {
         linePayload.approveAdjustment = true;
@@ -404,11 +427,13 @@ export function Counter() {
   const computedLines = (sheet?.lines || []).map((l) => {
     const rawClosing = closingCounts[l.productId] ?? String(l.closingBottles);
     const rawInward = inwardCounts[l.productId] ?? String(l.inwardBottles);
+    const rawOpening = canEditOpening ? (openingCounts[l.productId] ?? String(l.openingBottles)) : String(l.openingBottles);
     const closing = parseInt(rawClosing, 10);
     const inward = parseInt(rawInward, 10);
+    const opening = parseInt(rawOpening, 10);
 
-    const isInvalid = isNaN(closing) || isNaN(inward);
-    const available = l.openingBottles + inward + (l.transferBottles ?? 0);
+    const isInvalid = isNaN(closing) || isNaN(inward) || isNaN(opening);
+    const available = opening + inward + (l.transferBottles ?? 0);
     const sold = isInvalid ? 0 : available - closing;
     const rate = parseFloat(l.sellingRate);
     const revenue = sold > 0 ? sold * rate : 0;
@@ -452,6 +477,7 @@ export function Counter() {
       ...l,
       liveClosing: rawClosing,
       liveInward: rawInward,
+      liveOpening: rawOpening,
       liveSold: isInvalid ? '?' : sold >= 0 ? String(sold) : `surplus ${-sold}`,
       numericSold: sold,
       posSold,
@@ -538,7 +564,7 @@ export function Counter() {
   return (
     <section className="page active" id="page-counter" aria-labelledby="counterTitle">
       <div className="mb-4">
-        <h2 className="h1 text-2xl font-bold" id="counterTitle">Counter Stock</h2>
+        <h2 className="h1 text-2xl font-bold" id="counterTitle">Counter Stock Sheet</h2>
         <div className="muted small text-xs text-gray-500">
           Physical bottle counts: sold = opening + inward − {isAdmin ? 'physical stock present' : 'closing'}. Adjust counts and post to reconcile stock.
         </div>
@@ -917,7 +943,25 @@ export function Counter() {
                           </div>
                         ) : null}
                       </td>
-                      <td className="py-2 px-3 text-right font-mono">{l.openingBottles}</td>
+                      <td className="py-2 px-3 text-right font-mono">
+                        {isDraft && canEditOpening ? (
+                          <input
+                            id={`co-${l.productId}`}
+                            className="input input-sm counter-opening p-1 border rounded text-right font-mono text-sm"
+                            type="number"
+                            min="0"
+                            value={l.liveOpening}
+                            style={{ width: '80px' }}
+                            aria-label={`Opening bottles for ${l.productName}`}
+                            onChange={(e) => handleOpeningChange(l.productId, e.target.value)}
+                          />
+                        ) : (
+                          l.openingBottles
+                        )}
+                        {l.openingSystem !== null && l.openingSystem !== undefined && (
+                          <div className="text-[10px] font-sans font-semibold text-amber-700 dark:text-amber-300" title="The opening was changed by hand" data-opening-edited={l.productId}>edited · was {l.openingSystem}</div>
+                        )}
+                      </td>
                       <td className="py-2 px-3 text-right font-mono">
                         {isDraft && isManager ? (
                           <input
@@ -1063,8 +1107,6 @@ export function Counter() {
                       minRole="manager"
                       id="counterPostBtn"
                       className="px-4 py-2 font-medium"
-                      confirmMessage="Are you sure you want to post this sheet? Posted sheets record stock adjustments and become read-only."
-                      confirmLabel="Post sheet"
                       onClick={handlePostSheet}
                     >
                       Post sheet

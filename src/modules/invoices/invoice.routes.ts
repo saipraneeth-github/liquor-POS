@@ -30,6 +30,12 @@ function sendInvoiceError(reply: FastifyReply, err: unknown) {
   if (err instanceof UnsupportedFileError || err instanceof NothingExtractableError) {
     return reply.code(err.statusCode).send({ error: err.message });
   }
+  // Amounts too big for a bill column (a bank statement or some other document read as an invoice): say so, not "Internal server error"
+  const text = `${(err as Error)?.message ?? ''} ${((err as { cause?: Error })?.cause)?.message ?? ''}`;
+  if (/numeric field overflow|out of range for type numeric/i.test(text)) {
+    const message = 'This file does not read like a supplier invoice: it contains amounts far too large for a bill. Check that it is the invoice and not a bank statement or another document.';
+    return reply.code(422).send({ error: message, message });
+  }
   return sendError(reply, err, 'Invoice request failed');
 }
 
@@ -49,7 +55,7 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
   // POST /invoices/:branchId/upload — CSV / XLSX / PDF / image → DRAFT invoice (cashier+)
   // OCR / PDF parsing is CPU-heavy, so cap uploads per client in production (tests upload in bursts).
   fastify.post('/invoices/:branchId/upload', {
-    config: process.env.NODE_ENV === 'production' ? { rateLimit: { max: 20, timeWindow: '1 minute' } } : {},
+    config: process.env.NODE_ENV === 'production' ? { rateLimit: { max: 60, timeWindow: '1 minute' } } : {},
     preHandler: [requireRole('steward'), requirePermission('cost.view')],
   }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);

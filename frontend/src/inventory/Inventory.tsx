@@ -364,7 +364,7 @@ export function Inventory() {
                   </div>
                   <div className="text-xs text-gray-400">
                     {stockRows.length === 0
-                      ? 'Upload and confirm a supplier invoice in the "Invoice Upload" page to inward bottles into stock.'
+                      ? 'Upload and confirm a supplier invoice in the "Supplier Invoices" page to inward bottles into stock.'
                       : `No items found ${stockFilter !== 'all' ? `with ${stockFilter === 'in' ? 'In Stock' : stockFilter === 'low' ? 'Low Stock' : 'Out of Stock'} status` : ''}${stockCategoryFilter !== 'all' ? ` in ${stockCategoryFilter}` : ''}.`}
                   </div>
                   {stockRows.length > 0 && (

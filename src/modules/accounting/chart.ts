@@ -35,6 +35,11 @@ export const SYSTEM_LEDGERS = [
   { code: 'ROUND_OFF',        name: 'Round Off',           group: 'EXPENSE' },
   { code: 'BANK_CHARGES',     name: 'Bank Charges & Fees', group: 'EXPENSE' },    // posted from bank statement reconciliation
   { code: 'INTEREST_INCOME',  name: 'Interest Income',     group: 'INCOME' },
+  { code: 'SALARY_WAGES',     name: 'Salaries & Wages',        group: 'EXPENSE' },
+  { code: 'RENT',             name: 'Rent Expense',            group: 'EXPENSE' },
+  { code: 'MISC_EXPENSES',    name: 'Miscellaneous Expenses',   group: 'EXPENSE' },
+  { code: 'UTILITIES',        name: 'Electricity & Utilities', group: 'EXPENSE' },
+  { code: 'EXCISE_GOVT',      name: 'Excise & Government Dues', group: 'EXPENSE' },
 ] as const satisfies readonly LedgerDefinition[];
 
 export type SystemLedgerCode = (typeof SYSTEM_LEDGERS)[number]['code'];
@@ -67,16 +72,22 @@ export function expenseLedgerDefinition(category: string): LedgerDefinition {
 
 /** Idempotently creates the system ledgers for a branch. Returns ledger id by code (all branch ledgers). */
 export async function ensureSystemLedgers(tx: Tx, branchId: string): Promise<Map<string, string>> {
+  const read = async () => {
+    const rows = await tx
+      .select({ id: accountLedgers.id, code: accountLedgers.code })
+      .from(accountLedgers)
+      .where(eq(accountLedgers.branchId, branchId));
+    return new Map(rows.map((r) => [r.code, r.id]));
+  };
+  // Almost always the chart is already there: one read, no write (this runs on every sale and every posting)
+  const have = await read();
+  if (SYSTEM_LEDGERS.every((l) => have.has(l.code))) return have;
+
   await tx
     .insert(accountLedgers)
     .values(SYSTEM_LEDGERS.map((l) => ({ branchId, code: l.code, name: l.name, group: l.group, isSystem: true })))
     .onConflictDoNothing({ target: [accountLedgers.branchId, accountLedgers.code] });
-
-  const rows = await tx
-    .select({ id: accountLedgers.id, code: accountLedgers.code })
-    .from(accountLedgers)
-    .where(eq(accountLedgers.branchId, branchId));
-  return new Map(rows.map((r) => [r.code, r.id]));
+  return read();
 }
 
 /** Idempotently creates one (system) ledger and returns its id. */

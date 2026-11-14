@@ -26,6 +26,11 @@ import { Admin } from './admin/Admin';
 import { ForgotPassword } from './auth/ForgotPassword';
 import { ResetPassword } from './auth/ResetPassword';
 import { Platform } from './platform/Platform';
+import { PlatformUsers } from './platform/PlatformUsers';
+import { PlatformPlans } from './platform/PlatformPlans';
+import { PlatformBranches } from './platform/PlatformBranches';
+import { PlatformRoles } from './platform/PlatformRoles';
+import { PlatformAudit } from './platform/PlatformAudit';
 import { BusinessSettings } from './settings/BusinessSettings';
 import { PourControl } from './pour/PourControl';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -65,6 +70,11 @@ export default function App() {
                     <Route path="/pour" element={<PourControl />} />
                     <Route path="/settings" element={<BusinessSettings />} />
                     <Route path="/platform" element={<Platform />} />
+                    <Route path="/platform/roles" element={<PlatformRoles />} />
+                    <Route path="/platform/branches" element={<PlatformBranches />} />
+                    <Route path="/platform/plans" element={<PlatformPlans />} />
+                    <Route path="/platform/users" element={<PlatformUsers />} />
+                    <Route path="/platform/audit" element={<PlatformAudit />} />
                   </Route>
                 </Route>
 

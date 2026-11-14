@@ -12,7 +12,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
-import { assertSaleTypeAllowed, allowedSaleTypeIds } from '../permissions/permission.service.js';
+import { assertSaleTypeAllowed, allowedSaleTypeIds, userCan } from '../permissions/permission.service.js';
 import { listBranchSaleTypes } from '../saletypes/saletype.service.js';
 import { db } from '../../db/client.js';
 import {
@@ -101,7 +101,8 @@ export async function counterSheetRoutes(fastify: FastifyInstance) {
     try {
       const sheet = await loadAccessibleSheet(request, reply);
       if (!sheet) return;
-      return await updateSheetLines(getUser(request), sheet.id, parsed.data);
+      const user = getUser(request);
+      return await updateSheetLines(user, sheet.id, parsed.data, await userCan(user, 'counter.opening'));
     } catch (err) {
       return sendError(reply, err, 'Counter sheet update failed');
     }

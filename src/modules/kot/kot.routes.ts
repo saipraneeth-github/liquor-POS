@@ -71,7 +71,7 @@ export async function kotRoutes(app: FastifyInstance) {
     const user = getUser(req);
     if (!(await assertBranchAccess(user, body.data.branchId, reply))) return;
     try {
-      const item = await updateKotItemStatus(params.data.kotOrderId, params.data.itemId, body.data.status, body.data.branchId);
+      const item = await updateKotItemStatus(params.data.kotOrderId, params.data.itemId, body.data.status, body.data.branchId, user.sub);
       return reply.send({ kotItem: item });
     } catch (err) {
       return sendError(reply, err, 'KOT update failed');
@@ -101,7 +101,7 @@ export async function kotRoutes(app: FastifyInstance) {
     const user = getUser(req);
     if (!(await assertBranchAccess(user, targetBranchId, reply))) return;
     try {
-      const updated = await serveAllKotOrderItems(params.data.kotOrderId, targetBranchId);
+      const updated = await serveAllKotOrderItems(params.data.kotOrderId, targetBranchId, user.sub);
       return reply.send({ count: updated.length, items: updated });
     } catch (err) {
       return sendError(reply, err, 'Serve all failed');
@@ -131,7 +131,7 @@ export async function kotRoutes(app: FastifyInstance) {
     const user = getUser(req);
     if (!(await assertBranchAccess(user, targetBranchId, reply))) return;
     try {
-      const updated = await serveAllSessionKotItems(params.data.sessionId, targetBranchId);
+      const updated = await serveAllSessionKotItems(params.data.sessionId, targetBranchId, user.sub);
       return reply.send({ count: updated.length, items: updated });
     } catch (err) {
       return sendError(reply, err, 'Serve all failed');

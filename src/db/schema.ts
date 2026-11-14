@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, boolean, numeric, integer, pgEnum, unique, uniqueIndex, index, date, jsonb, customType, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, boolean, numeric, integer, pgEnum, unique, uniqueIndex, index, primaryKey, date, jsonb, customType, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // ─── ENUMS ──────────────────────────────────────────────────────────────────
@@ -22,7 +22,27 @@ export const syndicates = pgTable('syndicates', {
   trialEndsAt:  timestamp('trial_ends_at', { withTimezone: true }), // TRIAL plan: access ends here
   paidUntil:    timestamp('paid_until', { withTimezone: true }),    // paid plans: access runs to here (+ grace)
   isActive:     boolean('is_active').notNull().default(true),       // false = tenant suspended (nobody can sign in)
+  nextPlan:     text('next_plan'),                                  // a plan change scheduled by the Super Admin …
+  nextPlanFrom: date('next_plan_from'),                             // … that takes effect on this day
+  archivedAt:   timestamp('archived_at', { withTimezone: true }),   // set = archived: blocked, hidden, and deletable 30 days later
+  archiveReason: text('archive_reason'),
+  exportedAt:   timestamp('exported_at', { withTimezone: true }),   // last time the Super Admin downloaded this business's data
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// The plans the Super Admin sells. `code` is what syndicates.plan stores. TRIAL is special (free, time-limited, always present).
+// A retired plan (isActive = false) cannot be picked any more, but businesses already on it keep it and keep being billed its price.
+export const saasPlans = pgTable('saas_plans', {
+  code:        text('code').primaryKey(),
+  name:        text('name').notNull(),
+  price:       numeric('price', { precision: 10, scale: 2 }).notNull(),   // per billing cycle, GST included
+  cycleDays:   integer('cycle_days').notNull().default(30),               // 30 = monthly, 90 = quarterly, 365 = yearly
+  maxBranches: integer('max_branches').notNull(),
+  features:    jsonb('features').$type<string[]>().notNull().default([]), // what the plan says it includes (shown on the price list)
+  isActive:    boolean('is_active').notNull().default(true),
+  sortOrder:   integer('sort_order').notNull().default(100),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
 
 export const branches = pgTable('branches', {
@@ -53,10 +73,42 @@ export const users = pgTable('users', {
   name:         text('name').notNull(),
   email:        text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
-  role:         userRoleEnum('role').notNull(),
+  role:         userRoleEnum('role').notNull(),                       // the LEVEL every route guard sees (a custom role stores its level here)
+  roleId:       uuid('role_id').references((): AnyPgColumn => roles.id),   // a custom role, or NULL = the built-in role named by `role`
   isActive:     boolean('is_active').notNull().default(true),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
+  lastLoginAt:  timestamp('last_login_at', { withTimezone: true }),   // set on every successful sign-in (Super Admin → Users)
 });
+
+// Roles. The five built-in ones (isSystem) mirror the user_role enum and are always present; their permissions come from the
+// code defaults, so a permission added later follows the usual rule for them. A custom role (made by the Super Admin) has a
+// level (steward / cashier / manager: what the route guards see) and an explicit set of granted permissions.
+export const roles = pgTable('roles', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  key:         text('key').notNull().unique(),                          // owner | office_admin | manager | cashier | steward, or a slug
+  name:        text('name').notNull(),
+  nameKey:     text('name_key').notNull().unique(),                     // lower-cased name: no two roles share one
+  description: text('description'),
+  level:       text('level').notNull(),                                 // owner | office_admin | manager | cashier | steward (text, so a migration can seed it)
+  permissions: jsonb('permissions').$type<string[]>().notNull().default([]),   // custom roles only: the permission keys granted
+  pages:       jsonb('pages').$type<string[] | null>(),                 // default menu pages; NULL = whatever the level allows
+  isSystem:    boolean('is_system').notNull().default(false),
+  isActive:    boolean('is_active').notNull().default(true),
+  createdById: uuid('created_by_id').references((): AnyPgColumn => users.id),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+// Features the Super Admin can switch off for one branch (bank reconciliation, bar & KOT, …). No row = switched on.
+// Only the switched-off ones are stored, so a new feature is on everywhere until someone turns it off.
+export const branchFeatures = pgTable('branch_features', {
+  branchId:    uuid('branch_id').notNull().references(() => branches.id, { onDelete: 'cascade' }),
+  feature:     text('feature').notNull(),                                   // a key from platform/features.engine.ts
+  updatedById: uuid('updated_by_id').references(() => users.id),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.branchId, t.feature] }),
+}));
 
 // ─── CATEGORIES ─────────────────────────────────────────────────────────────
 
@@ -614,6 +666,8 @@ export const dailyCounterSheetLines = pgTable('daily_counter_sheet_lines', {
   sellingRate:    numeric('selling_rate',  { precision: 12, scale: 2 }).notNull(),
   lineRevenue:    numeric('line_revenue',  { precision: 14, scale: 2 }).notNull(),
   adjustmentApprovedById: uuid('adjustment_approved_by_id').references(() => users.id), // manager override when closing > opening+inward
+  openingSystem:  integer('opening_system'),                                              // the opening the system worked out, kept when someone changed it
+  openingEditedById: uuid('opening_edited_by_id').references(() => users.id),            // who changed the opening (needs the counter.opening permission)
 }, (t) => ({
   uqSheetProduct: unique('uq_counter_sheet_line_product').on(t.sheetId, t.productId),
 }));
@@ -768,7 +822,7 @@ export const bankStatements = pgTable('bank_statements', {
   uploadedById:     uuid('uploaded_by_id').references(() => users.id),
   originalFilename: text('original_filename'),
   fileHash:         text('file_hash').notNull(),                  // sha256 of the file: the same file twice is refused
-  source:           text('source').notNull(),                     // 'CSV' | 'EXCEL' | 'PDF'
+  source:           text('source').notNull(),                     // 'CSV' | 'EXCEL' | 'PDF' | 'OFX' | 'QIF'
   periodStart:      date('period_start'),
   periodEnd:        date('period_end'),
   openingBalance:   numeric('opening_balance', { precision: 16, scale: 2 }),
@@ -832,6 +886,23 @@ export const bankIgnoreRules = pgTable('bank_ignore_rules', {
   createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (t) => ({
   idxAccount: index('idx_bank_ignore_rule_account').on(t.accountId),
+}));
+
+// A transaction type the customer adds for one bank account (e.g. "Hotel rent", "Gold loan EMI"): a name, which side of
+// the statement it appears on, and the ledger it posts to. Posting a line "as" this type creates the voucher against that ledger.
+export const bankTransactionTypes = pgTable('bank_transaction_types', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  accountId:   uuid('account_id').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  name:        text('name').notNull(),
+  nameKey:     text('name_key').notNull(),                        // lower-cased name: one per account
+  direction:   text('direction').notNull(),                       // IN (credits) | OUT (debits) | EITHER
+  ledgerId:    uuid('ledger_id').notNull().references(() => accountLedgers.id),
+  matchText:   text('match_text'),                                // optional: narration/reference text that suggests this type
+  isActive:    boolean('is_active').notNull().default(true),
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqAccountName: uniqueIndex('uq_bank_type_account_name').on(t.accountId, t.nameKey),
 }));
 
 // Which book entries (BANK-ledger journal lines) a statement line accounts for. A card/UPI settlement is one
@@ -984,3 +1055,28 @@ export const brandCodeMappings = pgTable('brand_code_mappings', {
   ),
 }));
 
+
+// Every recorded money movement of a branch in one searchable table: a bank statement line that was posted to the books
+// (source BANK_STATEMENT, one row per line) or, later, one typed in by hand (MANUAL). `category` is what the user calls it
+// (Rent, Wages, Utilities, ...); `categoryKey` is its lower-cased form for searching. DEBIT = money out, CREDIT = money in.
+export const ledgerTransactions = pgTable('ledger_transactions', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  branchId:    uuid('branch_id').notNull().references(() => branches.id),
+  txnDate:     date('txn_date').notNull(),
+  description: text('description').notNull(),
+  amount:      numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  direction:   text('direction').notNull(),                       // DEBIT | CREDIT
+  category:    text('category').notNull(),
+  categoryKey: text('category_key').notNull(),
+  reference:   text('reference'),
+  source:      text('source').notNull(),                          // BANK_STATEMENT | MANUAL
+  bankLineId:  uuid('bank_line_id').references(() => bankStatementLines.id, { onDelete: 'set null' }),
+  voucherId:   uuid('voucher_id').references(() => journalVouchers.id),
+  reconStatus: text('recon_status').notNull().default('MATCHED'), // MATCHED | UNMATCHED
+  createdById: uuid('created_by_id').references(() => users.id),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:   timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  uqBankLine:  uniqueIndex('uq_ledger_txn_bank_line').on(t.bankLineId),
+  idxCategory: index('idx_ledger_txn_branch_category').on(t.branchId, t.categoryKey, t.txnDate),
+}));

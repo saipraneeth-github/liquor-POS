@@ -50,3 +50,34 @@ test('counter sheet: create for a date, edit closing counts with live sold/reven
   await expect(page.locator(`#cc-${productId}`)).toHaveCount(0);
   await expect(page.locator('#counterRecent')).toContainText(`${d} · POSTED`);
 });
+
+test('counter sheet: a manager can correct the opening stock, the sold count follows, and it is marked as edited; a cashier cannot', async ({ page }) => {
+  const d = new Date(Date.UTC(2025, 0, 1) + Math.floor(Math.random() * 300) * 86400000).toISOString().slice(0, 10);
+  await reactLogin(page, 'manager@liquor.com');
+  await page.click('#nav-counter');
+  await page.fill('#counterDate', d);
+  await page.click('#counterCreateBtn');
+  await expect(page.locator('#counterStatus')).toContainText('DRAFT');
+
+  const firstRow = page.locator('#counterSheet tbody tr').first();
+  const productId = await firstRow.getAttribute('data-product');
+  const opening = page.locator(`#co-${productId}`);
+  const original = Number(await opening.inputValue());
+  const closing = Number(await page.locator(`#cc-${productId}`).inputValue());
+
+  // Five more bottles were on the shelf at the start of the day: sold goes up by five, live
+  await opening.fill(String(original + 5));
+  const expectedSold = 5 + Math.max(0, original - closing);
+  await expect(page.locator(`#cs-${productId}`)).toHaveText(new RegExp('^' + expectedSold + '[^0-9]|^' + expectedSold + '$'));
+  await page.click('#counterSaveBtn');
+  await expect(page.locator(`[data-opening-edited="${productId}"]`)).toContainText(`was ${original}`);
+  await expect(page.locator(`#co-${productId}`)).toHaveValue(String(original + 5));
+});
+
+test('counter sheet: a cashier without the permission sees the opening as a plain number', async ({ page }) => {
+  await reactLogin(page, 'cashier@liquor.com');
+  await page.click('#nav-counter');
+  const recent = page.locator('#counterSheet tbody tr').first();
+  await expect(recent).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('input.counter-opening')).toHaveCount(0);
+});

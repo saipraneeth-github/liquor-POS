@@ -1,13 +1,15 @@
 import { temporaryPassword } from '../platform/platform.service.js';
-import { logAudit } from '../../lib/audit.js';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
-import { users, branches, syndicates, userPagePermissions, userPermissions, userSaleTypes } from '../../db/schema.js';
+import { users, branches, syndicates, roles, userPagePermissions, userPermissions, userSaleTypes } from '../../db/schema.js';
+import { logAudit } from '../../lib/audit.js';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { hashPassword, type JwtPayload } from '../auth/auth.service.js';
 import { canAccessBranch, getAccessibleBranchIds, getOwnedSyndicateId, isPlatformOwner } from '../../middleware/auth.guard.js';
 import { PAGE_KEYS } from '../auth/page-guard.js';
-import { loadOverrides, myPermissions } from '../permissions/permission.service.js';
+import { loadCustomRole, loadOverrides, loadRolePermissions, myPermissions } from '../permissions/permission.service.js';
+import { CUSTOM_LEVELS, ROLE_PAGES } from '../permissions/roles.engine.js';
+import type { UserRole } from '../auth/auth.service.js';
 import {
   PERMISSIONS, PERMISSION_KEYS, defaultAllowed, discountCapPct, effectivePermissions, isPermissionKey, isUnrestricted,
   notGrantable, restrictsSaleTypes, validateOverrides, type PermissionKey, type PermissionOverrides,
@@ -27,6 +29,7 @@ export const CreateUserSchema = z.object({
   email:       z.string().trim().toLowerCase().email().max(254),
   password:    z.string().min(8).max(128),
   role:        ROLE,
+  roleId:      z.string().uuid().optional(),                // a custom role; its level must equal `role`
   branchId:    z.string().uuid().optional().nullable(),
   syndicateId: z.string().uuid().optional().nullable(),   // owners only
 });
@@ -58,6 +61,8 @@ const publicColumns = {
   name:        users.name,
   email:       users.email,
   role:        users.role,
+  roleId:      users.roleId,                              // set only for a custom role
+  roleName:    sql<string | null>`(select r.name from roles r where r.id = ${users.roleId})`,   // …and its name
   branchId:    users.branchId,
   syndicateId: users.syndicateId,
   isActive:    users.isActive,
@@ -95,7 +100,10 @@ export async function getMe(userId: string) {
       .from(branches).where(eq(branches.id, me.branchId)).limit(1);
     branch = b ?? null;
   }
-  return { ...me, branch, pages, ...(await myPermissions({ sub: me.id, role: me.role })) };
+  const perms = await myPermissions({ sub: me.id, role: me.role });
+  // A person with no menu of their own gets their role's default menu (every known page: on if the role lists it)
+  const menu = pages.length === 0 && perms.rolePages ? ROLE_PAGES.map((p) => ({ routePath: p.key, canAccess: perms.rolePages!.includes(p.key) })) : pages;
+  return { ...me, branch, pages: menu, ...perms };
 }
 
 export async function listUsers(actor: JwtPayload, branchId?: string) {
@@ -122,6 +130,15 @@ export async function createUser(actor: JwtPayload, input: CreateUserInput) {
     assertCanAssignRole(actor.role, input.role);
   } catch (err) {
     throw new ForbiddenError(err instanceof Error ? err.message : 'Forbidden');
+  }
+
+  let customRoleId: string | null = null;
+  if (input.roleId) {
+    const [role] = await db.select().from(roles).where(eq(roles.id, input.roleId)).limit(1);
+    if (!role) throw new NotFoundError('Role not found');
+    if (role.level !== input.role) throw new BusinessRuleError(`${role.name} is a ${role.level} role: choose that level`);
+    await assertActorMayGive(actor, role);
+    customRoleId = role.isSystem ? null : role.id;
   }
 
   let branchId: string | null = input.branchId ?? null;
@@ -162,6 +179,7 @@ export async function createUser(actor: JwtPayload, input: CreateUserInput) {
       email: input.email,
       passwordHash: await hashPassword(input.password),
       role: input.role,
+      roleId: customRoleId,
       branchId,
       syndicateId,
     }).returning(publicColumns);
@@ -188,12 +206,63 @@ export async function updateUser(actor: JwtPayload, userId: string, patch: Updat
     .update(users)
     .set({
       ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.role !== undefined ? { role: patch.role } : {}),
+      // choosing a built-in role means leaving any custom role
+      ...(patch.role !== undefined ? { role: patch.role, ...(patch.role !== target.role ? { roleId: null } : {}) } : {}),
       ...(patch.isActive !== undefined ? { isActive: patch.isActive } : {}),
     })
     .where(eq(users.id, userId))
     .returning(publicColumns);
   return updated;
+}
+
+// ─── ROLES (a business gives its staff the roles the Super Admin defined) ───────────
+
+type RoleRow = typeof roles.$inferSelect;
+
+/**
+ * May this actor give this role? It must be active, at a level the actor may hand out (always below their own), and for a custom
+ * role the actor must hold every permission it grants: nobody can give what they do not have.
+ */
+async function assertActorMayGive(actor: JwtPayload, role: RoleRow): Promise<void> {
+  if (!role.isActive) throw new BusinessRuleError(`${role.name} has been retired and cannot be given to anyone new`);
+  if (!(CUSTOM_LEVELS as readonly string[]).includes(role.level)) throw new ForbiddenError('That role cannot be given from here');
+  try { assertCanAssignRole(actor.role, role.level); } catch { throw new ForbiddenError(`You can only give roles below your own`); }
+  if (role.isSystem) return;
+  const wanted: PermissionOverrides = {};
+  for (const k of role.permissions) if (isPermissionKey(k)) wanted[k] = true;
+  const denied = notGrantable(actor.role, await loadOverrides(actor.sub), wanted, await loadRolePermissions(actor.sub));
+  if (denied.length > 0) throw new ForbiddenError(`You cannot give a role that includes permissions you do not have yourself: ${denied.join(', ')}`);
+}
+
+/** The roles this actor may give: built-in manager / cashier / steward below them, and custom roles they hold every permission of. */
+export async function listAssignableRolesFor(actor: JwtPayload) {
+  const rows = await db.select().from(roles).where(and(eq(roles.isActive, true), inArray(roles.level, [...CUSTOM_LEVELS])));
+  const out: { id: string; name: string; level: string; isSystem: boolean; description: string | null; permissions: string[] }[] = [];
+  for (const r of rows) {
+    try { await assertActorMayGive(actor, r); } catch { continue; }
+    out.push({ id: r.id, name: r.name, level: r.level, isSystem: r.isSystem, description: r.description, permissions: r.isSystem ? [] : r.permissions });
+  }
+  return out.sort((a, b) => Number(b.isSystem) - Number(a.isSystem) || a.name.localeCompare(b.name));
+}
+
+export const SetRoleSchema = z.object({ roleId: z.string().uuid() });
+
+/** Give a person a role (built-in or custom). Only people below the actor, only roles the actor may give. Their own exceptions stay. */
+export async function setUserRole(actor: JwtPayload, userId: string, roleId: string) {
+  const target = await loadUser(userId);
+  if (!target || !(await inScope(actor, target))) throw new NotFoundError('User not found');
+  if (!canManageUser({ id: actor.sub, role: actor.role }, target)) throw new ForbiddenError('You cannot change the role of this user');
+  if (target.role === 'owner' || target.role === 'office_admin') throw new ForbiddenError('The role of an owner or office admin cannot be changed here');
+  const [role] = await db.select().from(roles).where(eq(roles.id, roleId)).limit(1);
+  if (!role) throw new NotFoundError('Role not found');
+  await assertActorMayGive(actor, role);
+
+  const newRoleId = role.isSystem ? null : role.id;
+  if (target.roleId === newRoleId && target.role === role.level) throw new ConflictError(`${target.name} already has the role ${role.name}`);
+  const [prev] = target.roleId ? await db.select({ name: roles.name }).from(roles).where(eq(roles.id, target.roleId)).limit(1) : [null];
+  await db.update(users).set({ role: role.level as UserRole, roleId: newRoleId }).where(eq(users.id, userId));
+  await logAudit(actor.sub, 'user.role_changed', { type: 'user', id: userId }, { email: target.email, before: { role: target.role, roleName: prev?.name ?? target.role }, after: { role: role.level, roleName: role.name } });
+  return { id: userId, role: role.level, roleId: newRoleId, roleName: role.name };
 }
 
 // ─── PAGE PERMISSION MATRIX ─────────────────────────────────────────────────
@@ -248,6 +317,8 @@ export const SetPermissionsSchema = z.object({
 
 async function permissionView(target: UserRow) {
   const stored = await loadOverrides(target.id);
+  const custom = await loadCustomRole(target.id);
+  const rolePerms = custom?.permissions ?? null;
   const saleTypes = target.branchId ? await listBranchSaleTypes(db, target.branchId, { all: true }) : [];
   const limited = restrictsSaleTypes(target.role)
     ? (await db.select({ id: userSaleTypes.saleTypeId }).from(userSaleTypes).where(eq(userSaleTypes.userId, target.id))).map((r) => r.id)
@@ -255,14 +326,16 @@ async function permissionView(target: UserRow) {
   return {
     userId: target.id,
     role: target.role,
+    roleId: target.roleId,
+    roleName: custom?.name ?? null,
     unrestricted: isUnrestricted(target.role),                       // owner / office admin: everything, always
     permissions: PERMISSIONS.map((p) => ({
       key: p.key, label: p.label, description: p.description,
-      roleDefault: defaultAllowed(target.role, p.key),
+      roleDefault: defaultAllowed(target.role, p.key, rolePerms),
       override: stored[p.key] ?? null,
-      effective: effectivePermissions(target.role, stored)[p.key],
+      effective: effectivePermissions(target.role, stored, rolePerms)[p.key],
     })),
-    discountCapPct: discountCapPct(target.role, stored),
+    discountCapPct: discountCapPct(target.role, stored, rolePerms),
     canLimitSaleTypes: restrictsSaleTypes(target.role),
     saleTypes: saleTypes.map((t) => ({ id: t.id, name: t.name, isDefault: t.isDefault })),
     saleTypeIds: limited,                                            // empty = not limited
@@ -281,15 +354,16 @@ export async function getUserPermissions(actor: JwtPayload, userId: string) {
 export async function setUserPermissions(actor: JwtPayload, userId: string, input: z.infer<typeof SetPermissionsSchema>) {
   const target = await loadManageableTarget(actor, userId, true);
 
+  const targetRolePerms = await loadRolePermissions(target.id);
   const wanted: PermissionOverrides = {};
   for (const [key, value] of Object.entries(input.overrides)) {
     if (!isPermissionKey(key)) throw new BusinessRuleError(`Unknown permission: ${key}`);
-    if (value !== null && value !== defaultAllowed(target.role, key)) wanted[key] = value;
+    if (value !== null && value !== defaultAllowed(target.role, key, targetRolePerms)) wanted[key] = value;
   }
-  const problems = validateOverrides(target.role, wanted);
+  const problems = validateOverrides(target.role, wanted, targetRolePerms);
   if (problems.length > 0) throw new BusinessRuleError(problems.join(' '));
 
-  const denied = notGrantable(actor.role, await loadOverrides(actor.sub), wanted);
+  const denied = notGrantable(actor.role, await loadOverrides(actor.sub), wanted, await loadRolePermissions(actor.sub));
   if (denied.length > 0) throw new ForbiddenError(`You cannot grant a permission you do not have yourself: ${denied.join(', ')}`);
 
   let typeIds: string[] = [];

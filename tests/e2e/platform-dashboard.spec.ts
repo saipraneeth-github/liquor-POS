@@ -11,7 +11,7 @@ async function loginSuper(page: Page) {
   await expect(page.locator('#page-platform')).toBeVisible({ timeout: 15000 });
   // The app remounts the page once when the Super Admin's default branch finishes loading (Layout keys the page on the
   // active branch). Let that happen first, or a modal opened in the meantime disappears.
-  await expect(page.locator('header select').first()).toContainText('MAIN-01', { timeout: 20000 });
+  await expect(page.locator('#sidebarBranch')).toContainText('Platform HQ', { timeout: 20000 });
   await expect(page.locator('#platformKpis')).toBeVisible({ timeout: 20000 });
 }
 

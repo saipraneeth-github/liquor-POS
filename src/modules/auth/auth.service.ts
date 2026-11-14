@@ -152,6 +152,9 @@ export async function loginUser(
     if (state === 'SUSPENDED') throw new SuspendedError(ACCESS_MESSAGE[state]);
   }
 
+  // Best effort: a failure here must never stop someone signing in
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id)).catch(() => undefined);
+
   const payload: JwtPayload = {
     sub: user.id,
     email: user.email,

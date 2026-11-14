@@ -1,6 +1,7 @@
+import { PAGE_PERMISSION, pageDisabled } from '../lib/features';
 import { useEffect, useState } from 'react';
 import { Outlet, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth, type SaasRole } from '../auth/AuthProvider';
+import { useAuth, userCan, type SaasRole } from '../auth/AuthProvider';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { errorMessage, showToast } from '../lib/print';
@@ -34,6 +35,11 @@ import {
   Menu,
   X,
   PanelLeftClose,
+  UserCog,
+  ScrollText,
+  CreditCard,
+  GitBranch,
+  KeyRound,
 } from 'lucide-react';
 
 type NavItem = {
@@ -51,30 +57,35 @@ type NavItem = {
 const navItems: NavItem[] = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, id: 'nav-dashboard', min: 'steward', group: 'Overview', pageKey: 'dashboard' },
 
-  { path: '/pos', label: 'POS Billing', icon: ShoppingCart, id: 'nav-pos', min: 'cashier', group: 'Sell', pageKey: 'pos' },
-  { path: '/shift', label: 'Shift', icon: Clock, id: 'nav-shift', min: 'cashier', group: 'Sell', pageKey: 'shift' },
+  { path: '/pos', label: 'Billing (POS)', icon: ShoppingCart, id: 'nav-pos', min: 'cashier', group: 'Sell', pageKey: 'pos' },
+  { path: '/shift', label: 'Cashier Shift', icon: Clock, id: 'nav-shift', min: 'cashier', group: 'Sell', pageKey: 'shift' },
   { path: '/bills', label: 'Bills', icon: Receipt, id: 'nav-bills', min: 'cashier', group: 'Sell', pageKey: 'bills' },
-  { path: '/tables', label: 'Tables & KOT', icon: Coffee, id: 'nav-tables', min: 'steward', group: 'Sell', pageKey: 'tables' },
-  { path: '/customers', label: 'Customers', icon: Users, id: 'nav-customers', min: 'cashier', group: 'Sell', pageKey: 'customers' },
+  { path: '/tables', label: 'Tables & Orders (KOT)', icon: Coffee, id: 'nav-tables', min: 'steward', group: 'Sell', pageKey: 'tables' },
+  { path: '/customers', label: 'Customers & Khata', icon: Users, id: 'nav-customers', min: 'cashier', group: 'Sell', pageKey: 'customers' },
 
   { path: '/menu/kitchen', label: 'Kitchen Menu', icon: UtensilsCrossed, id: 'nav-menu-kitchen', min: 'steward', group: 'Menu & Stock', pageKey: 'menu/kitchen' },
   { path: '/menu/bar', label: 'Bar Menu', icon: GlassWater, id: 'nav-menu-bar', min: 'steward', group: 'Menu & Stock', pageKey: 'menu/bar' },
   { path: '/products', label: 'Products', icon: Wine, id: 'nav-products', min: 'cashier', group: 'Menu & Stock', pageKey: 'products' },
-  { path: '/invoices', label: 'Invoice Upload', icon: FileUp, id: 'nav-invoices', min: 'cashier', group: 'Menu & Stock', pageKey: 'inventory' },
+  { path: '/invoices', label: 'Supplier Invoices', icon: FileUp, id: 'nav-invoices', min: 'cashier', group: 'Menu & Stock', pageKey: 'inventory' },
   { path: '/inventory', label: 'Inventory', icon: Package, id: 'nav-inventory', min: 'cashier', group: 'Menu & Stock', pageKey: 'inventory' },
-  { path: '/counter', label: 'Counter Stock', icon: ClipboardList, id: 'nav-counter', min: 'cashier', group: 'Menu & Stock', pageKey: 'counter' },
-  { path: '/pour', label: 'Pour Control', icon: Droplets, id: 'nav-pour', min: 'manager', group: 'Menu & Stock', pageKey: 'pour' },
+  { path: '/counter', label: 'Counter Stock Sheet', icon: ClipboardList, id: 'nav-counter', min: 'cashier', group: 'Menu & Stock', pageKey: 'counter' },
+  { path: '/pour', label: 'Peg Control', icon: Droplets, id: 'nav-pour', min: 'manager', group: 'Menu & Stock', pageKey: 'pour' },
 
-  { path: '/schemes', label: 'Schemes', icon: Target, id: 'nav-schemes', min: 'manager', group: 'Money & Compliance', pageKey: 'schemes' },
-  { path: '/compliance', label: 'Compliance', icon: ShieldCheck, id: 'nav-compliance', min: 'manager', group: 'Money & Compliance', pageKey: 'compliance' },
+  { path: '/schemes', label: 'Supplier Schemes', icon: Target, id: 'nav-schemes', min: 'manager', group: 'Money & Compliance', pageKey: 'schemes' },
+  { path: '/compliance', label: 'Excise & Breakage', icon: ShieldCheck, id: 'nav-compliance', min: 'manager', group: 'Money & Compliance', pageKey: 'compliance' },
   { path: '/accounting', label: 'Accounting', icon: BookOpen, id: 'nav-accounting', min: 'manager', group: 'Money & Compliance', pageKey: 'accounting' },
-  { path: '/bank', label: 'Bank Reconciliation', icon: Landmark, id: 'nav-bank', min: 'manager', group: 'Money & Compliance', pageKey: 'bank' },
+  { path: '/bank', label: 'Match Bank Statement', icon: Landmark, id: 'nav-bank', min: 'manager', group: 'Money & Compliance', pageKey: 'bank' },
   { path: '/closing', label: 'Day Closing', icon: Lock, id: 'nav-closing', min: 'manager', group: 'Money & Compliance', pageKey: 'closing' },
 
-  { path: '/admin', label: 'Staff & Terminals', icon: Settings, id: 'nav-admin', min: 'manager', group: 'Business', pageKey: 'admin' },
+  { path: '/admin', label: 'Staff & Billing Counters', icon: Settings, id: 'nav-admin', min: 'manager', group: 'Business', pageKey: 'admin' },
   { path: '/settings', label: 'Business Settings', icon: Building2, id: 'nav-settings', min: 'owner', group: 'Business', pageKey: 'settings' },
 
   { path: '/platform', label: 'Platform Console', icon: Globe, id: 'nav-platform', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
+  { path: '/platform/roles', label: 'Roles & Permissions', icon: KeyRound, id: 'nav-platform-roles', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
+  { path: '/platform/branches', label: 'Branches', icon: GitBranch, id: 'nav-platform-branches', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
+  { path: '/platform/plans', label: 'Plans & Billing', icon: CreditCard, id: 'nav-platform-plans', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
+  { path: '/platform/users', label: 'Users', icon: UserCog, id: 'nav-platform-users', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
+  { path: '/platform/audit', label: 'Audit Log', icon: ScrollText, id: 'nav-platform-audit', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
 ];
 
 // Office Admin runs the business for the owner: above a manager, below the owner (platform / business settings stay owner-only)
@@ -90,7 +101,7 @@ const ROLE_LABEL: Record<SaasRole, string> = {
 };
 
 export function Layout() {
-  const { user, logout, saasRole, branches, activeBranchId, setActiveBranch } = useAuth();
+  const { user, logout, saasRole, branches, activeBranchId, setActiveBranch, disabledFeatures } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -209,8 +220,11 @@ export function Layout() {
   };
 
   const isItemVisible = (item: NavItem): boolean => {
-    // Super Admin has access to all menus across the system
-    if (saasRole === 'super_admin') return true;
+    // The Super Admin runs the software for other businesses: only the Platform menus, never a shop's billing, stock or books
+    if (saasRole === 'super_admin') return item.only === 'super_admin';
+
+    // A feature switched off for this branch takes its page out of the menu
+    if (pageDisabled(item.path, disabledFeatures)) return false;
 
     // Tenant Admin / Owner has access to all business menus (except Platform Console)
     if (user.role === 'owner') {
@@ -221,6 +235,10 @@ export function Layout() {
     if (item.min === 'owner' || item.only === 'super_admin' || item.only === 'admin') {
       return false;
     }
+
+    // Some pages are opened by a named permission, not by rank
+    const needs = PAGE_PERMISSION[item.path];
+    if (needs && !userCan(user, needs)) return false;
 
     // Check custom menu permissions configured by Super Admin / Admin
     if (user.pages && user.pages.length > 0) {
@@ -234,8 +252,8 @@ export function Layout() {
       }
     }
 
-    // Role-based rank fallback if no explicit menu permissions row exists
-    return userRank >= roleRank[item.min];
+    // Role-based rank fallback if no explicit menu permissions row exists (a page tied to a permission needs only that)
+    return needs ? true : userRank >= roleRank[item.min];
   };
 
   const items = navItems.filter(isItemVisible);
@@ -243,7 +261,9 @@ export function Layout() {
   // A page that is not in the user's menu does not open by typing its address either
   // (the API still enforces role and permission on every call; this just stops the empty screens)
   const currentItem = navItems.find((i) => i.path === location.pathname);
-  if (currentItem && !isItemVisible(currentItem)) return <Navigate to="/" replace />;
+  // A page that is hidden for this person sends them to the first page they CAN see (the Dashboard may be hidden too: a role can leave it out)
+  const landing = items.find((i) => i.path !== location.pathname)?.path ?? '/';
+  if (currentItem && !isItemVisible(currentItem)) return <Navigate to={landing} replace />;
   const groups = [...new Set(items.map((i) => i.group))];
   const pageTitle = navItems.find((i) => i.path === location.pathname)?.label || '';
 
@@ -276,7 +296,7 @@ export function Layout() {
               <div className="min-w-0">
                 <div className="font-display font-bold tracking-tight truncate">Liquor Counter</div>
                 <div className="text-xs font-normal text-[#9db7ac] truncate" id="sidebarBranch">
-                  {saasRole === 'super_admin' ? (activeBranch ? `Platform · ${activeBranch.code}` : 'Platform HQ') : activeBranch ? `${activeBranch.code} — ${activeBranch.name}` : 'MAIN-01 — Main Counter Branch'}
+                  {saasRole === 'super_admin' ? 'Platform HQ' : activeBranch ? `${activeBranch.code} — ${activeBranch.name}` : 'MAIN-01 — Main Counter Branch'}
                 </div>
               </div>
             </div>
@@ -373,7 +393,7 @@ export function Layout() {
             <div className="font-display font-bold text-lg tracking-tight truncate" id="pageTitle">{pageTitle}</div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 text-sm min-w-0 shrink">
-            {user.role === 'owner' && branches.length > 0 && (
+            {user.role === 'owner' && saasRole !== 'super_admin' && branches.length > 0 && (
               <label className="flex items-center gap-2 min-w-0">
                 <span className="text-gray-500 dark:text-gray-400 text-xs">Branch</span>
                 <select
@@ -415,7 +435,7 @@ export function Layout() {
         <main className="flex-1 overflow-y-auto p-4">
           {/* Re-mount pages when the owner switches branch so they reload that branch's data */}
           <ErrorBoundary>
-            <Outlet key={activeBranchId ?? 'none'} />
+            <Outlet key={saasRole === 'super_admin' ? 'platform' : (activeBranchId ?? 'none')} />
           </ErrorBoundary>
         </main>
       </div>

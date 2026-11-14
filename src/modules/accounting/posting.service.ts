@@ -4,6 +4,7 @@ import { accountLedgers, branches, journalLines, journalVouchers } from '../../d
 import { onDomainEvent, type Tx, type DomainEventMap } from '../../lib/domain-events.js';
 import { businessDateOf } from '../../lib/business-day.js';
 import { NotFoundError } from '../../lib/errors.js';
+import { branchCodeOf } from '../../lib/branch-code.js';
 import { ensureLedger, ensureSystemLedgers, expenseLedgerDefinition } from './chart.js';
 import {
   assertBalanced,
@@ -48,12 +49,6 @@ export function formatVoucherNumber(branchCode: string, voucherDate: string, sho
 
 function shortId(): string {
   return randomUUID().replace(/-/g, '').slice(0, 8);
-}
-
-async function branchCodeOf(tx: Tx, branchId: string): Promise<string> {
-  const [branch] = await tx.select({ code: branches.code }).from(branches).where(eq(branches.id, branchId)).limit(1);
-  if (!branch) throw new NotFoundError('Branch not found');
-  return branch.code;
 }
 
 // ─── LOW-LEVEL POSTING ───────────────────────────────────────────────────────

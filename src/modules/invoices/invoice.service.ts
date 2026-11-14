@@ -107,7 +107,7 @@ export async function findLiveDuplicate(
 
 export function assertMoneyRange(lines: Array<{ lineCostTotal: string }>, total: string) {
   const sum = lines.reduce((s, l) => s.plus(l.lineCostTotal), new Decimal(0));
-  if (sum.gte(MAX_MONEY) || new Decimal(total).gte(MAX_MONEY)) throw new BusinessRuleError('Invoice amount exceeds the supported maximum');
+  if (sum.gte(MAX_MONEY) || new Decimal(total).gte(MAX_MONEY)) throw new BusinessRuleError('This file does not read like a supplier invoice: it contains amounts far too large for a bill. Check that it is the invoice and not a bank statement or another document.');
 }
 
 export function itemValues(invoiceId: string, lines: DraftLine[]) {

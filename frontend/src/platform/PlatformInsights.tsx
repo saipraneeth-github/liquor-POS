@@ -9,7 +9,7 @@ export interface PlatformDash {
     mrr: number; payingTenants: number; trialTenants: number; outstanding: string; outstandingCount: number;
     branches: number; staff: number; sales30d: string; salesChangePercent: number | null;
   };
-  plans: { plan: 'TRIAL' | 'STANDARD' | 'PRO'; price: string; count: number }[];
+  plans: { plan: string; name: string; price: string; count: number }[];
   revenueByMonth: { month: string; standard: number; pro: number }[];
   funnel: { signedUp: number; billed: number; paying: number };
   queue: Record<QueueKey, { count: number; ids: string[] }>;
@@ -22,8 +22,10 @@ const QUEUE: { key: QueueKey; tone: 'bad' | 'warn' | 'good'; label: string; hint
   { key: 'suspended', tone: 'good', label: 'Suspended', hint: 'Reactivate when they pay' },
 ];
 
-const PLAN_LABEL = { TRIAL: 'Trial', STANDARD: 'Standard', PRO: 'Pro' } as const;
-const PLAN_COLOR = { TRIAL: 'var(--muted)', STANDARD: 'var(--accent)', PRO: 'var(--s-card)' } as const;
+const KNOWN_COLOR: Record<string, string> = { TRIAL: 'var(--muted)', STANDARD: 'var(--accent)', PRO: 'var(--s-card)' };
+const EXTRA_COLORS = ['var(--s-upi, #7c5cff)', 'var(--s-cash, #e08a1e)', 'var(--s-credit, #d6457a)', '#0e9aa7'];
+/** The three original plans keep their colours; any plan added later gets the next free one. */
+const planColor = (code: string, index: number) => KNOWN_COLOR[code] ?? EXTRA_COLORS[index % EXTRA_COLORS.length];
 
 const monthLabel = (key: string) => {
   const [y, m] = key.split('-').map(Number);
@@ -152,14 +154,14 @@ export function PlatformInsights({ data, active, onPick }: { data: PlatformDash;
         </div>
         <div className="lc-card" id="platformPlans">
           <h3>Plans <em>{(() => { const n = data.plans.reduce((s, p) => s + p.count, 0); return n === 0 ? 'no businesses yet' : `${n} ${n === 1 ? 'business' : 'businesses'}`; })()}</em></h3>
-          <div className="lc-mixbar" role="img" aria-label={data.plans.map((p) => `${PLAN_LABEL[p.plan]} ${p.count}`).join(', ')}>
-            {data.plans.filter((p) => p.count > 0).map((p) => <span key={p.plan} style={{ width: `${(p.count / totalPlans) * 100}%`, background: PLAN_COLOR[p.plan] }} />)}
+          <div className="lc-mixbar" role="img" aria-label={data.plans.map((p) => `${p.name} ${p.count}`).join(', ')}>
+            {data.plans.map((p, i) => ({ p, i })).filter(({ p }) => p.count > 0).map(({ p, i }) => <span key={p.plan} style={{ width: `${(p.count / totalPlans) * 100}%`, background: planColor(p.plan, i) }} />)}
           </div>
           <div className="lc-legend" style={{ gridTemplateColumns: 'minmax(0,1fr)' }}>
-            {[...data.plans].reverse().map((p) => (
+            {data.plans.map((p, i) => ({ p, i })).reverse().map(({ p, i }) => (
               <div key={p.plan}>
-                <i className="lc-sw" style={{ background: PLAN_COLOR[p.plan] }} />
-                <span>{PLAN_LABEL[p.plan]} <span className="nm">{Number(p.price) === 0 ? 'free' : `${inr(p.price)}/month`}</span></span>
+                <i className="lc-sw" style={{ background: planColor(p.plan, i) }} />
+                <span>{p.name} <span className="nm">{Number(p.price) === 0 ? 'free' : `${inr(p.price)}/month`}</span></span>
                 <span className="lc-num">{p.count}</span>
               </div>
             ))}

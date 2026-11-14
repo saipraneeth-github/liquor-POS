@@ -36,6 +36,8 @@ import { accountingRoutes } from './modules/accounting/accounting.routes.js';
 import { expenseRoutes } from './modules/expenses/expense.routes.js';
 import { bankRoutes } from './modules/bank/bank.routes.js';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes.js';
+import { featureForPath } from './modules/platform/features.engine.js';
+import { isFeatureOff } from './modules/platform/branch-admin.service.js';
 import { registerAccountingHandlers } from './modules/accounting/posting.service.js';
 import { registerCounterSheetHandlers } from './modules/counters/counter.service.js';
 
@@ -148,6 +150,24 @@ export function buildApp() {
   });
 
   // ─── ROUTES ───────────────────────────────────────────────────────────────
+
+  // A feature the Super Admin switched off for a branch is closed for that branch. The branch is the one named in the request
+  // (path, query or body), otherwise the signed-in user's own branch. Requests without a token fall through to their route's own 401.
+  fastify.addHook('preHandler', async (request, reply) => {
+    const feature = featureForPath(request.url);
+    if (!feature) return;
+    let user: { branchId?: string | null };
+    try { user = await request.jwtVerify<{ branchId?: string | null }>(); } catch { return; }
+    const asId = (v: unknown) => (typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v) ? v : null);
+    const branchId = asId((request.params as Record<string, unknown> | undefined)?.branchId)
+      ?? asId((request.query as Record<string, unknown> | undefined)?.branchId)
+      ?? asId((request.body as Record<string, unknown> | undefined)?.branchId)
+      ?? asId(user.branchId);
+    if (!branchId) return;
+    if (await isFeatureOff(branchId, feature)) {
+      return reply.code(403).send({ error: 'This feature is switched off for this branch. Contact support to turn it on.', code: 'FEATURE_DISABLED', feature });
+    }
+  });
 
   fastify.register(authRoutes,      { prefix: '/api/v1' });
   fastify.register(productRoutes,   { prefix: '/api/v1' });

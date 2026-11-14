@@ -143,14 +143,24 @@ export async function listInvoices(branchId: string, q: ListQuery) {
   if (q.from) conds.push(gte(effectiveDate, new Date(q.from)));
   if (q.to) conds.push(lt(effectiveDate, new Date(new Date(q.to).getTime() + 86_400_000)));
   if (q.q) {
-    const like = `%${q.q.replace(/[\\%_]/g, (c) => '\\' + c)}%`;
-    conds.push(
-      or(
+    // Every word must match somewhere (AND across words, OR across fields), so
+    // "icdc 4521 aman" narrows instead of matching nothing.
+    const esc = (s: string) => s.replace(/[\\%_]/g, (c) => '\\' + c);
+    const tokens = q.q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
+    const normNumber = sql`regexp_replace(lower(${supplierInvoices.invoiceNumber}), '[^a-z0-9]', '', 'g')`;
+    for (const t of tokens) {
+      const like = `%${esc(t)}%`;
+      const norm = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const fields: SQL[] = [
         ilike(supplierInvoices.supplierName, like),
         ilike(supplierInvoices.invoiceNumber, like),
-        ilike(sql`coalesce(${supplierInvoices.originalFilename}, '')`, like)
-      )!
-    );
+        ilike(sql`coalesce(${supplierInvoices.originalFilename}, '')`, like),
+        ilike(sql`${supplierInvoices.totalAmount}::text`, like),
+        ilike(sql`to_char(${effectiveDate}, 'DD-MM-YYYY YYYY-MM-DD DD Mon')`, like),
+      ];
+      if (norm) fields.push(sql`${normNumber} like ${'%' + esc(norm) + '%'}`);
+      conds.push(or(...fields)!);
+    }
   }
 
   const lineStats = db

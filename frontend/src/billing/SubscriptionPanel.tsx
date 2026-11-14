@@ -5,7 +5,9 @@ import { Badge, Modal, inr } from '../components/ui';
 
 export interface TenantSummary {
   name: string;
-  plan: 'TRIAL' | 'STANDARD' | 'PRO';
+  plan: string;
+  planName?: string;
+  cycleDays?: number;
   maxBranches: number;
   branchCount: number;
   trialEndsAt: string | null;
@@ -52,10 +54,8 @@ function loadRazorpayScript(): Promise<void> {
   });
 }
 
-const PLAN_CARDS = [
-  { plan: 'STANDARD' as const, price: '2,999', branches: 3, blurb: 'Up to 3 branches' },
-  { plan: 'PRO' as const, price: '7,999', branches: 25, blurb: 'Up to 25 branches' },
-];
+interface OnSale { code: string; name: string; price: string; cycleDays: number; maxBranches: number; features: string[] }
+const cycle = (days: number) => (days === 365 ? 'year' : days === 90 ? 'quarter' : 'month');
 
 /** Plan, invoices and online payment. Used in Business Settings and on the lock screen of an expired tenant. */
 export function SubscriptionPanel({ onChanged, showPlans }: { onChanged?: () => void; showPlans?: boolean }) {
@@ -63,10 +63,12 @@ export function SubscriptionPanel({ onChanged, showPlans }: { onChanged?: () => 
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [testPay, setTestPay] = useState<Checkout | null>(null);
+  const [onSale, setOnSale] = useState<OnSale[]>([]);
 
   const load = useCallback(async () => {
     try {
       const [t, i] = await Promise.all([api.get<TenantSummary>('/tenant/me'), api.get<{ invoices: Invoice[] }>('/tenant/invoices')]);
+      api.get<{ plans: OnSale[] }>('/tenant/plans').then((r) => setOnSale(r.plans)).catch(() => setOnSale([]));
       setTenant(t);
       setInvoices(i.invoices);
     } catch (err) {
@@ -145,7 +147,7 @@ export function SubscriptionPanel({ onChanged, showPlans }: { onChanged?: () => 
     }
   };
 
-  const choosePlan = async (plan: 'STANDARD' | 'PRO') => {
+  const choosePlan = async (plan: string) => {
     setBusy(plan);
     try {
       await api.post('/tenant/plan', { plan });
@@ -170,7 +172,7 @@ export function SubscriptionPanel({ onChanged, showPlans }: { onChanged?: () => 
     <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4 space-y-4" id="billingCard">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm">
-          <b>{tenant.plan}</b> plan{tenant.plan !== 'TRIAL' && <> · {inr(tenant.price)} / month</>} ·{' '}
+          <b>{tenant.planName ?? tenant.plan}</b> plan{tenant.plan !== 'TRIAL' && <> · {inr(tenant.price)} / {cycle(tenant.cycleDays ?? 30)}</>} ·{' '}
           {tenant.plan === 'TRIAL' ? `trial ends ${day(tenant.trialEndsAt)}` : tenant.paidUntil ? `paid until ${day(tenant.paidUntil)}` : 'billed manually'}
         </div>
         {standing}
@@ -178,20 +180,20 @@ export function SubscriptionPanel({ onChanged, showPlans }: { onChanged?: () => 
 
       {(showPlans || tenant.plan === 'TRIAL') && (
         <div className="grid sm:grid-cols-2 gap-3" id="planChoices">
-          {PLAN_CARDS.map((p) => (
-            <div key={p.plan} className={`rounded-lg border p-3 ${tenant.plan === p.plan ? 'border-purple-400 bg-purple-50/40' : ''}`}>
+          {onSale.map((p) => (
+            <div key={p.code} className={`rounded-lg border p-3 ${tenant.plan === p.code ? 'border-purple-400 bg-purple-50/40' : ''}`}>
               <div className="flex items-baseline justify-between">
-                <b>{p.plan === 'STANDARD' ? 'Standard' : 'Pro'}</b>
-                <span className="font-mono">₹{p.price}<span className="text-xs text-gray-500"> / month</span></span>
+                <b>{p.name}</b>
+                <span className="font-mono">{inr(p.price)}<span className="text-xs text-gray-500"> / {cycle(p.cycleDays)}</span></span>
               </div>
-              <div className="text-xs text-gray-500 mt-1">{p.blurb}, GST included</div>
+              <div className="text-xs text-gray-500 mt-1">Up to {p.maxBranches} branch{p.maxBranches === 1 ? '' : 'es'}, GST included</div>
               <button
                 type="button"
-                className={`plan-choose mt-3 w-full py-1.5 text-sm font-semibold rounded-lg cursor-pointer disabled:opacity-50 ${tenant.plan === p.plan ? 'border text-gray-600' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+                className={`plan-choose mt-3 w-full py-1.5 text-sm font-semibold rounded-lg cursor-pointer disabled:opacity-50 ${tenant.plan === p.code ? 'border text-gray-600' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
                 disabled={busy !== null}
-                onClick={() => choosePlan(p.plan)}
+                onClick={() => choosePlan(p.code)}
               >
-                {tenant.plan === p.plan ? 'Current plan' : `Choose ${p.plan === 'STANDARD' ? 'Standard' : 'Pro'}`}
+                {tenant.plan === p.code ? 'Current plan' : `Choose ${p.name}`}
               </button>
             </div>
           ))}
