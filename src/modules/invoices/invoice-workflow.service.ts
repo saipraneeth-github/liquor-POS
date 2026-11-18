@@ -47,7 +47,7 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
 
       const prevItems = await tx.select().from(supplierInvoiceItems).where(eq(supplierInvoiceItems.invoiceId, id));
       const prevById = new Map(prevItems.map((i) => [i.id, i]));
-      const catalog = await loadCatalog(tx, current.branchId);
+      const catalog = await loadCatalog(tx, current.branchId, id);
       const refIds = [...new Set(input.items.map((i) => i.productId).filter((p): p is string => !!p))];
       const refRows = refIds.length ? await tx.select({
         id: products.id, name: products.name, mrp: products.mrp, sku: products.sku, costPrice: products.costPrice, volumeMl: products.volumeMl,
@@ -111,6 +111,28 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
         });
         const derived = new Decimal(costPrice).mul(item.quantity).toFixed(4);
         const roundingAdj = new Decimal(v.lineCostTotal).minus(new Decimal(derived)).toFixed(4);
+        const branchPrevCost = (productId ? catalog.find((c) => c.id === productId)?.costPrice : null) ?? null;
+        const curCostDec = new Decimal(costPrice);
+        let costDifference: string | null = null;
+        let costIncreasePct: string | null = null;
+        let hasIncreased = false;
+        let hasDecreased = false;
+        let isHighIncrease = false;
+        if (branchPrevCost) {
+          const prevDec = new Decimal(branchPrevCost);
+          const diff = curCostDec.minus(prevDec);
+          if (diff.abs().gt(0.0001)) {
+            costDifference = diff.toFixed(6);
+            hasIncreased = diff.gt(0);
+            hasDecreased = diff.lt(0);
+            if (prevDec.gt(0)) {
+              const pct = diff.div(prevDec).mul(100);
+              costIncreasePct = pct.toFixed(2);
+              if (hasIncreased && pct.gte(10)) isHighIncrease = true;
+            }
+          }
+        }
+
         return {
           lineNumber: idx + 1, rawDescription: item.rawDescription, barcode: item.barcode ?? prev?.barcode ?? null,
           sku: product?.sku ?? null,
@@ -123,12 +145,12 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
           lineCostTotal: v.lineCostTotal,
           unitDerivedTotal: derived,
           roundingAdjustment: roundingAdj,
-          previousCostPrice: prev?.previousCostPrice ?? product?.costPrice ?? null,
-          costDifference: prev?.costDifference ?? null,
-          costIncreasePct: prev?.costIncreasePct ?? null,
-          hasIncreased: false,
-          hasDecreased: false,
-          isHighIncrease: false,
+          previousCostPrice: branchPrevCost,
+          costDifference,
+          costIncreasePct,
+          hasIncreased,
+          hasDecreased,
+          isHighIncrease,
           flags: v.flags, candidates: [],
         };
       });

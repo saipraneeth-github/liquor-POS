@@ -4,7 +4,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { Decimal } from 'decimal.js';
-import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import {
   branches, categories, invoiceAttachments, journalLines, journalVouchers, masterProducts, products, schemePurchases, supplierInvoiceItems, supplierInvoices,
@@ -55,7 +55,11 @@ export function placeholderNumber(): string {
 }
 
 /** Active catalog with category GST rate, for matching. */
-export async function loadCatalog(exec: Tx | typeof db = db, branchId?: string): Promise<CatalogEntry[]> {
+export async function loadCatalog(
+  exec: Tx | typeof db = db,
+  branchId?: string,
+  excludeInvoiceId?: string,
+): Promise<CatalogEntry[]> {
   // A branch matches against its own business's catalog only
   let scope: SQL | undefined;
   let syndicateId: string | null = null;
@@ -74,6 +78,42 @@ export async function loadCatalog(exec: Tx | typeof db = db, branchId?: string):
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id))
     .where(and(eq(products.isActive, true), scope));
+
+  // Determine branch previous purchase costs:
+  // ONLY when there has been at least one prior invoice in this branch.
+  // If no prior invoice exists in this branch, costPrice is null (no previous cost to compare against).
+  // If prior invoices exist, costPrice is the unit rate from the most recent invoice in this branch.
+  if (branchId) {
+    const conditions = [
+      eq(supplierInvoices.branchId, branchId),
+      ne(supplierInvoices.status, 'REJECTED'),
+    ];
+    if (excludeInvoiceId) {
+      conditions.push(ne(supplierInvoices.id, excludeInvoiceId));
+    }
+    const priorInvoiceItems = await exec
+      .select({
+        productId: supplierInvoiceItems.productId,
+        costPrice: supplierInvoiceItems.costPrice,
+      })
+      .from(supplierInvoiceItems)
+      .innerJoin(supplierInvoices, eq(supplierInvoiceItems.invoiceId, supplierInvoices.id))
+      .where(and(...conditions))
+      .orderBy(desc(supplierInvoices.invoiceDate), desc(supplierInvoices.createdAt));
+
+    const lastCosts = new Map<string, string>();
+    for (const item of priorInvoiceItems) {
+      if (item.productId && !lastCosts.has(item.productId)) {
+        lastCosts.set(item.productId, item.costPrice);
+      }
+    }
+
+    return rows.map((r) => ({
+      ...r,
+      costPrice: lastCosts.get(r.id) ?? null,
+    }));
+  }
+
   return rows;
 }
 
@@ -175,8 +215,8 @@ export async function provisionMasterProducts(
         packQuantity: master.packQuantity,
         exciseCode: master.exciseCode,
         sku: master.sku,
-        mrp: master.referenceMrp ?? '0.00',
-        costPrice: master.referenceCost ?? undefined,
+        mrp: '0.00',
+        costPrice: undefined,
         syndicateId,
       }).returning();
 
@@ -190,7 +230,7 @@ export async function provisionMasterProducts(
         volumeMl: created.volumeMl,
         packQuantity: created.packQuantity,
         mrp: created.mrp,
-        costPrice: created.costPrice,
+        costPrice: null,
         isActive: true,
         taxRate: cat.taxRate,
       });

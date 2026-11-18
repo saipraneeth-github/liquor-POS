@@ -2315,8 +2315,33 @@ export function InvoiceUpload() {
                                   title={`Unit cost: ₹${parseFloat(it.costPrice || '0').toFixed(6)}`}
                                 />
                               ) : (
-                                <div className="font-mono text-sm text-gray-900 font-medium">
-                                  ₹{parseFloat(it.costPrice || '0').toFixed(2)}
+                                <div>
+                                  <div className="font-mono text-sm text-gray-900 font-medium">
+                                    ₹{parseFloat(it.costPrice || '0').toFixed(2)}
+                                  </div>
+                                  {(() => {
+                                    const curCost = parseFloat(it.costPrice);
+                                    const prevCost = it.previousCostPrice ? parseFloat(it.previousCostPrice) : null;
+                                    if (!curCost || !prevCost || Math.abs(curCost - prevCost) < 0.01) return null;
+                                    const diff = curCost - prevCost;
+                                    const pct = prevCost > 0 ? (diff / prevCost) * 100 : 0;
+                                    const isInc = diff > 0;
+                                    return (
+                                      <div className="mt-0.5 flex justify-end">
+                                        <span
+                                          title={`Last invoice rate: ₹${prevCost.toFixed(2)} → Current: ₹${curCost.toFixed(2)} (${isInc ? '+' : ''}₹${diff.toFixed(2)})`}
+                                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold font-mono cursor-help ${
+                                            isInc
+                                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
+                                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                          }`}
+                                        >
+                                          <span>{isInc ? '▲' : '▼'}</span>
+                                          <span>{isInc ? '+' : ''}{pct.toFixed(0)}%</span>
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               )}
                             </td>
