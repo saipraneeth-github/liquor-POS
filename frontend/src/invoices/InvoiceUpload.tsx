@@ -966,21 +966,6 @@ export function InvoiceUpload() {
     showToast(`✓ Matched line #${lineIdx + 1} to "${cleanProductName(selectedProduct.name)}"`, 'success');
   };
 
-  const handleUnlinkProductForLine = (lineIdx: number) => {
-    if (!activeInvoice) return;
-    const items = [...activeInvoice.items];
-    items[lineIdx] = {
-      ...items[lineIdx],
-      productId: null,
-      productName: undefined,
-      matchStatus: 'UNMATCHED',
-    };
-    setActiveInvoice({ ...activeInvoice, items });
-    setChangingMatchLineIdx(null);
-    setEditingProdLineIdx(null);
-    showToast(`Unlinked line #${lineIdx + 1}`, 'info');
-  };
-
   const handleLineQtyChange = (idx: number, qtyVal: string) => {
     if (!activeInvoice) return;
     const items = [...activeInvoice.items];
@@ -998,13 +983,6 @@ export function InvoiceUpload() {
     const item = { ...items[idx], costPrice: costVal };
     item.lineCostTotal = (item.quantity * cost).toFixed(2);
     items[idx] = item;
-    setActiveInvoice({ ...activeInvoice, items });
-  };
-
-  const handleLineMrpChange = (idx: number, mrpVal: string) => {
-    if (!activeInvoice) return;
-    const items = [...activeInvoice.items];
-    items[idx] = { ...items[idx], mrp: mrpVal };
     setActiveInvoice({ ...activeInvoice, items });
   };
 
@@ -1932,10 +1910,10 @@ export function InvoiceUpload() {
                         <th className="py-2.5 px-3 w-8">#</th>
                         <th className="py-2.5 px-2 text-center w-24">Brand Code</th>
                         <th className="py-2.5 px-3">Item &amp; Match</th>
-                        <th className="py-2.5 px-2 text-right w-28">Qty</th>
+                        <th className="py-2.5 px-2 text-right w-24">Cases</th>
+                        <th className="py-2.5 px-2 text-right w-24">Bottles</th>
                         <th className="py-2.5 px-2 text-right w-24">Case Rate</th>
                         <th className="py-2.5 px-2 text-right w-28">Unit Cost ₹</th>
-                        <th className="py-2.5 px-2 text-right w-24">MRP ₹</th>
                         <th className="py-2.5 px-3 text-right w-28">Total</th>
                         <th className="py-2.5 px-2 text-center w-12">Edit</th>
                       </tr>
@@ -2104,14 +2082,6 @@ export function InvoiceUpload() {
                                       >
                                         Change
                                       </button>
-                                      <button
-                                        type="button"
-                                        title="Unlink product"
-                                        onClick={() => handleUnlinkProductForLine(idx)}
-                                        className="px-1.5 py-0.5 text-[10px] font-semibold text-gray-500 hover:text-rose-600 hover:bg-rose-50 border border-gray-200 rounded cursor-pointer transition-colors"
-                                      >
-                                        Unlink
-                                      </button>
                                     </div>
                                   </div>
 
@@ -2270,39 +2240,45 @@ export function InvoiceUpload() {
                                 </div>
                               )}
 
-                              {/* Compact Price Change Pill */}
+                              {/* Clean warnings only — hide internal price-change and conversion flags */}
                               {(() => {
-                                const curCost = parseFloat(it.costPrice);
-                                const prevCost = it.previousCostPrice ? parseFloat(it.previousCostPrice) : null;
-                                if (!curCost || !prevCost || Math.abs(curCost - prevCost) < 0.001) return null;
-                                const diff = curCost - prevCost;
-                                const pct = prevCost > 0 ? (diff / prevCost) * 100 : 0;
-                                const isInc = diff > 0;
+                                const noisy = ['cases_converted', 'cost_increased', 'cost_decreased', 'high_cost_increase', 'needs_confirmation'];
+                                const displayFlags = (it.flags || []).filter((f) => !noisy.includes(f.toLowerCase()));
+                                if (displayFlags.length === 0) return null;
                                 return (
-                                  <div className="mt-1 flex items-center">
-                                    <span
-                                      title={`Previous rate: ₹${prevCost.toFixed(2)} → New rate: ₹${curCost.toFixed(2)} (${isInc ? '+' : ''}₹${diff.toFixed(2)})`}
-                                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border cursor-help ${
-                                        isInc
-                                          ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
-                                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                                      }`}
-                                    >
-                                      <span>{isInc ? '▲' : '▼'}</span>
-                                      <span>{isInc ? '+' : ''}{pct.toFixed(0)}%</span>
-                                    </span>
+                                  <div className="text-[11px] text-amber-700 flex flex-wrap gap-1 mt-0.5">
+                                    {displayFlags.map((f, fi) => (
+                                      <span key={fi} className="px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-[10px]">
+                                        {f === 'PACK_DIFFERS' ? 'Pack size differs' : f.replace(/_/g, ' ').toLowerCase()}
+                                      </span>
+                                    ))}
                                   </div>
                                 );
                               })()}
-
-                              {/* Flags without cases_converted */}
-                              {(it.flags || []).filter((f) => f.toLowerCase() !== 'cases_converted').length > 0 && (
-                                <div className="text-[11px] text-amber-700">
-                                  {(it.flags || []).filter((f) => f.toLowerCase() !== 'cases_converted').join(', ')}
-                                </div>
-                              )}
                             </td>
 
+                            {/* Separate Cases Column */}
+                            <td className="py-3 px-2 text-right font-mono text-xs">
+                              {(() => {
+                                const pack = it.packQuantity || matchedProd?.packQuantity || 12;
+                                const cases = (it.casesDelivered !== undefined && it.casesDelivered !== null && it.casesDelivered > 0)
+                                  ? it.casesDelivered
+                                  : (pack > 0 ? Math.floor(it.quantity / pack) : 0);
+                                const loose = (it.bottlesDelivered !== undefined && it.bottlesDelivered !== null && it.bottlesDelivered > 0)
+                                  ? it.bottlesDelivered
+                                  : (pack > 0 && cases > 0 ? it.quantity % pack : 0);
+
+                                return (
+                                  <div>
+                                    <span className="font-bold text-gray-900 dark:text-gray-100">{cases} cs</span>
+                                    {loose > 0 && <span className="text-gray-500 text-[10px] ml-1">+{loose}b</span>}
+                                    <div className="text-[10px] text-gray-400">({pack}/cs)</div>
+                                  </div>
+                                );
+                              })()}
+                            </td>
+
+                            {/* Bottles (Qty) Column */}
                             <td className="py-3 px-2 text-right">
                               {isEditing ? (
                                 <input
@@ -2315,11 +2291,6 @@ export function InvoiceUpload() {
                               ) : (
                                 <div className="font-mono font-bold text-gray-900 text-sm">
                                   {it.quantity} <span className="text-xs text-gray-500 font-normal">btls</span>
-                                </div>
-                              )}
-                              {(it.casesDelivered !== undefined && it.casesDelivered !== null && it.casesDelivered > 0) && (
-                                <div className="text-[10px] text-gray-500 font-mono mt-0.5">
-                                  {it.casesDelivered} cs{it.bottlesDelivered ? ` + ${it.bottlesDelivered}b` : ''}
                                 </div>
                               )}
                             </td>
@@ -2346,20 +2317,6 @@ export function InvoiceUpload() {
                               ) : (
                                 <div className="font-mono text-sm text-gray-900 font-medium">
                                   ₹{parseFloat(it.costPrice || '0').toFixed(2)}
-                                </div>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-2 text-right">
-                              {isEditing ? (
-                                <input
-                                  className="ie-mrp w-20 p-1.5 border rounded-md text-right font-mono text-sm bg-white"
-                                  value={it.mrp}
-                                  onChange={(e) => handleLineMrpChange(idx, e.target.value)}
-                                />
-                              ) : (
-                                <div className="font-mono text-sm text-gray-900">
-                                  ₹{parseFloat(it.mrp || '0').toFixed(2)}
                                 </div>
                               )}
                             </td>
