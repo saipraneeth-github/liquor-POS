@@ -7,6 +7,7 @@ import { matchLine, extractVolumeMl, type CatalogProduct, type MatchResult } fro
 import { validateLine, AMOUNT_TOLERANCE } from './validate.engine.js';
 import type { ExtractedLine } from './extraction/types.js';
 import { MAX_MONEY } from './extraction/numbers.js';
+import { cleanProductName } from '../../lib/product-name.js';
 
 export interface CatalogEntry extends CatalogProduct {
   /** Category GST rate, used when the line has none. */
@@ -132,7 +133,7 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       barcode: line.barcode,
       sku: line.sku,
       productId: match.productId,
-      productName: product?.name ?? null,
+      productName: product?.name ? cleanProductName(product.name) : (line.description ? cleanProductName(line.description) : null),
       matchStatus: match.status,
       matchMethod: match.method,
       matchConfidence: match.productId ? match.confidence.toFixed(3) : (match.confidence > 0 ? match.confidence.toFixed(3) : null),

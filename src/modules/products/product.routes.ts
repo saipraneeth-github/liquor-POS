@@ -9,9 +9,12 @@ import {
   getProductByBarcode,
   listCategories,
   listProducts,
+  lookupMasterProduct,
   updateMrp,
+  updateProduct,
   CreateProductSchema,
   UpdateMrpSchema,
+  UpdateProductSchema,
 } from './product.service.js';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -44,6 +47,22 @@ export async function productRoutes(fastify: FastifyInstance) {
   // GET /categories — list all active categories (steward+)
   fastify.get('/categories', { preHandler: requireRole('steward') }, async () => listCategories());
 
+  // GET /master-products/lookup?exciseCode=5028&volumeMl=650 — master catalog lookup (cashier+)
+  // Used by the "Add Missing Product" modal to auto-fill fields from the Telangana TSBCL ICDC catalog.
+  fastify.get('/master-products/lookup', {
+    preHandler: requireRole('cashier'),
+  }, async (request, reply) => {
+    const q = request.query as { exciseCode?: string; volumeMl?: string; state?: string };
+    const exciseCode = (q.exciseCode ?? '').trim();
+    const volumeMl = parseInt(q.volumeMl ?? '', 10);
+    if (!exciseCode || isNaN(volumeMl) || volumeMl <= 0) {
+      return reply.code(400).send({ error: 'exciseCode and volumeMl (integer > 0) are required' });
+    }
+    const result = await lookupMasterProduct(exciseCode, volumeMl, q.state ?? 'TS');
+    if (!result) return reply.code(404).send({ error: 'Not found in master catalog' });
+    return result;
+  });
+
   // POST /products — create product (cashier+)
   fastify.post('/products', {
     preHandler: requireRole('cashier'),
@@ -58,6 +77,25 @@ export async function productRoutes(fastify: FastifyInstance) {
       return reply.code(201).send((await userCan(user, 'cost.view')) ? product : stripCost(product));
     } catch (err: unknown) {
       return sendError(reply, err, 'Product creation failed');
+    }
+  });
+
+  // PATCH /products/:id — update product details like name, brand, volume, pack size (cashier+)
+  fastify.patch('/products/:id', {
+    preHandler: requireRole('cashier'),
+  }, async (request, reply) => {
+    const params = IdParams.safeParse(request.params);
+    if (!params.success) return reply.code(404).send({ error: 'Product not found' });
+    const parsed = UpdateProductSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+    const user = getUser(request);
+    try {
+      const updated = await updateProduct(params.data.id, parsed.data, await tenantOf(user));
+      return reply.code(200).send((await userCan(user, 'cost.view')) ? updated : stripCost(updated));
+    } catch (err: unknown) {
+      return sendError(reply, err, 'Product update failed');
     }
   });
 

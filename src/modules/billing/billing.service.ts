@@ -154,6 +154,14 @@ export async function createBill(
   if (inactive.length > 0) {
     throw new BusinessRuleError(`Inactive products cannot be billed: ${inactive.map((p) => p.name).join(', ')}`);
   }
+  // Guard: a product with ₹0.00 MRP has not had its retail selling price set yet.
+  // Block the sale so cashiers don't accidentally bill at zero price.
+  const unpriced = productRows.filter((p) => !p.mrp || parseFloat(p.mrp) <= 0);
+  if (unpriced.length > 0) {
+    throw new BusinessRuleError(
+      `The following product(s) have no selling price set (MRP ₹0.00). Please configure MRP on the Products page before billing: ${unpriced.map((p) => p.name).join(', ')}`,
+    );
+  }
 
   // Everything below only needs the products above, not each other: ask the database for all of it at once. On a hosted
   // database every round trip costs a network hop, so doing these one after another was the biggest part of checkout time.

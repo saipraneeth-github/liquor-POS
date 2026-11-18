@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { db } from './client.js';
 import {
-  syndicates, branches, users, categories, products, productServings, stock, tables, terminals, customers,
+  syndicates, branches, users, categories, products, masterProducts, productServings, stock, tables, terminals, customers,
 } from './schema.js';
 import { TELANGANA_ICDC_PRODUCTS } from './data/telangana-products.js';
 
@@ -91,29 +91,53 @@ export async function seedDatabase(): Promise<void> {
       }
     }
   }
-  // 4b. Telangana Excise ICDC Catalog products
+
+  // 4b. Seed master_products (Telangana TSBCL ICDC catalog) — platform-owned, not tenant-scoped.
+  //     These are canonical reference products; every new Telangana tenant's invoice uploads
+  //     auto-match against this table, with no duplication per tenant.
   for (const tp of TELANGANA_ICDC_PRODUCTS) {
-    const pVal = {
-      categoryId: catId(tp.category),
+    await db.insert(masterProducts).values({
+      state: 'TS',
+      categoryName: tp.category,
       name: tp.name,
       brand: tp.brand,
       volumeMl: tp.volumeMl,
       packQuantity: tp.packQuantity,
       exciseCode: tp.exciseCode,
       sku: tp.sku,
-      mrp: tp.mrp,
-      costPrice: null,
-      syndicateId: syndicate.id,
-    };
-    await db.insert(products).values(pVal).onConflictDoNothing();
+      referenceMrp: tp.mrp,
+      referenceCost: tp.costPrice,
+    }).onConflictDoNothing(); // unique on (state, excise_code, volume_ml)
+
+    // Also seed a demo tenant store product for the Demo Liquor Syndicate so the
+    // existing demo flow continues to work (linked to the master entry).
     if (seedDemoStock) {
-      const [prod] = await db.select().from(products).where(eq(products.sku, tp.sku)).limit(1);
-      if (prod) {
-        await db.insert(stock).values({ branchId, productId: prod.id, quantity: 50, reorderLevel: 10 }).onConflictDoNothing();
+      // Find the master product we just inserted
+      const [master] = await db.select({ id: masterProducts.id }).from(masterProducts)
+        .where(eq(masterProducts.sku, tp.sku)).limit(1);
+      const [exists] = await db.select({ id: products.id }).from(products)
+        .where(eq(products.sku, tp.sku)).limit(1);
+      if (!exists && master) {
+        const [prod] = await db.insert(products).values({
+          categoryId: catId(tp.category),
+          masterProductId: master.id,
+          name: tp.name,
+          brand: tp.brand,
+          volumeMl: tp.volumeMl,
+          packQuantity: tp.packQuantity,
+          exciseCode: tp.exciseCode,
+          sku: tp.sku,
+          mrp: tp.mrp,
+          costPrice: tp.costPrice,
+          syndicateId: syndicate.id,
+        }).returning();
+        if (prod) {
+          await db.insert(stock).values({ branchId, productId: prod.id, quantity: 50, reorderLevel: 10 }).onConflictDoNothing();
+        }
       }
     }
   }
-  console.log(` Products seeded (${productData.length + TELANGANA_ICDC_PRODUCTS.length} total catalog products, demo stock: ${seedDemoStock})`);
+  console.log(` Products seeded (${productData.length} demo products + master catalog: ${TELANGANA_ICDC_PRODUCTS.length} TSBCL ICDC items, demo stock: ${seedDemoStock})`);
 
   // 4b. Demo menu: two dishes and one bar bottle sold by the peg
   const demoCat = async (name: string, taxRate: string) => {

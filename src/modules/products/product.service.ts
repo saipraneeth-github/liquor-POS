@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { db } from '../../db/client.js';
-import { products, categories, priceAudit, productServings, stock } from '../../db/schema.js';
+import { products, categories, masterProducts, priceAudit, productServings, stock } from '../../db/schema.js';
 import { and, eq, getTableColumns, inArray, isNull, or } from 'drizzle-orm';
 import { branchAvailability, type Tenant } from '../menu/menu-access.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { JwtPayload } from '../auth/auth.service.js';
+import { cleanProductName } from '../../lib/product-name.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
@@ -21,15 +22,36 @@ export const CreateProductSchema = z.object({
   volumeMl:     z.coerce.number().int().positive().optional(),
   exciseCode:   OPT_SAFE_TEXT(10),
   packQuantity: z.coerce.number().int().positive().max(1000).optional(),
-  mrp:          z.string().regex(/^\d+(\.\d{1,2})?$/, 'MRP must be a decimal string').refine((v) => Number(v) > 0, 'MRP must be positive'),
+  // MRP is optional at product creation time — set/updated later on the Products page or via PATCH /mrp.
+  // The DB column defaults to '0.00'; POS billing will block sales of products with 0.00 MRP.
+  mrp:          z.string().trim().optional().transform((v) => v || undefined)
+                  .refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), 'MRP must be a decimal string')
+                  .refine((v) => !v || Number(v) >= 0, 'MRP must be non-negative'),
   costPrice:    z.string().trim().optional().transform((v) => v || undefined).refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), 'Cost price must be a decimal string'),
+  masterProductId: z.string().uuid().optional(),
 });
 
 export const UpdateMrpSchema = z.object({
   mrp: z.string().regex(/^\d+(\.\d{1,2})?$/, 'MRP must be a decimal string'),
 });
 
+export const UpdateProductSchema = z.object({
+  name: OPT_SAFE_TEXT(200),
+  brand: OPT_SAFE_TEXT(200),
+  volumeMl: z.coerce.number().int().positive().nullable().optional(),
+  packQuantity: z.coerce.number().int().positive().max(1000).optional(),
+  categoryId: z.string().uuid().optional(),
+  mrp: z.string().trim().optional().transform((v) => v || undefined)
+    .refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), 'MRP must be a decimal string'),
+  costPrice: z.string().trim().optional().transform((v) => v || undefined)
+    .refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), 'Cost price must be a decimal string'),
+  barcode: OPT_SAFE_TEXT(64).nullable(),
+  sku: OPT_SAFE_TEXT(64).nullable(),
+  exciseCode: OPT_SAFE_TEXT(10).nullable(),
+});
+
 export type CreateProductInput = z.infer<typeof CreateProductSchema>;
+export type UpdateProductInput = z.infer<typeof UpdateProductSchema>;
 
 // ─── PRODUCT SERVICE ─────────────────────────────────────────────────────────
 
@@ -40,6 +62,26 @@ export async function listCategories() {
     .orderBy(categories.name);
 }
 
+/**
+ * Look up a Telangana state master product by excise code (brand code) + volume (ml).
+ * Returns the full master product row so the frontend can auto-populate the Add Product modal.
+ */
+export async function lookupMasterProduct(exciseCode: string, volumeMl: number, state = 'TS') {
+  const [row] = await db
+    .select()
+    .from(masterProducts)
+    .where(
+      and(
+        eq(masterProducts.state, state),
+        eq(masterProducts.exciseCode, exciseCode.trim()),
+        eq(masterProducts.volumeMl, volumeMl),
+        eq(masterProducts.isActive, true),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 export async function createProduct(input: CreateProductInput, tenant: Tenant = 'ALL') {
   const [category] = await db
     .select({ id: categories.id, name: categories.name, taxRate: categories.taxRate })
@@ -47,27 +89,63 @@ export async function createProduct(input: CreateProductInput, tenant: Tenant = 
     .where(eq(categories.id, input.categoryId))
     .limit(1);
   if (!category) throw new BusinessRuleError('Category not found');
-  const brand = input.brand || input.name.split(' ')[0] || input.name;
+  const cleanName = cleanProductName(input.name);
+  const brand = input.brand || cleanName.split(' ')[0] || cleanName;
+  // MRP defaults to '0.00' when not supplied; POS billing will block sales of unpriced products
+  const mrp = input.mrp ? new Decimal(input.mrp).toFixed(2) : '0.00';
 
   try {
     const [product] = await db.insert(products).values({
-      categoryId:   input.categoryId,
-      barcode:      input.barcode,
-      sku:          input.sku,
-      name:         input.name,
+      categoryId:      input.categoryId,
+      masterProductId: input.masterProductId,
+      barcode:         input.barcode,
+      sku:             input.sku,
+      name:            cleanName,
       brand,
-      volumeMl:     input.volumeMl,
-      exciseCode:   input.exciseCode,
-      packQuantity: input.packQuantity,
-      mrp:          new Decimal(input.mrp).toFixed(2),
-      costPrice:    input.costPrice ? new Decimal(input.costPrice).toFixed(2) : undefined,
-      syndicateId:  tenant === 'ALL' ? null : tenant,
+      volumeMl:        input.volumeMl,
+      exciseCode:      input.exciseCode,
+      packQuantity:    input.packQuantity,
+      mrp,
+      costPrice:       input.costPrice ? new Decimal(input.costPrice).toFixed(2) : undefined,
+      syndicateId:     tenant === 'ALL' ? null : tenant,
     }).returning();
     return { ...product, categoryName: category.name, taxRate: category.taxRate };
   } catch (err) {
     if (isUniqueViolation(err)) throw new ConflictError('A product with this barcode or SKU already exists');
     throw err;
   }
+}
+
+export async function updateProduct(
+  id: string,
+  input: UpdateProductInput,
+  tenant: Tenant = 'ALL'
+) {
+  const scope = tenant === 'ALL' ? undefined : tenant === null ? isNull(products.syndicateId) : or(isNull(products.syndicateId), eq(products.syndicateId, tenant));
+  const [existing] = await db.select().from(products).where(and(eq(products.id, id), scope)).limit(1);
+  if (!existing) throw new NotFoundError('Product not found');
+
+  const updates: Record<string, any> = {};
+  if (input.name !== undefined) updates.name = cleanProductName(input.name);
+  if (input.brand !== undefined) updates.brand = input.brand;
+  if (input.volumeMl !== undefined) updates.volumeMl = input.volumeMl;
+  if (input.packQuantity !== undefined) updates.packQuantity = input.packQuantity;
+  if (input.categoryId !== undefined) updates.categoryId = input.categoryId;
+  if (input.mrp !== undefined) updates.mrp = input.mrp ? new Decimal(input.mrp).toFixed(2) : '0.00';
+  if (input.costPrice !== undefined) updates.costPrice = input.costPrice ? new Decimal(input.costPrice).toFixed(2) : undefined;
+  if (input.barcode !== undefined) updates.barcode = input.barcode;
+  if (input.sku !== undefined) updates.sku = input.sku;
+  if (input.exciseCode !== undefined) updates.exciseCode = input.exciseCode;
+
+  if (Object.keys(updates).length === 0) return existing;
+
+  const [updated] = await db
+    .update(products)
+    .set(updates)
+    .where(eq(products.id, id))
+    .returning();
+
+  return updated;
 }
 
 /** Barcodes are unique per business, so the lookup is limited to the caller's tenant (their own item wins over a shared one). */

@@ -21,6 +21,7 @@ import { eq, and, or, isNull, gte, inArray, sql, ilike } from 'drizzle-orm';
 import { estimateIndent, type IndentEstimationResult } from '../stock/indent.engine.js';
 import { emitDomainEvent, type Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError } from '../../lib/errors.js';
+import { cleanProductName } from '../../lib/product-name.js';
 
 // ─── SHARED APPROVAL EFFECTS (direct approval + invoice upload workflow) ────────
 
@@ -374,7 +375,8 @@ export async function upsertBrandCodeMapping(input: {
   let prodId = input.productId;
 
   if (!prodId) {
-    let nameToSearch = input.productName?.trim() || trimmedCode;
+    const rawClean = cleanProductName(input.productName?.trim() || trimmedCode);
+    let nameToSearch = rawClean;
     if (vol && !nameToSearch.toLowerCase().includes(`${vol}ml`)) {
       nameToSearch = `${nameToSearch} ${vol}ml`;
     }
@@ -447,13 +449,14 @@ export async function upsertBrandCodeMapping(input: {
     .where(and(...existingConds))
     .limit(1);
 
+  const cleanInputName = input.productName ? cleanProductName(input.productName) : undefined;
   if (existing.length > 0) {
     const [updated] = await db
       .update(brandCodeMappings)
       .set({
         productId: prodId,
         volumeMl: vol,
-        productName: input.productName ?? existing[0].productName,
+        productName: cleanInputName ?? existing[0].productName,
         categoryName: input.categoryName ?? existing[0].categoryName,
         branchId: input.branchId ?? existing[0].branchId,
         updatedAt: new Date(),
@@ -469,7 +472,7 @@ export async function upsertBrandCodeMapping(input: {
       brandCode: trimmedCode,
       volumeMl: vol,
       productId: prodId,
-      productName: input.productName,
+      productName: cleanInputName,
       categoryName: input.categoryName,
       branchId: input.branchId,
     })

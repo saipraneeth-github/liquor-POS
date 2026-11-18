@@ -119,19 +119,47 @@ export const categories = pgTable('categories', {
   taxType: taxTypeEnum('tax_type').notNull().default('GST'),
 });
 
+// ─── MASTER PRODUCT CATALOG ──────────────────────────────────────────────────
+// Immutable state-level reference catalog (e.g. Telangana TSBCL ICDC products).
+// Owned by the platform, not by any tenant. Products in this table map to tenant
+// store products via products.master_product_id. Tenant products inherit the
+// canonical attributes (name, brand, volume, pack size, excise code) but own their
+// own MRP, cost history, and stock records.
+
+export const masterProducts = pgTable('master_products', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  state:        text('state').notNull().default('TS'),          // 'TS' = Telangana, 'AP' = Andhra Pradesh, etc.
+  categoryName: text('category_name').notNull(),                // 'Whisky' | 'Beer' | 'Vodka' | 'Rum' | 'Brandy' | 'Gin' | 'Wine'
+  name:         text('name').notNull(),                         // Official clean product name (no case tags)
+  brand:        text('brand').notNull(),
+  volumeMl:     integer('volume_ml').notNull(),
+  packQuantity: integer('pack_quantity').notNull(),             // bottles per case
+  exciseCode:   text('excise_code').notNull(),                  // 4-digit TSBCL brand code, e.g. '5028'
+  sku:          text('sku').notNull().unique(),                 // canonical SKU e.g. 'TS-5028-650'
+  referenceMrp: numeric('reference_mrp', { precision: 12, scale: 2 }),   // govt reference MRP (optional, tenants may differ)
+  referenceCost: numeric('reference_cost', { precision: 14, scale: 6 }), // depot base cost (optional)
+  isActive:     boolean('is_active').notNull().default(true),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  // A state may publish the same excise code in multiple volumes (e.g. 180ml, 375ml, 750ml)
+  // Each (state, exciseCode, volumeMl) must be unique.
+  uqStateBrandVol: unique('uq_master_state_brand_vol').on(t.state, t.exciseCode, t.volumeMl),
+}));
+
 // ─── PRODUCTS ───────────────────────────────────────────────────────────────
 
 export const products = pgTable('products', {
   id:           uuid('id').primaryKey().defaultRandom(),
   categoryId:   uuid('category_id').references(() => categories.id),
+  masterProductId: uuid('master_product_id').references((): AnyPgColumn => masterProducts.id), // NULL = custom product not in master catalog
   barcode:      text('barcode'),    // unique per tenant (see uq_products_tenant_barcode)
   sku:          text('sku'),
   name:         text('name').notNull(),
   brand:        text('brand').notNull(),
   volumeMl:     integer('volume_ml'),
-  exciseCode:   text('excise_code'), // e.g., 'Q', 'P', 'N'
+  exciseCode:   text('excise_code'), // e.g., '5028'
   packQuantity: integer('pack_quantity'), // e.g., 12, 24, 48 bottles/case
-  mrp:               numeric('mrp', { precision: 12, scale: 2 }).notNull(),
+  mrp:               numeric('mrp', { precision: 12, scale: 2 }).notNull().default('0.00'),
   costPrice:         numeric('cost_price', { precision: 14, scale: 6 }),
   previousCostPrice: numeric('previous_cost_price', { precision: 14, scale: 6 }),
   costPerCase:       numeric('cost_per_case', { precision: 12, scale: 2 }),
@@ -145,7 +173,7 @@ export const products = pgTable('products', {
   gstRate:      numeric('gst_rate', { precision: 5, scale: 2 }),         // per-item GST %; NULL = use category rate
   trackStock:   boolean('track_stock').notNull().default(true),          // kitchen items are not stock-tracked
   hsnCode:      text('hsn_code'),                                        // printed on GST invoices
-  syndicateId:  uuid('syndicate_id').references((): AnyPgColumn => syndicates.id),   // owning tenant; NULL = standalone / legacy shared item
+  syndicateId:  uuid('syndicate_id').references((): AnyPgColumn => syndicates.id),   // owning tenant; every product must have a tenant
   isActive:     boolean('is_active').notNull().default(true),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 }, (t) => ({

@@ -7,10 +7,11 @@ import { Decimal } from 'decimal.js';
 import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import {
-  branches, categories, invoiceAttachments, journalLines, journalVouchers, products, schemePurchases, supplierInvoiceItems, supplierInvoices,
+  branches, categories, invoiceAttachments, journalLines, journalVouchers, masterProducts, products, schemePurchases, supplierInvoiceItems, supplierInvoices,
 } from '../../db/schema.js';
 import type { Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
+import { cleanProductName } from '../../lib/product-name.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import { extractInvoice } from './extraction/index.js';
 import { MAX_MONEY } from './extraction/numbers.js';
@@ -55,11 +56,13 @@ export function placeholderNumber(): string {
 
 /** Active catalog with category GST rate, for matching. */
 export async function loadCatalog(exec: Tx | typeof db = db, branchId?: string): Promise<CatalogEntry[]> {
-  // A branch only matches against its own business's catalog (plus unowned legacy items)
+  // A branch matches against its own business's catalog only
   let scope: SQL | undefined;
+  let syndicateId: string | null = null;
   if (branchId) {
     const [branch] = await exec.select({ syndicateId: branches.syndicateId }).from(branches).where(eq(branches.id, branchId)).limit(1);
-    scope = branch?.syndicateId ? or(isNull(products.syndicateId), eq(products.syndicateId, branch.syndicateId)) : isNull(products.syndicateId);
+    syndicateId = branch?.syndicateId ?? null;
+    scope = syndicateId ? or(isNull(products.syndicateId), eq(products.syndicateId, syndicateId)) : isNull(products.syndicateId);
   }
   const rows = await exec
     .select({
@@ -72,6 +75,131 @@ export async function loadCatalog(exec: Tx | typeof db = db, branchId?: string):
     .leftJoin(categories, eq(products.categoryId, categories.id))
     .where(and(eq(products.isActive, true), scope));
   return rows;
+}
+
+/**
+ * Look up an entry in the state master catalog by excise code + volume (ml).
+ * Used during invoice upload to auto-provision a tenant store product when
+ * the tenant's own catalog has no match for a known Telangana TSBCL ICDC line.
+ */
+export async function findMasterProduct(exciseCode: string, volumeMl: number, state = 'TS') {
+  const [row] = await db
+    .select()
+    .from(masterProducts)
+    .where(
+      and(
+        eq(masterProducts.state, state),
+        eq(masterProducts.exciseCode, exciseCode.trim()),
+        eq(masterProducts.volumeMl, volumeMl),
+        eq(masterProducts.isActive, true),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Given a list of unmatched draft lines (for a just-uploaded ICDC invoice), look each one up
+ * in master_products by excise code + volume. For every hit, create (or find) a tenant store
+ * product linked to the master entry and return an updated catalog that includes those new products
+ * so the caller can re-match the lines.
+ */
+export async function provisionMasterProducts(
+  unmatchedLines: Array<{ sku: string | null; volumeMl: number | null }>,
+  branchId: string,
+  syndicateId: string,
+): Promise<CatalogEntry[]> {
+  const provisioned: CatalogEntry[] = [];
+
+  // Identify unique (exciseCode, volumeMl) pairs from unmatched lines
+  const pairs = unmatchedLines
+    .filter((l) => l.sku && l.volumeMl)
+    .map((l) => ({ exciseCode: l.sku!.trim(), volumeMl: l.volumeMl! }));
+
+  if (pairs.length === 0) return provisioned;
+
+  // Fetch all matching master products in one query
+  const matchedMasters = await db
+    .select()
+    .from(masterProducts)
+    .where(and(eq(masterProducts.state, 'TS'), eq(masterProducts.isActive, true)));
+
+  // Filter to only the pairs we actually need
+  const relevant = matchedMasters.filter((m) =>
+    pairs.some((p) => p.exciseCode === m.exciseCode && p.volumeMl === m.volumeMl),
+  );
+
+  if (relevant.length === 0) return provisioned;
+
+  // Find or create tenant product for each master entry
+  for (const master of relevant) {
+    // Check if tenant already has this product (by master_product_id or by sku)
+    const [existing] = await db
+      .select({
+        id: products.id, name: products.name, brand: products.brand,
+        barcode: products.barcode, sku: products.sku, exciseCode: products.exciseCode,
+        volumeMl: products.volumeMl, packQuantity: products.packQuantity,
+        mrp: products.mrp, costPrice: products.costPrice, isActive: products.isActive,
+        taxRate: categories.taxRate,
+      })
+      .from(products)
+      .leftJoin(categories, eq(products.categoryId, categories.id))
+      .where(
+        and(
+          eq(products.syndicateId, syndicateId),
+          eq(products.sku, master.sku),
+          eq(products.isActive, true),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      provisioned.push(existing);
+      continue;
+    }
+
+    // Auto-provision: find or create category, then create tenant product linked to master
+    let [cat] = await db.select({ id: categories.id, taxRate: categories.taxRate })
+      .from(categories).where(eq(categories.name, master.categoryName)).limit(1);
+    if (!cat) {
+      [cat] = await db.insert(categories).values({ name: master.categoryName, taxRate: '18.00' }).returning();
+    }
+
+    try {
+      const [created] = await db.insert(products).values({
+        categoryId: cat.id,
+        masterProductId: master.id,
+        name: cleanProductName(master.name),
+        brand: master.brand,
+        volumeMl: master.volumeMl,
+        packQuantity: master.packQuantity,
+        exciseCode: master.exciseCode,
+        sku: master.sku,
+        mrp: master.referenceMrp ?? '0.00',
+        costPrice: master.referenceCost ?? undefined,
+        syndicateId,
+      }).returning();
+
+      provisioned.push({
+        id: created.id,
+        name: created.name,
+        brand: created.brand,
+        barcode: created.barcode,
+        sku: created.sku,
+        exciseCode: created.exciseCode,
+        volumeMl: created.volumeMl,
+        packQuantity: created.packQuantity,
+        mrp: created.mrp,
+        costPrice: created.costPrice,
+        isActive: true,
+        taxRate: cat.taxRate,
+      });
+    } catch {
+      // Conflict (race condition): another request provisioned the same product; skip
+    }
+  }
+
+  return provisioned;
 }
 
 export async function findLiveDuplicate(
@@ -231,7 +359,33 @@ export async function createDraftFromUpload(input: UploadInput) {
     .where(and(eq(invoiceAttachments.sha256, sha256), eq(supplierInvoices.branchId, input.branchId)))
     .limit(1);
 
-  const lines = buildDraftLines(extraction.table.lines, await loadCatalog(db, input.branchId));
+  const isIcdc = extraction.meta.engine === 'icdc-extractor';
+
+  // Build initial draft lines from the tenant's existing catalog
+  const [branchRow] = await db.select({ syndicateId: branches.syndicateId })
+    .from(branches).where(eq(branches.id, input.branchId)).limit(1);
+  const tenantSyndicateId = branchRow?.syndicateId ?? null;
+
+  let catalog = await loadCatalog(db, input.branchId);
+  let lines = buildDraftLines(extraction.table.lines, catalog);
+
+  // For ICDC invoices: auto-provision tenant store products from master_products for any
+  // unmatched lines that have a known excise code + volume. This is the primary mechanism
+  // that makes invoice matching work for new tenants without any manual setup.
+  if (isIcdc && tenantSyndicateId) {
+    const unmatchedLines = lines
+      .filter((l) => l.matchStatus === 'UNMATCHED')
+      .map((l) => ({ sku: l.sku, volumeMl: l.volumeMl }));
+
+    if (unmatchedLines.length > 0) {
+      const newProducts = await provisionMasterProducts(unmatchedLines, input.branchId, tenantSyndicateId);
+      if (newProducts.length > 0) {
+        // Re-build draft lines with the enriched catalog so the provisioned products get matched
+        catalog = [...catalog, ...newProducts];
+        lines = buildDraftLines(extraction.table.lines, catalog);
+      }
+    }
+  }
   const f = input.fields;
   const invoiceNumber = f.invoiceNumber?.trim() || extraction.header.invoiceNumber?.trim() || null;
   if (invoiceNumber && !isPlaceholderNumber(invoiceNumber)) {
@@ -244,7 +398,6 @@ export async function createDraftFromUpload(input: UploadInput) {
   const headerFromOcr = usedOcr && (!f.invoiceNumber || !f.invoiceDate || !f.supplierName);
   // A challan's printed total includes MRP rounding off, so it is not comparable to the sum of the lines; the
   // challan is verified by its own chain of printed figures instead (totals.engine.ts).
-  const isIcdc = extraction.meta.engine === 'icdc-extractor';
   const inv = validateInvoice({
     invoiceNumber, invoiceDate, supplierName, capturedTotal: isIcdc ? null : extraction.table.capturedTotal,
     lineTotals: lines.map((l) => l.lineCostTotal), duplicateFile: !!dupFile, headerFromOcr,

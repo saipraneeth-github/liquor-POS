@@ -9,6 +9,15 @@ import { showToast } from '../lib/toast';
 import { businessDate } from '../lib/business-day';
 import ChallanTotals from '../inventory/ChallanTotals';
 
+function cleanProductName(desc: string | null | undefined): string {
+  if (!desc) return '';
+  return desc
+    .replace(/\s*\[\s*\d+\s*cs(?:\s*\+\s*\d+\s*(?:btls?|b|bottles?)?)?\s*\]/gi, '')
+    .replace(/\s*\(\s*\d+\s*cs(?:\s*\+\s*\d+\s*(?:btls?|b|bottles?)?)?\s*\)/gi, '')
+    .replace(/\s+\d+\s*cs(?:\s*\+\s*\d+\s*(?:btls?|b|bottles?)?)?\b/gi, '')
+    .trim();
+}
+
 interface BrandMappingRow {
   id: string;
   brandCode: string;
@@ -51,6 +60,9 @@ interface InvoiceItem {
   productName?: string;
   rawDescription: string;
   barcode?: string | null;
+  sku?: string | null;
+  exciseCode?: string | null;
+  productSku?: string | null;
   quantity: number;
   volumeMl?: number | null;
   productVolumeMl?: number | null;
@@ -274,6 +286,14 @@ export function InvoiceUpload() {
   const [createProductModal, setCreateProductModal] = useState<CreateProductModalState | null>(null);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productFormError, setProductFormError] = useState<string | null>(null);
+  const [masterAutofilled, setMasterAutofilled] = useState(false);
+
+  // Line item product inline editing & re-matching
+  const [editingProdLineIdx, setEditingProdLineIdx] = useState<number | null>(null);
+  const [editingProdName, setEditingProdName] = useState<string>('');
+  const [savingProdName, setSavingProdName] = useState(false);
+  const [changingMatchLineIdx, setChangingMatchLineIdx] = useState<number | null>(null);
+  const [changeMatchSearch, setChangeMatchSearch] = useState<string>('');
 
   // Inward & Approval Progress State
   const [isApproving, setIsApproving] = useState(false);
@@ -391,7 +411,8 @@ export function InvoiceUpload() {
     setSavingMappingCode(mapKey);
     try {
       const it = activeInvoice?.items[lineIdx];
-      const pName = newMappingNames[mapKey]?.trim() || (it?.rawDescription ? (volumeMl && !it.rawDescription.includes(`${volumeMl}ml`) ? `${it.rawDescription} ${volumeMl}ml` : it.rawDescription) : brandCode);
+      const baseClean = cleanProductName(newMappingNames[mapKey]?.trim() || it?.rawDescription || brandCode);
+      const pName = volumeMl && !baseClean.toLowerCase().includes(`${volumeMl}ml`) ? `${baseClean} ${volumeMl}ml` : baseClean;
       const cName = newMappingCats[mapKey] || 'Whisky';
       const created = await api.post<BrandMappingRow>('/inventory/brand-mappings', {
         brandCode,
@@ -697,32 +718,36 @@ export function InvoiceUpload() {
 
   // ── Open Add Product to Catalog Modal for Line Item ───────────────────────
 
-  const openAddProductModalForLine = (idx: number) => {
+  const openAddProductModalForLine = async (idx: number) => {
     if (!activeInvoice) return;
     const item = activeInvoice.items[idx];
-    const desc = (item.rawDescription || '').trim();
+    // rawDescription may carry "[50 cs]" or "[3 cs + 2 btls]" suffixes added by the draft engine.
+    // Strip all case-quantity notation from the product name.
+    const rawDesc = (item.rawDescription || '').trim();
+    const cleanDesc = cleanProductName(rawDesc);
 
-    // 1. Detect Volume in ml (e.g., 1000ml, 750ml, 650ml, 500ml, 375ml, 180ml)
-    const volMatch =
-      desc.match(/\b(1000|750|650|500|375|330|275|250|180|90)\s*ml\b/i) ||
-      desc.match(/\b(1000|750|650|500|375|330|275|250|180|90)ml\b/i);
-    const volumeMl = volMatch ? volMatch[1] : '750';
+    // 1. Volume: use the structured volumeMl from the extraction (already parsed from the ICDC Size column).
+    //    Only fall back to regex parsing the description when volumeMl is absent.
+    const structuredVol = item.volumeMl && item.volumeMl > 0 ? item.volumeMl : null;
+    const descVolMatch =
+      cleanDesc.match(/\b(1000|750|650|500|375|330|275|250|180|90)\s*ml\b/i) ||
+      cleanDesc.match(/\b(1000|750|650|500|375|330|275|250|180|90)ml\b/i);
+    const volumeMl = structuredVol ? String(structuredVol) : (descVolMatch ? descVolMatch[1] : '');
 
-    // 2. Detect Pack Quantity (bottles per case)
-    let packQuantity = '12';
-    if (volumeMl === '375') packQuantity = '24';
-    else if (volumeMl === '180') packQuantity = '48';
-    else if (volumeMl === '650' || volumeMl === '500') packQuantity = '12';
+    // 2. Pack Quantity: infer from volume or extraction
+    let packQuantity = item.packQuantity ? String(item.packQuantity) : '';
+    if (!packQuantity) {
+      if (volumeMl === '375') packQuantity = '24';
+      else if (volumeMl === '180' || volumeMl === '90') packQuantity = '48';
+      else if (volumeMl === '1000' || volumeMl === '750' || volumeMl === '650' || volumeMl === '500' || volumeMl === '330') packQuantity = '12';
+    }
 
-    // 3. Detect Category from description keywords
+    // 3. Category from description keywords
     let matchedCatId = categories[0]?.id || '';
-    const lowerDesc = desc.toLowerCase();
+    const lowerDesc = cleanDesc.toLowerCase();
     for (const cat of categories) {
       const catLower = cat.name.toLowerCase();
-      if (lowerDesc.includes(catLower)) {
-        matchedCatId = cat.id;
-        break;
-      }
+      if (lowerDesc.includes(catLower)) { matchedCatId = cat.id; break; }
     }
     if (!matchedCatId && categories.length > 0) {
       if (lowerDesc.includes('whisky') || lowerDesc.includes('whiskey')) {
@@ -742,29 +767,74 @@ export function InvoiceUpload() {
       }
     }
 
-    // 4. Detect Brand (first 2 words before volume or standard liquor suffix)
-    const cleanWords = desc.replace(/\b(1000|750|650|500|375|330|180|90)\s*ml\b/gi, '').trim().split(/\s+/);
-    const brand = cleanWords.slice(0, Math.min(2, cleanWords.length)).join(' ') || desc;
+    // 4. Brand: first 2–3 meaningful words from clean description
+    const cleanWords = cleanDesc
+      .replace(/\b(1000|750|650|500|375|330|275|250|180|90)\s*ml\b/gi, '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    const brand = cleanWords.slice(0, Math.min(3, cleanWords.length)).join(' ') || cleanDesc;
 
-    // 5. Pre-fill Cost & MRP if available
+    // 5. Pre-fill Cost & MRP if available on the invoice line
     const costPrice = parseFloat(item.costPrice) > 0 ? item.costPrice : '';
     const mrp = parseFloat(item.mrp) > 0 ? item.mrp : '';
 
+    // 6. The excise brand code from the ICDC extraction travels in item.sku/barcode.
+    //    Barcode stays empty unless the item actually has a retail barcode.
+    const exciseCode = (item.exciseCode || item.sku || item.productSku || item.barcode || '').trim();
+    const barcode = '';  // ICDC brand code is not a retail barcode
+
+    setMasterAutofilled(false);
     setProductFormError(null);
-    setCreateProductModal({
+    const initialState: CreateProductModalState = {
       lineIdx: idx,
-      rawDescription: desc,
+      rawDescription: rawDesc,
       categoryId: matchedCatId,
-      name: desc,
+      name: cleanDesc,
       brand,
       volumeMl,
       packQuantity,
       mrp,
       costPrice,
-      barcode: item.barcode || '',
+      barcode,
       sku: '',
-      exciseCode: '',
-    });
+      exciseCode,
+    };
+    setCreateProductModal(initialState);
+
+    // 7. Auto-fill from master catalog if we have a valid excise code + volume
+    if (exciseCode && structuredVol) {
+      try {
+        const master = await api.get<{
+          id: string; categoryName: string; name: string; brand: string;
+          volumeMl: number; packQuantity: number; exciseCode: string; sku: string;
+          referenceMrp: string | null; referenceCost: string | null;
+        }>(`/master-products/lookup?exciseCode=${encodeURIComponent(exciseCode)}&volumeMl=${structuredVol}`);
+
+        // Find matching category id
+        const masterCatId = categories.find((c) =>
+          c.name.toLowerCase() === master.categoryName.toLowerCase()
+        )?.id || matchedCatId;
+
+        setCreateProductModal({
+          lineIdx: idx,
+          rawDescription: rawDesc,
+          categoryId: masterCatId,
+          name: master.name,
+          brand: master.brand,
+          volumeMl: String(master.volumeMl),
+          packQuantity: String(master.packQuantity),
+          mrp: master.referenceMrp ? String(master.referenceMrp) : (mrp || ''),
+          costPrice: master.referenceCost ? String(master.referenceCost) : (costPrice || ''),
+          barcode: '',
+          sku: master.sku,
+          exciseCode: master.exciseCode,
+        });
+        setMasterAutofilled(true);
+      } catch {
+        // 404 = not in master catalog → keep the auto-detected values, user fills manually
+      }
+    }
   };
 
   // ── Save New Product and Link to Line Item ────────────────────────────────
@@ -785,10 +855,15 @@ export function InvoiceUpload() {
       setProductFormError('Please select a category (e.g. Whisky, Beer).');
       return;
     }
-    const mrpNum = parseFloat(mrp);
-    if (isNaN(mrpNum) || mrpNum <= 0) {
-      setProductFormError('Please enter a valid positive MRP (e.g. 750 or 750.00).');
-      return;
+    // Selling MRP is optional when adding a product from a supplier invoice
+    let mrpFormatted = '0.00';
+    if (mrp.trim()) {
+      const mrpNum = parseFloat(mrp);
+      if (isNaN(mrpNum) || mrpNum < 0) {
+        setProductFormError('Selling MRP must be a valid non-negative number.');
+        return;
+      }
+      mrpFormatted = mrpNum.toFixed(2);
     }
     if (costPrice && (isNaN(parseFloat(costPrice)) || parseFloat(costPrice) <= 0)) {
       setProductFormError('Cost price must be a valid positive amount.');
@@ -803,7 +878,7 @@ export function InvoiceUpload() {
         name: name.trim(),
         brand: brand.trim() || name.trim().split(' ')[0] || 'Generic',
         categoryId,
-        mrp: mrpNum.toFixed(2),
+        mrp: mrpFormatted,
       };
       if (costPrice.trim()) payload.costPrice = parseFloat(costPrice).toFixed(2);
       if (volumeMl.trim()) payload.volumeMl = parseInt(volumeMl, 10);
@@ -842,27 +917,69 @@ export function InvoiceUpload() {
 
   // ── Line Item Editors ─────────────────────────────────────────────────────
 
-  const _handleProductChange = (idx: number, prodId: string) => {
+  const handleSaveProductName = async (lineIdx: number) => {
+    if (!activeInvoice) return;
+    const it = activeInvoice.items[lineIdx];
+    const cleanName = cleanProductName(editingProdName);
+    if (!cleanName) {
+      showToast('Product name cannot be empty', 'error');
+      return;
+    }
+
+    setSavingProdName(true);
+    try {
+      if (it.productId) {
+        await api.patch(`/products/${it.productId}`, { name: cleanName });
+        setProducts((prev) =>
+          prev.map((p) => (p.id === it.productId ? { ...p, name: cleanName } : p))
+        );
+        showToast(`✓ Updated product name to "${cleanName}"`, 'success');
+      }
+
+      const nextItems = [...activeInvoice.items];
+      nextItems[lineIdx] = {
+        ...nextItems[lineIdx],
+        productName: cleanName,
+      };
+      setActiveInvoice({ ...activeInvoice, items: nextItems });
+      setEditingProdLineIdx(null);
+    } catch (err: any) {
+      showToast('Failed to update product name: ' + (err.message || 'Unknown error'), 'error');
+    } finally {
+      setSavingProdName(false);
+    }
+  };
+
+  const handleSelectProductForLine = (lineIdx: number, selectedProduct: Product) => {
     if (!activeInvoice) return;
     const items = [...activeInvoice.items];
-    const item = { ...items[idx] };
-    const p = products.find((x) => x.id === prodId);
-    if (p) {
-      item.productId = p.id;
-      item.productName = p.name;
-      item.matchStatus = 'MANUAL';
-      if (!item.costPrice || item.costPrice === '0.00') item.costPrice = p.costPrice || '500.00';
-      if (!item.mrp || item.mrp === '0.00') item.mrp = p.mrp;
-      item.lineCostTotal = (item.quantity * parseFloat(item.costPrice)).toFixed(2);
-    } else {
-      item.productId = null;
-      item.productName = undefined;
-      item.matchStatus = 'UNMATCHED';
-    }
-    items[idx] = item;
+    const item = { ...items[lineIdx] };
+    item.productId = selectedProduct.id;
+    item.productName = cleanProductName(selectedProduct.name);
+    item.matchStatus = 'MANUAL';
+    if (selectedProduct.volumeMl) item.volumeMl = selectedProduct.volumeMl;
+    if (selectedProduct.packQuantity) item.packQuantity = selectedProduct.packQuantity;
+    if (selectedProduct.mrp && (!item.mrp || item.mrp === '0.00')) item.mrp = selectedProduct.mrp;
+    items[lineIdx] = item;
     setActiveInvoice({ ...activeInvoice, items });
+    setChangingMatchLineIdx(null);
+    showToast(`✓ Matched line #${lineIdx + 1} to "${cleanProductName(selectedProduct.name)}"`, 'success');
   };
-  void _handleProductChange;
+
+  const handleUnlinkProductForLine = (lineIdx: number) => {
+    if (!activeInvoice) return;
+    const items = [...activeInvoice.items];
+    items[lineIdx] = {
+      ...items[lineIdx],
+      productId: null,
+      productName: undefined,
+      matchStatus: 'UNMATCHED',
+    };
+    setActiveInvoice({ ...activeInvoice, items });
+    setChangingMatchLineIdx(null);
+    setEditingProdLineIdx(null);
+    showToast(`Unlinked line #${lineIdx + 1}`, 'info');
+  };
 
   const handleLineQtyChange = (idx: number, qtyVal: string) => {
     if (!activeInvoice) return;
@@ -1892,32 +2009,185 @@ export function InvoiceUpload() {
                                     title="Description as printed on the bill"
                                   />
                                 ) : (
-                                  <div className="font-medium text-gray-900 text-sm">{it.rawDescription}</div>
+                                  <div className="font-medium text-gray-900 text-sm" title={it.rawDescription}>{cleanProductName(it.rawDescription) || it.rawDescription}</div>
                                 )}
                               </div>
 
                               {/* Brand Code Mapping Section */}
                               {isMatched ? (
-                                <div className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                                  <span className="font-semibold">{matchedProd?.name || mappedMapping?.productName || it.productName}</span>
-                                  {vol ? <span className="text-[10px] font-mono text-gray-500">• {vol}ml</span> : null}
-                                  {it.matchStatus === 'SUGGESTED' && (
-                                    <>
-                                      <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Suggested, please confirm</span>
+                                <div className="space-y-1">
+                                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+
+                                    {/* Product Name (Inline Editable) */}
+                                    {editingProdLineIdx === idx ? (
+                                      <div className="flex items-center gap-1 flex-1 min-w-[200px]">
+                                        <input
+                                          type="text"
+                                          value={editingProdName}
+                                          onChange={(e) => setEditingProdName(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleSaveProductName(idx);
+                                            if (e.key === 'Escape') setEditingProdLineIdx(null);
+                                          }}
+                                          autoFocus
+                                          className="px-1.5 py-0.5 text-xs font-semibold bg-white border border-purple-400 rounded outline-none text-gray-900 w-full"
+                                        />
+                                        <button
+                                          type="button"
+                                          title="Save Name"
+                                          disabled={savingProdName}
+                                          onClick={() => handleSaveProductName(idx)}
+                                          className="p-1 text-emerald-600 hover:bg-emerald-100 rounded cursor-pointer"
+                                        >
+                                          <Check size={14} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          title="Cancel"
+                                          onClick={() => setEditingProdLineIdx(null)}
+                                          className="p-1 text-gray-400 hover:bg-gray-100 rounded cursor-pointer"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1">
+                                        <span className="font-semibold text-gray-900">
+                                          {cleanProductName(matchedProd?.name || mappedMapping?.productName || it.productName)}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          title="Edit product name"
+                                          onClick={() => {
+                                            setEditingProdLineIdx(idx);
+                                            setEditingProdName(cleanProductName(matchedProd?.name || mappedMapping?.productName || it.productName));
+                                          }}
+                                          className="p-0.5 text-gray-400 hover:text-purple-600 rounded cursor-pointer transition-colors"
+                                        >
+                                          <Pencil size={11} />
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {vol ? <span className="text-[10px] font-mono text-gray-500">• {vol}ml</span> : null}
+
+                                    <div className="ml-auto flex items-center gap-1.5">
+                                      {it.matchStatus === 'SUGGESTED' && (
+                                        <>
+                                          <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                                            Suggested
+                                          </span>
+                                          <button
+                                            type="button"
+                                            className="ie-confirm-match px-2 py-0.5 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
+                                            onClick={() => {
+                                              if (!activeInvoice) return;
+                                              const nextItems = [...activeInvoice.items];
+                                              nextItems[idx] = { ...nextItems[idx], matchStatus: 'MANUAL' };
+                                              setActiveInvoice({ ...activeInvoice, items: nextItems });
+                                            }}
+                                          >
+                                            Confirm
+                                          </button>
+                                        </>
+                                      )}
+
                                       <button
                                         type="button"
-                                        className="ie-confirm-match ml-auto px-2 py-0.5 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded cursor-pointer"
+                                        title="Change matched product"
                                         onClick={() => {
-                                          if (!activeInvoice) return;
-                                          const nextItems = [...activeInvoice.items];
-                                          nextItems[idx] = { ...nextItems[idx], matchStatus: 'MANUAL' };
-                                          setActiveInvoice({ ...activeInvoice, items: nextItems });
+                                          setChangingMatchLineIdx(changingMatchLineIdx === idx ? null : idx);
+                                          setChangeMatchSearch('');
                                         }}
+                                        className="px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded cursor-pointer transition-colors"
                                       >
-                                        Confirm
+                                        Change
                                       </button>
-                                    </>
+                                      <button
+                                        type="button"
+                                        title="Unlink product"
+                                        onClick={() => handleUnlinkProductForLine(idx)}
+                                        className="px-1.5 py-0.5 text-[10px] font-semibold text-gray-500 hover:text-rose-600 hover:bg-rose-50 border border-gray-200 rounded cursor-pointer transition-colors"
+                                      >
+                                        Unlink
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Change Product Search Dropdown Popover */}
+                                  {changingMatchLineIdx === idx && (
+                                    <div className="p-2.5 bg-white border border-blue-200 rounded-lg shadow-xl text-xs space-y-2 z-20">
+                                      <div className="flex items-center justify-between font-semibold text-gray-800">
+                                        <span>Select Product for Line #{idx + 1}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setChangingMatchLineIdx(null)}
+                                          className="text-gray-400 hover:text-gray-600"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      </div>
+                                      <input
+                                        type="text"
+                                        placeholder="Search products by name or brand code..."
+                                        value={changeMatchSearch}
+                                        onChange={(e) => setChangeMatchSearch(e.target.value)}
+                                        autoFocus
+                                        className="w-full p-1.5 border rounded text-xs bg-gray-50 outline-none"
+                                      />
+                                      <div className="max-h-48 overflow-y-auto divide-y divide-gray-100">
+                                        {products
+                                          .filter((p) => {
+                                            if (!changeMatchSearch) return true;
+                                            const s = changeMatchSearch.toLowerCase();
+                                            return (
+                                              p.name.toLowerCase().includes(s) ||
+                                              (p.barcode && p.barcode.toLowerCase().includes(s)) ||
+                                              (p.exciseCode && p.exciseCode.toLowerCase().includes(s)) ||
+                                              (p.brand && p.brand.toLowerCase().includes(s))
+                                            );
+                                          })
+                                          .slice(0, 15)
+                                          .map((p) => (
+                                            <button
+                                              key={p.id}
+                                              type="button"
+                                              onClick={() => handleSelectProductForLine(idx, p)}
+                                              className="w-full text-left py-1.5 px-2 hover:bg-blue-50 flex items-center justify-between cursor-pointer rounded transition-colors"
+                                            >
+                                              <div>
+                                                <div className="font-semibold text-gray-900">{cleanProductName(p.name)}</div>
+                                                <div className="text-[10px] text-gray-500">
+                                                  {p.volumeMl ? `${p.volumeMl}ml • ` : ''}
+                                                  {p.exciseCode ? `Brand #${p.exciseCode} • ` : ''}
+                                                  MRP: ₹{parseFloat(p.mrp || '0').toFixed(2)}
+                                                </div>
+                                              </div>
+                                              <span className="text-[10px] text-blue-600 font-bold shrink-0">Select →</span>
+                                            </button>
+                                          ))}
+                                      </div>
+                                      <div className="pt-1.5 border-t flex justify-between items-center text-[11px]">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setChangingMatchLineIdx(null);
+                                            openAddProductModalForLine(idx);
+                                          }}
+                                          className="text-purple-600 hover:underline font-bold cursor-pointer"
+                                        >
+                                          + Add New Product to Catalog
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setChangingMatchLineIdx(null)}
+                                          className="text-gray-400 hover:underline cursor-pointer"
+                                        >
+                                          Close
+                                        </button>
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               ) : (
@@ -1948,7 +2218,7 @@ export function InvoiceUpload() {
                                             nextItems[idx] = {
                                               ...nextItems[idx],
                                               productId: chosen.id,
-                                              productName: chosen.name,
+                                              productName: cleanProductName(chosen.name),
                                               matchStatus: 'MATCHED',
                                             };
                                             setActiveInvoice({ ...activeInvoice, items: nextItems });
@@ -1958,7 +2228,7 @@ export function InvoiceUpload() {
                                         <option value="">-- Select from {codeCandidates.length} catalog products --</option>
                                         {codeCandidates.map((c) => (
                                           <option key={c.id} value={c.id}>
-                                            {c.name} {c.volumeMl ? `(${c.volumeMl}ml)` : ''} — MRP ₹{parseFloat(c.mrp).toFixed(2)}
+                                            {cleanProductName(c.name)} {c.volumeMl ? `(${c.volumeMl}ml)` : ''} — MRP ₹{parseFloat(c.mrp).toFixed(2)}
                                           </option>
                                         ))}
                                       </select>
@@ -1969,7 +2239,7 @@ export function InvoiceUpload() {
                                       type="text"
                                       placeholder="Product name (optional)"
                                       className="p-1.5 border rounded text-xs bg-white flex-1 min-w-[130px]"
-                                      value={newMappingNames[mapKey] ?? (it.rawDescription + (vol && !it.rawDescription.includes(`${vol}ml`) ? ` ${vol}ml` : ''))}
+                                      value={newMappingNames[mapKey] ?? (cleanProductName(it.rawDescription) + (vol && !cleanProductName(it.rawDescription).toLowerCase().includes(`${vol}ml`) ? ` ${vol}ml` : ''))}
                                       onChange={(e) => setNewMappingNames((prev) => ({ ...prev, [mapKey]: e.target.value }))}
                                     />
                                     <select
@@ -2455,6 +2725,13 @@ export function InvoiceUpload() {
               </div>
             )}
 
+            {masterAutofilled && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-medium flex items-center gap-1.5">
+                <span className="font-bold">✓</span>
+                <span>Auto-filled from official Telangana Excise (TSBCL) catalog</span>
+              </div>
+            )}
+
             <form onSubmit={handleSaveNewProduct} className="space-y-4">
               {/* Product Title */}
               <div>
@@ -2560,15 +2837,14 @@ export function InvoiceUpload() {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700" htmlFor="newProdMrp">
-                    Selling MRP (₹) <span className="text-red-500">*</span>
+                    Selling MRP (₹) <span className="text-gray-400 font-normal">(Optional)</span>
                   </label>
                   <input
                     id="newProdMrp"
                     className="w-full mt-1 p-2.5 border rounded-lg text-sm bg-white font-mono font-bold text-gray-900"
                     value={createProductModal.mrp}
                     onChange={(e) => setCreateProductModal({ ...createProductModal, mrp: e.target.value })}
-                    placeholder="e.g. 850.00"
-                    required
+                    placeholder="e.g. 180.00 (or leave empty)"
                   />
                 </div>
               </div>
@@ -2596,9 +2872,9 @@ export function InvoiceUpload() {
                   <input
                     id="newProdSku"
                     className="w-full mt-1 p-2 border rounded-lg text-xs bg-white font-mono"
-                    value={createProductModal.sku}
-                    onChange={(e) => setCreateProductModal({ ...createProductModal, sku: e.target.value })}
-                    placeholder="e.g. 1010 or SKU"
+                    value={createProductModal.sku || createProductModal.exciseCode}
+                    onChange={(e) => setCreateProductModal({ ...createProductModal, sku: e.target.value, exciseCode: e.target.value })}
+                    placeholder="e.g. 5028 or SKU"
                     maxLength={64}
                   />
                 </div>

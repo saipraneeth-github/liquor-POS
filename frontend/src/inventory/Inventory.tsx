@@ -217,7 +217,7 @@ export function Inventory() {
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {activeTab === 'current'
-              ? 'Live bottle counts, costs, margins and breakage tracking for this store.'
+              ? 'Live bottle counts, cases, costs and breakage tracking for this store.'
               : 'Allocate and transfer bottle stock between Walk-in, Janata, and other counters.'}
           </p>
         </div>
@@ -386,10 +386,9 @@ export function Inventory() {
                   <thead>
                     <tr className="border-b text-[11px] text-gray-500 bg-gray-50 dark:bg-gray-800 uppercase tracking-wider">
                       <th className="py-2.5 px-4">Product</th>
+                      <th className="py-2.5 px-4 w-44">Cases / Pack</th>
                       <th className="py-2.5 px-4 w-56">Stock level</th>
                       {canSeeCost && <th className="py-2.5 px-3 text-right">Cost Price</th>}
-                      <th className="py-2.5 px-3 text-right">MRP</th>
-                      {canSeeCost && <th className="py-2.5 px-3 text-right">Margin</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
@@ -417,7 +416,6 @@ export function Inventory() {
                                       <span>
                                         {r.brand || ''}
                                         {r.volumeMl ? ` · ${r.volumeMl}ml` : ''}
-                                        {r.packQuantity ? ` · ${r.packQuantity}/cs` : ''}
                                       </span>
                                       {/* Price Increase/Decrease Indicator */}
                                       {(() => {
@@ -443,6 +441,29 @@ export function Inventory() {
                                         );
                                       })()}
                                     </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td className="py-3 px-4">
+                            {(() => {
+                              const prodObj = productMap.get(r.productId);
+                              const pack = r.packQuantity || prodObj?.packQuantity || 12;
+                              const cases = pack > 0 ? Math.floor(Math.max(0, r.quantity) / pack) : 0;
+                              const loose = pack > 0 ? Math.max(0, r.quantity) % pack : 0;
+                              return (
+                                <div className="flex flex-col gap-1">
+                                  <div>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-gray-100 dark:bg-gray-700/60 text-gray-700 dark:text-gray-300">
+                                      {pack} / case
+                                    </span>
+                                  </div>
+                                  <div className="text-xs font-mono">
+                                    <span className="font-bold text-gray-900 dark:text-gray-100">{cases} {cases === 1 ? 'Case' : 'Cases'}</span>
+                                    {loose > 0 && (
+                                      <span className="text-gray-500 dark:text-gray-400"> + {loose} {loose === 1 ? 'Btl' : 'Btls'}</span>
+                                    )}
                                   </div>
                                 </div>
                               );
@@ -483,27 +504,6 @@ export function Inventory() {
                                     </div>
                                   )}
                                 </div>
-                              );
-                            })()}
-                          </td>}
-                          <td className="py-3 px-3 text-right font-mono font-bold text-gray-900 dark:text-gray-100">
-                            ₹{parseFloat(r.mrp).toFixed(2)}
-                          </td>
-                          {canSeeCost && <td className="py-3 px-3 text-right">
-                            {(() => {
-                              const prodObj = productMap.get(r.productId);
-                              const cost = r.costPrice ? parseFloat(r.costPrice) : (prodObj?.costPrice ? parseFloat(prodObj.costPrice) : null);
-                              const mrp = parseFloat(r.mrp);
-                              if (!cost || !mrp) return <span className="text-gray-400 text-xs">—</span>;
-                              const margin = ((mrp - cost) / mrp) * 100;
-                              return (
-                                <span className={`inline-flex px-1.5 py-0.5 rounded text-[11px] font-bold ${
-                                  margin >= 20
-                                    ? 'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/30'
-                                    : 'text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/30'
-                                }`}>
-                                  {margin.toFixed(1)}%
-                                </span>
                               );
                             })()}
                           </td>}
