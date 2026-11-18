@@ -39,7 +39,7 @@ export function reconcileChallan(f: ChallanFigures, linesSum: number): Check[] {
   });
   return [
     mk('Sum of lines = Invoice Value', iv, linesSum, 1),
-    mk('Invoice Value + MRP Rounding Off = Net Invoice Value', iv !== null && rnd !== null ? iv + rnd : null, net, 0.05),
+    mk('Invoice Value + Rounding Off = Net Invoice Value', iv !== null && rnd !== null ? iv + rnd : null, net, 0.05),
     mk('Previous Credit + e-challan/DD = Sub Total', prev !== null && ch !== null ? prev + ch : null, sub, 0.05),
     mk('Sub Total − Net − Turnover Tax − Cess − TCS = Retailer Balance', sub !== null && net !== null ? sub - net - tot - cess - tcs : null, bal, 0.05),
   ];
@@ -47,7 +47,7 @@ export function reconcileChallan(f: ChallanFigures, linesSum: number): Check[] {
 
 const FIELDS: Array<{ key: ChallanField; label: string; hint?: string }> = [
   { key: 'linesBasicTotal', label: 'Invoice Value', hint: 'wholesale total of the lines' },
-  { key: 'mrpRoundingOff', label: 'MRP Rounding Off' },
+  { key: 'mrpRoundingOff', label: 'Rounding Off' },
   { key: 'challanAmount', label: 'e-challan / DD Amount' },
   { key: 'previousCredit', label: 'Previous Credit' },
   { key: 'subTotal', label: 'Sub Total' },

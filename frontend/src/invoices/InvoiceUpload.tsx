@@ -2129,9 +2129,9 @@ export function InvoiceUpload() {
                                               <div>
                                                 <div className="font-semibold text-gray-900">{cleanProductName(p.name)}</div>
                                                 <div className="text-[10px] text-gray-500">
-                                                  {p.volumeMl ? `${p.volumeMl}ml • ` : ''}
-                                                  {p.exciseCode ? `Brand #${p.exciseCode} • ` : ''}
-                                                  MRP: ₹{parseFloat(p.mrp || '0').toFixed(2)}
+                                                  {p.volumeMl ? `${p.volumeMl}ml` : ''}
+                                                  {p.volumeMl && p.exciseCode ? ' • ' : ''}
+                                                  {p.exciseCode ? `Brand #${p.exciseCode}` : ''}
                                                 </div>
                                               </div>
                                               <span className="text-[10px] text-blue-600 font-bold shrink-0">Select →</span>
@@ -2198,7 +2198,7 @@ export function InvoiceUpload() {
                                         <option value="">-- Select from {codeCandidates.length} catalog products --</option>
                                         {codeCandidates.map((c) => (
                                           <option key={c.id} value={c.id}>
-                                            {cleanProductName(c.name)} {c.volumeMl ? `(${c.volumeMl}ml)` : ''} — MRP ₹{parseFloat(c.mrp).toFixed(2)}
+                                            {cleanProductName(c.name)} {c.volumeMl ? `(${c.volumeMl}ml)` : ''}
                                           </option>
                                         ))}
                                       </select>
@@ -2596,7 +2596,7 @@ export function InvoiceUpload() {
                       <div>
                         <div className="font-semibold text-gray-900 dark:text-slate-100">{it.productName || it.rawDescription}</div>
                         <div className="text-xs text-gray-500 dark:text-slate-400">
-                          MRP ₹{parseFloat(it.mrp).toFixed(2)} · Rate ₹{parseFloat(it.costPrice).toFixed(2)}
+                          Rate ₹{parseFloat(it.costPrice).toFixed(2)}
                         </div>
                       </div>
                       <div className="text-right">
@@ -2863,7 +2863,7 @@ export function InvoiceUpload() {
               </div>
 
               <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800">
-                Saving this product will add it to your store catalog and immediately link it to line #{createProductModal.lineIdx + 1} with ₹{parseFloat(createProductModal.mrp || '0').toFixed(2)} MRP.
+                Saving this product will add it to your store catalog and link it to line #{createProductModal.lineIdx + 1}.
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -3051,10 +3051,10 @@ export function InvoiceUpload() {
                   <tr className="border-b bg-gray-50 dark:bg-slate-800 text-gray-500 uppercase tracking-wider">
                     <th className="py-2 px-3">#</th>
                     <th className="py-2 px-3">Product / Description</th>
-                    <th className="py-2 px-3 text-right">Qty</th>
+                    <th className="py-2 px-3 text-right">Cases</th>
+                    <th className="py-2 px-3 text-right">Bottles</th>
                     <th className="py-2 px-3 text-right">Case Rate</th>
                     <th className="py-2 px-3 text-right">Unit Cost ₹</th>
-                    <th className="py-2 px-3 text-right">MRP ₹</th>
                     <th className="py-2 px-3 text-right">Line Total</th>
                   </tr>
                 </thead>
@@ -3065,14 +3065,16 @@ export function InvoiceUpload() {
                       <td className="py-2 px-3 font-sans font-medium text-gray-900 dark:text-slate-100">
                         {it.productName || it.rawDescription}
                       </td>
+                      <td className="py-2 px-3 text-right">
+                        {it.casesDelivered ? `${it.casesDelivered} cs` : '—'}
+                      </td>
                       <td className="py-2 px-3 text-right font-bold">
-                        {it.quantity} btls {it.casesDelivered ? `(${it.casesDelivered} cs)` : ''}
+                        {it.quantity} btls
                       </td>
                       <td className="py-2 px-3 text-right text-gray-600">
                         {it.caseRate ? `₹${parseFloat(it.caseRate).toFixed(0)}` : '—'}
                       </td>
                       <td className="py-2 px-3 text-right">₹{parseFloat(it.costPrice || '0').toFixed(2)}</td>
-                      <td className="py-2 px-3 text-right">₹{parseFloat(it.mrp || '0').toFixed(2)}</td>
                       <td className="py-2 px-3 text-right font-bold text-gray-900 dark:text-slate-100">
                         ₹{parseFloat(it.lineCostTotal).toFixed(2)}
                       </td>
