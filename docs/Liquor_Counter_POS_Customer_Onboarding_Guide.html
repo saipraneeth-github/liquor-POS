@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Liquor Counter POS — Customer Onboarding & Operations Handbook</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    @page {
+      size: A4;
+      margin: 18mm 16mm 18mm 16mm;
+      @bottom-right {
+        content: counter(page) " of " counter(pages);
+        font-family: 'Inter', sans-serif;
+        font-size: 8pt;
+        color: #64748b;
+      }
+      @bottom-left {
+        content: "Liquor Counter POS — Enterprise Customer Onboarding Guide";
+        font-family: 'Inter', sans-serif;
+        font-size: 8pt;
+        color: #64748b;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #1e293b;
+      line-height: 1.5;
+      font-size: 9.5pt;
+      background: #ffffff;
+    }
+
+    .page {
+      page-break-after: always;
+      position: relative;
+    }
+
+    .page:last-child {
+      page-break-after: auto;
+    }
+
+    /* Cover Page */
+    .cover {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 40px 20px 30px 20px;
+      background: linear-gradient(135deg, #09131f 0%, #0f172a 60%, #1e293b 100%);
+      color: #ffffff;
+      border-radius: 12px;
+      page-break-after: always;
+    }
+
+    .cover-badge {
+      display: inline-block;
+      padding: 6px 14px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid #10b981;
+      color: #34d399;
+      border-radius: 20px;
+      font-size: 8.5pt;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+
+    .cover-title {
+      font-size: 28pt;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.5px;
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+
+    .cover-title span {
+      color: #38bdf8;
+    }
+
+    .cover-subtitle {
+      font-size: 13pt;
+      font-weight: 400;
+      color: #94a3b8;
+      max-width: 520px;
+      line-height: 1.5;
+      margin-bottom: 30px;
+    }
+
+    .cover-highlights {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      margin-top: 20px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+    }
+
+    .cover-highlight-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .cover-highlight-item .icon {
+      color: #10b981;
+      font-size: 11pt;
+      font-weight: bold;
+      line-height: 1.2;
+    }
+
+    .cover-highlight-item .text h4 {
+      font-size: 9pt;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 2px;
+    }
+
+    .cover-highlight-item .text p {
+      font-size: 8pt;
+      color: #94a3b8;
+      line-height: 1.3;
+    }
+
+    .cover-footer {
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      padding-top: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 8pt;
+      color: #64748b;
+    }
+
+    .cover-footer .meta {
+      display: flex;
+      gap: 16px;
+    }
+
+    /* Content Styling */
+    h1 {
+      font-size: 16pt;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.3px;
+      margin-top: 16px;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h1 .section-num {
+      background: #0f172a;
+      color: #38bdf8;
+      font-size: 9pt;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    h2 {
+      font-size: 12pt;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 14px;
+      margin-bottom: 6px;
+    }
+
+    h3 {
+      font-size: 10pt;
+      font-weight: 600;
+      color: #334155;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+
+    p {
+      margin-bottom: 8px;
+      color: #334155;
+      text-align: justify;
+    }
+
+    ul, ol {
+      margin-left: 18px;
+      margin-bottom: 10px;
+      color: #334155;
+    }
+
+    li {
+      margin-bottom: 4px;
+    }
+
+    b, strong {
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    /* Cards & Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 10px 0;
+    }
+
+    .feature-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      break-inside: avoid;
+    }
+
+    .feature-card h4 {
+      font-size: 9.5pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .feature-card p {
+      font-size: 8.5pt;
+      color: #475569;
+      margin-bottom: 0;
+      line-height: 1.35;
+      text-align: left;
+    }
+
+    .feature-tag {
+      font-size: 7pt;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: #e0f2fe;
+      color: #0369a1;
+      text-transform: uppercase;
+    }
+
+    /* Process Flow Timeline */
+    .process-timeline {
+      margin: 12px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .process-step {
+      display: flex;
+      gap: 12px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #0284c7;
+      border-radius: 4px;
+      padding: 8px 12px;
+      break-inside: avoid;
+    }
+
+    .process-step.evening {
+      border-left-color: #8b5cf6;
+    }
+
+    .process-step.night {
+      border-left-color: #f59e0b;
+    }
+
+    .process-time {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 8pt;
+      font-weight: 600;
+      color: #0369a1;
+      min-width: 65px;
+      padding-top: 1px;
+    }
+
+    .process-content h4 {
+      font-size: 9pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 2px;
+    }
+
+    .process-content p {
+      font-size: 8.2pt;
+      color: #475569;
+      margin-bottom: 0;
+      line-height: 1.35;
+      text-align: left;
+    }
+
+    /* Callout Boxes */
+    .callout {
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin: 10px 0;
+      font-size: 8.5pt;
+      line-height: 1.4;
+      break-inside: avoid;
+    }
+
+    .callout-info {
+      background: #f0f9ff;
+      border-left: 3px solid #0284c7;
+      color: #0369a1;
+    }
+
+    .callout-tip {
+      background: #ecfdf5;
+      border-left: 3px solid #10b981;
+      color: #047857;
+    }
+
+    .callout-warning {
+      background: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      color: #b45309;
+    }
+
+    .callout-title {
+      font-weight: 700;
+      margin-bottom: 2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+      font-size: 8pt;
+      break-inside: avoid;
+    }
+
+    th {
+      background: #0f172a;
+      color: #f8fafc;
+      font-weight: 600;
+      text-align: left;
+      padding: 6px 8px;
+    }
+
+    td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #e2e8f0;
+      color: #334155;
+    }
+
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    .badge-role {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 7.5pt;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .role-owner { background: #fee2e2; color: #991b1b; }
+    .role-office { background: #fef3c7; color: #92400e; }
+    .role-mgr { background: #e0e7ff; color: #3730a3; }
+    .role-cashier { background: #dcfce7; color: #166534; }
+    .role-steward { background: #f3f4f6; color: #374151; }
+
+    .badge-check {
+      color: #16a34a;
+      font-weight: bold;
+    }
+
+    .badge-cross {
+      color: #94a3b8;
+    }
+
+    .flowchart-box {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 12px;
+      margin: 10px 0;
+      text-align: center;
+      break-inside: avoid;
+    }
+
+    .flow-steps {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .flow-step-item {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 8px 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .flow-step-item .step-num {
+      font-size: 7pt;
+      font-weight: 700;
+      color: #0284c7;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+
+    .flow-step-item .step-title {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.2;
+    }
+
+    .flow-arrow {
+      font-size: 14pt;
+      color: #94a3b8;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- COVER PAGE -->
+  <div class="cover">
+    <div>
+      <div class="cover-badge">Customer Onboarding & Operational Manual</div>
+      <div class="cover-title">Liquor Counter <span>POS</span></div>
+      <div class="cover-subtitle">
+        The complete point-of-sale, inventory control, and double-entry accounting platform engineered specifically for retail liquor stores and bar syndicates in India.
+      </div>
+
+      <div class="cover-highlights">
+        <div class="cover-highlight-item">
+          <div class="icon">✓</div>
+          <div class="text">
+            <h4>Tax-Inclusive MRP Compliance</h4>
+            <p>MRP is governed by the catalog database. Exact back-calculation of GST without float rounding errors.</p>
+          </div>
+        </div>
+        <div class="cover-highlight-item">
+          <div class="icon">✓</div>
+          <div class="text">
+            <h4>Dual Counter & Sheet Audits</h4>
+            <p>Physical counter sheets (Sold = Opening + Inward − Closing) synchronized live with barcode POS sales.</p>
+          </div>
+        </div>
+        <div class="cover-highlight-item">
+          <div class="icon">✓</div>
+          <div class="text">
+            <h4>Automated Excise Inward</h4>
+            <p>Direct OCR/Text extraction of Telangana & State Excise ICDC challans with cost variance protection.</p>
+          </div>
+        </div>
+        <div class="cover-highlight-item">
+          <div class="icon">✓</div>
+          <div class="text">
+            <h4>Bank & Tally Accounting</h4>
+            <p>Universal statement reconciliation, real-time balancing vouchers, and 1-click XML export to Tally.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cover-footer">
+      <div>
+        <strong>System Version:</strong> v2.4 (Enterprise Multi-Store Edition)<br>
+        <strong>Target Audience:</strong> Outlet Owners, Managers, Cashiers, Accountants
+      </div>
+      <div class="meta">
+        <span>Confidential & Proprietary</span>
+        <span>•</span>
+        <span>India Excise Compliant</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: EXECUTIVE OVERVIEW & WHAT IT OFFERS -->
+  <div class="page">
+    <h1><span class="section-num">1</span> Executive Overview & Platform Capabilities</h1>
+    <p>
+      <b>Liquor Counter POS</b> solves the high-volume, compliance-intensive challenges unique to Indian liquor outlets: strict state excise regulations, tax-inclusive MRP pricing, physical bottle breakage, dual counter sales (Walk-in vs Janata rates), customer khata credit, and multi-outlet syndicate cash control.
+    </p>
+
+    <h2>What the System Delivers</h2>
+    <div class="grid-2">
+      <div class="feature-card">
+        <h4>⚡ High-Speed Scanner POS</h4>
+        <p>Rapid barcode scan & peg billing. Keyboard shortcuts, offline synchronization for network cuts, exact discount authorization guards, and customer returns with automatic stock replenishment.</p>
+      </div>
+      <div class="feature-card">
+        <h4>📋 Daily Counter Sheets</h4>
+        <p>The gold standard of liquor retail verification: <code>Sold = Opening + Inward + Transfer − Closing</code>. Physical counts reconcile against POS bills to detect leakage or unbilled sales instantly.</p>
+      </div>
+      <div class="feature-card">
+        <h4>🚚 Smart Excise Inward Parser</h4>
+        <p>Upload state excise PDF challans (e.g. Telangana ICDC). Automatically extracts line items, batch numbers, case counts, and line cost without manual entry errors.</p>
+      </div>
+      <div class="feature-card">
+        <h4>⚖️ Dual Counters (Walk-in / Janata)</h4>
+        <p>Support separate physical counters and price lists for premium Walk-in vs Janata buyers. Inter-counter bottle transfers maintain exact sub-inventory counts.</p>
+      </div>
+      <div class="feature-card">
+        <h4>🍽️ Bar & Table Service (KOT)</h4>
+        <p>Table session management with separate Kitchen and Bar Order Tickets (KOT), peg/serving measures, and instant bill generation at table checkout.</p>
+      </div>
+      <div class="feature-card">
+        <h4>📖 Customer Khata (Credit Ledger)</h4>
+        <p>Manage customer credit accounts with strict credit limits, repayment receipts via UPI/Cash/Card, and real-time aging buckets (0-15, 16-30, 31-60, 60+ days).</p>
+      </div>
+      <div class="feature-card">
+        <h4>🔒 Cash Drawer & Shift Control</h4>
+        <p>Cashiers open shifts with an authorized cash float, perform mid-day cash drops, and close shifts with exact denomination counts to prevent drawer shortages.</p>
+      </div>
+      <div class="feature-card">
+        <h4>🏦 Bank Statement Reconciliation</h4>
+        <p>Universal parser for all Indian banks. Verifies running balance chains, flags gateway charge deductions, and auto-matches batch card/UPI settlements.</p>
+      </div>
+    </div>
+
+    <h2>Core Architecture Invariants</h2>
+    <div class="callout callout-info">
+      <div class="callout-title">Domain Rules That Protect Your Profits</div>
+      <ul style="margin-left: 14px; margin-bottom: 0;">
+        <li><b>Non-Overridable MRP:</b> Cashiers cannot alter prices at the counter. All prices come from verified database records.</li>
+        <li><b>Audit Trail:</b> Every stock movement is logged in <code>stock_audit</code> with permanent reasons (<code>SALE</code>, <code>PURCHASE</code>, <code>BREAKAGE</code>, <code>SALES_RETURN</code>).</li>
+        <li><b>Zero-Deletion Policy:</b> Bills and invoices are never deleted. Errors are voided or reversed with mandatory manager justifications and offsetting journal vouchers.</li>
+        <li><b>Zero JS Float Arithmetic:</b> All financial math runs through <code>decimal.js</code>, preventing rounding discrepancies in taxes or cash drawers.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- SECTION 2: END-TO-END ONBOARDING JOURNEY (DAY 0 TO OPERATIONS) -->
+  <div class="page">
+    <h1><span class="section-num">2</span> The 3-Phase Customer Onboarding Journey</h1>
+    <p>
+      Getting an outlet or multi-store syndicate operational takes fewer than 24 hours. The onboarding process is structured into three clear phases:
+    </p>
+
+    <div class="flowchart-box">
+      <div class="flow-steps">
+        <div class="flow-step-item">
+          <div class="step-num">Phase 1</div>
+          <div class="step-title">Day 0 Setup</div>
+          <span style="font-size: 7pt; color: #64748b;">Outlets, Staff, Master Catalog & Opening Stock</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step-item" style="border-color: #0284c7; background: #f0f9ff;">
+          <div class="step-num" style="color: #0284c7;">Phase 2</div>
+          <div class="step-title">Daily Operations</div>
+          <span style="font-size: 7pt; color: #0369a1;">Shift Opens, POS Scanning, Counter Sheets & EOD</span>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step-item">
+          <div class="step-num">Phase 3</div>
+          <div class="step-title">Back-Office & Close</div>
+          <span style="font-size: 7pt; color: #64748b;">Bank Match, P&L Reports, Tally XML Export</span>
+        </div>
+      </div>
+    </div>
+
+    <h2>Phase 1: Day 0 — Initial Store Setup</h2>
+    <div class="process-timeline">
+      <div class="process-step">
+        <div class="process-time">STEP 1</div>
+        <div class="process-content">
+          <h4>Organization & Outlet Configuration</h4>
+          <p>The Syndicate Owner creates the business syndicate, configures outlet branches, local excise license numbers, and defines the local calendar timezone (e.g., IST UTC+330).</p>
+        </div>
+      </div>
+      <div class="process-step">
+        <div class="process-time">STEP 2</div>
+        <div class="process-content">
+          <h4>Staff Role & Action Permissions Setup</h4>
+          <p>Create user logins for Managers, Cashiers, Stewards, and Office Admins. Assign granular action overrides (e.g., granting <code>cost.view</code> only to managers, <code>discount.unlimited</code> for senior staff).</p>
+        </div>
+      </div>
+      <div class="process-step">
+        <div class="process-time">STEP 3</div>
+        <div class="process-content">
+          <h4>Master Catalog Mapping & Price Lists</h4>
+          <p>Map your outlet products against the centralized Master Catalog. Set the branch MRP and Janata counter prices. Barcodes, case pack sizes (e.g. 12 bottles/case), and category tax rates are instantly linked.</p>
+        </div>
+      </div>
+      <div class="process-step">
+        <div class="process-time">STEP 4</div>
+        <div class="process-content">
+          <h4>Physical Opening Inventory Count</h4>
+          <p>Enter the initial bottle stock on hand per brand. This establishes baseline shelf numbers and forms the opening numbers for tomorrow's first Counter Sheet.</p>
+        </div>
+      </div>
+    </div>
+
+    <h2>Phase 2: The Daily Operating Rhythm (Everyday Store Routine)</h2>
+    <div class="process-timeline">
+      <div class="process-step">
+        <div class="process-time">09:00 AM</div>
+        <div class="process-content">
+          <h4>Morning Shift Kickoff & Register Float</h4>
+          <p>Cashier opens the cash drawer register by inputting the opening cash float (e.g., ₹5,000 in change). The system creates a new open shift session and auto-generates today's draft counter sheet carrying yesterday's closing stock.</p>
+        </div>
+      </div>
+      <div class="process-step">
+        <div class="process-time">10:00 AM - 10:00 PM</div>
+        <div class="process-content">
+          <h4>Continuous High-Speed Counter Billing & Inward</h4>
+          <p>
+            • <b>Barcode POS Checkout:</b> Scan bottle barcode, choose payment (Cash, UPI, Card, Khata). System prints tax receipt and deducts stock in real time.<br>
+            • <b>Invoice Receiving:</b> Upload excise ICDC PDF. System checks bottle costs against historic records, increments inventory, and updates counter inward.<br>
+            • <b>Returns / Exchanges:</b> Cashier records sealed bottle returns. System restructures stock, calculates net sales, and returns customer funds.
+          </p>
+        </div>
+      </div>
+      <div class="process-step evening">
+        <div class="process-time">10:30 PM</div>
+        <div class="process-content">
+          <h4>Cashier Shift Closing & Cash Count</h4>
+          <p>Cashier terminates their shift session. They input physical cash denominations counted in drawer. The system compares expected cash against counted cash and records any surplus/shortage.</p>
+        </div>
+      </div>
+      <div class="process-step night">
+        <div class="process-time">11:00 PM</div>
+        <div class="process-content">
+          <h4>Physical Counter Sheet Closing & Daily Posting</h4>
+          <p>Store manager inspects physical bottles remaining on shelves and enters closing counts. System checks <code>Sold vs POS Billed</code> variance. Manager posts the sheet, locking in unbilled counter sales into the general ledger.</p>
+        </div>
+      </div>
+      <div class="process-step night">
+        <div class="process-time">11:15 PM</div>
+        <div class="process-content">
+          <h4>Manager Daily Closing Sign-Off</h4>
+          <p>Manager reconciles total day net sales across all registers and counter sheets. Finalizes the day, locking the business date to prevent unauthorized retroactive edits.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3: ROLES, PERMISSIONS & ACCOUNTING FLOW -->
+  <div class="page">
+    <h1><span class="section-num">3</span> Roles, Security Matrix & Accounting</h1>
+    <p>
+      Liquor retail requires strict operational separation: cashiers must never see bottle cost margins or delete bills, while syndicate owners require oversight over all outlet financials.
+    </p>
+
+    <h2>Role Hierarchy & Permissions Matrix</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Capability / Area</th>
+          <th>Steward</th>
+          <th>Cashier</th>
+          <th>Manager</th>
+          <th>Office Admin</th>
+          <th>Syndicate Owner</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>Rank</b></td>
+          <td><span class="badge-role role-steward">10</span></td>
+          <td><span class="badge-role role-cashier">20</span></td>
+          <td><span class="badge-role role-mgr">30</span></td>
+          <td><span class="badge-role role-office">35</span></td>
+          <td><span class="badge-role role-owner">40</span></td>
+        </tr>
+        <tr>
+          <td>POS Billing & Scanning</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+        </tr>
+        <tr>
+          <td>Bar KOT & Table Orders</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+        </tr>
+        <tr>
+          <td>Void Bill (with audit reason)</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+        </tr>
+        <tr>
+          <td>View Cost Price & Margins (<code>cost.view</code>)</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+        </tr>
+        <tr>
+          <td>Approve / Reverse Invoices</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+        </tr>
+        <tr>
+          <td>Counter Sheet Post / Adjustment</td>
+          <td class="badge-cross">—</td>
+          <td>Count only</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+        </tr>
+        <tr>
+          <td>EOD Daily Closing Sign-Off</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+        </tr>
+        <tr>
+          <td>Bank Reconciliation & Tally Export</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+          <td class="badge-check">✓</td>
+        </tr>
+        <tr>
+          <td>Create Outlets & Cross-Store View</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-cross">—</td>
+          <td class="badge-check">✓</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Automated Double-Entry Accounting Architecture</h2>
+    <p>
+      You do not need an accountant on the sales floor. Every operational transaction automatically posts a balanced double-entry journal voucher into your chart of accounts:
+    </p>
+
+    <div class="grid-2">
+      <div class="feature-card">
+        <h4>1. Cash POS Sale</h4>
+        <p><code>Dr CASH</code> (Total gross collected)<br>
+           <code>Cr SALES</code> (Net taxable revenue)<br>
+           <code>Cr OUTPUT_GST</code> (Back-calculated tax)</p>
+      </div>
+      <div class="feature-card">
+        <h4>2. Customer Sales Return</h4>
+        <p><code>Dr SALES</code> (Reversed sales share)<br>
+           <code>Dr OUTPUT_GST</code> (Reversed tax share)<br>
+           <code>Cr UPI / CASH / CARD</code> (Refunded amount)</p>
+      </div>
+      <div class="feature-card">
+        <h4>3. Customer Khata Credit Sale</h4>
+        <p><code>Dr SUNDRY_DEBTORS</code> (Customer ledger)<br>
+           <code>Cr SALES</code> (Net revenue)<br>
+           <code>Cr OUTPUT_GST</code> (Tax portion)</p>
+      </div>
+      <div class="feature-card">
+        <h4>4. Supplier Inward Invoice</h4>
+        <p><code>Dr PURCHASES</code> (Full invoice cost)<br>
+           <code>Cr SUNDRY_CREDITORS</code> (Supplier ledger)<br>
+           <i>*No input tax credit as liquor has 0% ITC.</i></p>
+      </div>
+    </div>
+
+    <h2>Bank Reconciliation & Tally XML Export</h2>
+    <p>
+      At any time, export complete voucher history to <b>TallyPrime / Tally.ERP 9</b> in standard XML format. Upload bank statements in CSV/Excel to reconcile card payouts, UPI settlements, and bank fee deductions against your books without manual bookkeeping.
+    </p>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">Ready to Experience the Platform?</div>
+      <p style="margin-bottom: 0;">
+        Access your live portal at <b>http://localhost:5173</b> or run <code>npm run dev:local</code> for a zero-setup local deployment with pre-loaded demo stores, products, and cashier terminals.
+      </p>
+    </div>
+  </div>
+
+</body>
+</html>
