@@ -102,3 +102,44 @@ describe('reconcileDailyClosing', () => {
     expect(result.isBalanced).toBe(true);
   });
 });
+
+describe('cash that moves without a bill', () => {
+  const paid = [{ id: 'b1', total: '1000.00', taxAmount: '0.00', paymentMode: 'CASH', status: 'PAID' as const }];
+  it('expected drawer = opening + cash sales + cash repayments - cash expenses - withdrawals', () => {
+    const r = reconcileDailyClosing(paid, { openingCash: '500.00', cashWithdrawals: '100.00', cashRepayments: '250.00', cashExpenses: '75.50' }, '1574.50');
+    expect(r.expectedCashInDrawer).toBe('1574.50');
+    expect(r.cashRepayments).toBe('250.00');
+    expect(r.cashExpenses).toBe('75.50');
+    expect(r.isBalanced).toBe(true);
+  });
+  it('without them the figure is unchanged', () => {
+    expect(reconcileDailyClosing(paid, { openingCash: '500.00' }, '1500.00').expectedCashInDrawer).toBe('1500.00');
+  });
+});
+
+describe('sales returns deduction in closing', () => {
+  it('deducts sales returns per payment channel and from total gross sales', () => {
+    // Bills: CASH 1000, UPI 1500, CARD 2500 -> Gross billed = 5000.00
+    const bills = [
+      { id: 'b1', total: '1000.00', taxAmount: '150.00', paymentMode: 'CASH', status: 'PAID' as const },
+      { id: 'b2', total: '1500.00', taxAmount: '225.00', paymentMode: 'UPI', status: 'PAID' as const },
+      { id: 'b3', total: '2500.00', taxAmount: '375.00', paymentMode: 'CARD', status: 'PAID' as const },
+    ];
+    // Returns: UPI 1000 returned, CASH 200 returned
+    const returns = [
+      { refundMode: 'UPI', refundAmount: '1000.00', taxAmount: '150.00' },
+      { refundMode: 'CASH', refundAmount: '200.00', taxAmount: '30.00' },
+    ];
+    // Opening 2000, actual cash = 2000 + 800 (net cash sales) = 2800.00
+    const r = reconcileDailyClosing(bills, { openingCash: '2000.00' }, '2800.00', undefined, returns);
+    expect(r.grossBilled).toBe('5000.00');
+    expect(r.totalRefunds).toBe('1200.00');
+    expect(r.grossSales).toBe('3800.00'); // 5000 - 1200
+    expect(r.upiSales).toBe('500.00');   // 1500 - 1000
+    expect(r.cashSales).toBe('800.00');  // 1000 - 200
+    expect(r.cardSales).toBe('2500.00');
+    expect(r.totalTax).toBe('570.00');   // 750 - 180
+    expect(r.expectedCashInDrawer).toBe('2800.00');
+    expect(r.isBalanced).toBe(true);
+  });
+});

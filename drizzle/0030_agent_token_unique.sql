@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_branch_agent_token" ON "branches" USING btree ("agent_token_hash");

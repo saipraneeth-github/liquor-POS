@@ -5,7 +5,7 @@ import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.
 import { sendError } from '../../lib/errors.js';
 import { businessDateOf } from '../../lib/business-day.js';
 import { syncDraftSheetsFor } from '../counters/counter.service.js';
-import { allowedSaleTypeIds, requirePermission } from '../permissions/permission.service.js';
+import { allowedSaleTypeIds, requirePermission, stripCost, userCan } from '../permissions/permission.service.js';
 import { rowTypeId } from './saletype.engine.js';
 import {
   CreateSaleTypeSchema, SetAllocationSchema, SetPricesSchema, TransferSchema, UpdateSaleTypeSchema,
@@ -55,8 +55,12 @@ export async function saleTypeRoutes(fastify: FastifyInstance) {
   fastify.get('/sale-types/:branchId/prices', { preHandler: requireRole('cashier') }, async (request, reply) => {
     const params = BranchParams.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid branchId' });
-    if (!(await assertBranchAccess(getUser(request), params.data.branchId, reply))) return;
-    try { return await getPriceMatrix(params.data.branchId); } catch (err) { return sendError(reply, err); }
+    const user = getUser(request);
+    if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
+    try {
+      const res = await getPriceMatrix(params.data.branchId);
+      return (await userCan(user, 'cost.view')) ? res : stripCost(res);
+    } catch (err) { return sendError(reply, err); }
   });
 
   // PUT /sale-types/:branchId/prices — set / clear prices for the non-default types (manager+)

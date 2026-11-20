@@ -31,7 +31,7 @@ describe('supplier invoice approval', () => {
   const draft = (headers: Record<string, string>, body: Record<string, unknown>) => inject('POST', `/invoices/${ctx.branchId}`, headers, body);
   const approve = (id: string) => inject('POST', `/invoices/detail/${id}/approve`, ctx.auth('manager'));
 
-  it('adds stock atomically, audits, records MRP change in price_audit and emits the event', async () => {
+  it('adds stock atomically, audits, never touches the selling price and emits the event', async () => {
     const { onDomainEvent } = await import('../../src/lib/domain-events.js');
     const events: number[] = [];
     const off = onDomainEvent('supplierInvoice.approved', ({ items }) => { events.push(items.length); });
@@ -57,10 +57,11 @@ describe('supplier invoice approval', () => {
     const audits = await ctx.db.select().from(ctx.schema.stockAudit).where(eq(ctx.schema.stockAudit.referenceId, id));
     expect(audits.map((a) => a.reason)).toEqual(['PURCHASE', 'PURCHASE']);
 
-    const prices = await ctx.db.select().from(ctx.schema.priceAudit).where(eq(ctx.schema.priceAudit.productId, whisky.id));
-    expect(prices).toHaveLength(1);
-    expect(prices[0]).toMatchObject({ oldMrp: '1000.00', newMrp: '1050.00' });
+    // An invoice carries what the business PAID. Even a line that names an MRP (it is ignored) cannot change the selling price.
+    expect(await ctx.db.select().from(ctx.schema.priceAudit).where(eq(ctx.schema.priceAudit.productId, whisky.id))).toHaveLength(0);
     expect(await ctx.db.select().from(ctx.schema.priceAudit).where(eq(ctx.schema.priceAudit.productId, beer.id))).toHaveLength(0);
+    const [w] = await ctx.db.select().from(ctx.schema.products).where(eq(ctx.schema.products.id, whisky.id));
+    expect(w.mrp).toBe('1000.00');
 
     const items = await ctx.db.select().from(ctx.schema.supplierInvoiceItems).where(eq(ctx.schema.supplierInvoiceItems.invoiceId, id));
     expect(items.find((i) => i.quantity === 24)!.lineCostTotal).toBe('3602.40');
@@ -233,11 +234,11 @@ describe('daily closing', () => {
       branchId: ctx.otherBranchId, name: 'Khata', phone: '9111111111', creditAllowed: true, creditLimit: '5000.00',
     }).returning();
     const om = otherManager();
-    const beer = ctx.products[1].id;
+    const beer = ctx.otherProducts[1].id;   // the other business's beer (its own product, stocked in the other branch)
+    await inject('PATCH', `/products/${beer}/mrp`, otherManager(), { mrp: '210' });
     const bill = (paymentMode: string, extra: Record<string, unknown> = {}) => inject('POST', '/bills', om, {
       branchId: ctx.otherBranchId, paymentMode, items: [{ productId: beer, quantity: 1 }], ...extra,
     });
-    // beer MRP in this file was raised to 210 earlier
     expect((await bill('CASH')).statusCode).toBe(201);
     expect((await bill('UPI')).statusCode).toBe(201);
     expect((await bill('CREDIT', { customerId: c.id })).statusCode).toBe(201);

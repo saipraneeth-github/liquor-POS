@@ -7,16 +7,17 @@ import { Decimal } from 'decimal.js';
 import { and, desc, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import {
-  branches, categories, invoiceAttachments, journalLines, journalVouchers, masterProducts, products, schemePurchases, supplierInvoiceItems, supplierInvoices,
+  branches, brandCodeMappings, categories, invoiceAttachments, journalLines, journalVouchers, masterProducts, products, schemePurchases, supplierInvoiceItems, supplierInvoices,
 } from '../../db/schema.js';
 import type { Tx } from '../../lib/domain-events.js';
+import { branchTenantId, mapMasterProducts } from '../catalog/catalog.service.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import { cleanProductName } from '../../lib/product-name.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import { extractInvoice } from './extraction/index.js';
 import { MAX_MONEY } from './extraction/numbers.js';
 import { buildDraftLines, DEFAULT_TAX_RATE, type CatalogEntry, type DraftLine } from './draft.engine.js';
-import { matchLine, extractVolumeMl } from './match.engine.js';
+import { matchLine, extractVolumeMl, isBrandCodeEqual, normalizeBrandCode } from './match.engine.js';
 import { reconcileTotalsBlock } from './totals.engine.js';
 import {
   PLACEHOLDER_PREFIX, isPlaceholderNumber, validateInvoice, validateLine,
@@ -66,13 +67,13 @@ export async function loadCatalog(
   if (branchId) {
     const [branch] = await exec.select({ syndicateId: branches.syndicateId }).from(branches).where(eq(branches.id, branchId)).limit(1);
     syndicateId = branch?.syndicateId ?? null;
-    scope = syndicateId ? or(isNull(products.syndicateId), eq(products.syndicateId, syndicateId)) : isNull(products.syndicateId);
+    scope = syndicateId ? eq(products.syndicateId, syndicateId) : sql`false`;   // a branch without a business has no catalog
   }
   const rows = await exec
     .select({
       id: products.id, name: products.name, brand: products.brand, barcode: products.barcode, sku: products.sku,
       exciseCode: products.exciseCode,
-      volumeMl: products.volumeMl, packQuantity: products.packQuantity, mrp: products.mrp, costPrice: products.costPrice, isActive: products.isActive,
+      volumeMl: products.volumeMl, packQuantity: products.packQuantity, costPrice: products.costPrice, isActive: products.isActive,
       taxRate: categories.taxRate,
     })
     .from(products)
@@ -108,13 +109,26 @@ export async function loadCatalog(
       }
     }
 
-    return rows.map((r) => ({
+    return withTrainedCodes(exec, syndicateId, rows.map((r) => ({
       ...r,
       costPrice: lastCosts.get(r.id) ?? null,
-    }));
+    })));
   }
 
-  return rows;
+  return withTrainedCodes(exec, syndicateId, rows);
+}
+
+/** Attaches the brand codes the business has trained (brand_code_mappings) to the products they point at. */
+async function withTrainedCodes<T extends CatalogEntry>(exec: Tx | typeof db, syndicateId: string | null, rows: T[]): Promise<T[]> {
+  if (!syndicateId || rows.length === 0) return rows;
+  const maps = await exec
+    .select({ productId: brandCodeMappings.productId, brandCode: brandCodeMappings.brandCode })
+    .from(brandCodeMappings)
+    .where(eq(brandCodeMappings.syndicateId, syndicateId));
+  if (maps.length === 0) return rows;
+  const byProduct = new Map<string, string[]>();
+  for (const m of maps) byProduct.set(m.productId, [...(byProduct.get(m.productId) ?? []), m.brandCode]);
+  return rows.map((r) => (byProduct.has(r.id) ? { ...r, aliasCodes: byProduct.get(r.id) } : r));
 }
 
 /**
@@ -139,107 +153,42 @@ export async function findMasterProduct(exciseCode: string, volumeMl: number, st
 }
 
 /**
- * Given a list of unmatched draft lines (for a just-uploaded ICDC invoice), look each one up
- * in master_products by excise code + volume. For every hit, create (or find) a tenant store
- * product linked to the master entry and return an updated catalog that includes those new products
- * so the caller can re-match the lines.
+ * Given a list of unmatched draft lines (for a just-uploaded ICDC invoice), look each one up in the master catalog of the
+ * branch's STATE by excise code + volume and MAP the hits to the business (no price: the business types it later).
+ * Returns the business's catalog entries for those products so the caller can re-match the lines. Safe to run twice or
+ * concurrently: the business maps a master product once (unique index).
  */
 export async function provisionMasterProducts(
   unmatchedLines: Array<{ sku: string | null; volumeMl: number | null }>,
   branchId: string,
   syndicateId: string,
 ): Promise<CatalogEntry[]> {
-  const provisioned: CatalogEntry[] = [];
-
-  // Identify unique (exciseCode, volumeMl) pairs from unmatched lines
   const pairs = unmatchedLines
     .filter((l) => l.sku && l.volumeMl)
     .map((l) => ({ exciseCode: l.sku!.trim(), volumeMl: l.volumeMl! }));
+  if (pairs.length === 0) return [];
 
-  if (pairs.length === 0) return provisioned;
-
-  // Fetch all matching master products in one query
-  const matchedMasters = await db
-    .select()
+  const { stateCode } = await branchTenantId(db, branchId);
+  const candidates = await db
+    .select({ id: masterProducts.id, exciseCode: masterProducts.exciseCode, volumeMl: masterProducts.volumeMl })
     .from(masterProducts)
-    .where(and(eq(masterProducts.state, 'TS'), eq(masterProducts.isActive, true)));
+    // Compared without case and leading zeros, like the matcher does ("0123" = "123")
+    .where(and(eq(masterProducts.state, stateCode), eq(masterProducts.isActive, true), inArray(sql<string>`coalesce(nullif(ltrim(lower(trim(${masterProducts.exciseCode})), '0'), ''), '0')`, [...new Set(pairs.map((p) => normalizeBrandCode(p.exciseCode)))])));
+  const wanted = candidates.filter((m) => pairs.some((p) => isBrandCodeEqual(p.exciseCode, m.exciseCode) && p.volumeMl === m.volumeMl));
+  if (wanted.length === 0) return [];
 
-  // Filter to only the pairs we actually need
-  const relevant = matchedMasters.filter((m) =>
-    pairs.some((p) => p.exciseCode === m.exciseCode && p.volumeMl === m.volumeMl),
-  );
-
-  if (relevant.length === 0) return provisioned;
-
-  // Find or create tenant product for each master entry
-  for (const master of relevant) {
-    // Check if tenant already has this product (by master_product_id or by sku)
-    const [existing] = await db
-      .select({
-        id: products.id, name: products.name, brand: products.brand,
-        barcode: products.barcode, sku: products.sku, exciseCode: products.exciseCode,
-        volumeMl: products.volumeMl, packQuantity: products.packQuantity,
-        mrp: products.mrp, costPrice: products.costPrice, isActive: products.isActive,
-        taxRate: categories.taxRate,
-      })
-      .from(products)
-      .leftJoin(categories, eq(products.categoryId, categories.id))
-      .where(
-        and(
-          eq(products.syndicateId, syndicateId),
-          eq(products.sku, master.sku),
-          eq(products.isActive, true),
-        ),
-      )
-      .limit(1);
-
-    if (existing) {
-      provisioned.push(existing);
-      continue;
-    }
-
-    // Auto-provision: find or create category, then create tenant product linked to master
-    let [cat] = await db.select({ id: categories.id, taxRate: categories.taxRate })
-      .from(categories).where(eq(categories.name, master.categoryName)).limit(1);
-    if (!cat) {
-      [cat] = await db.insert(categories).values({ name: master.categoryName, taxRate: '18.00' }).returning();
-    }
-
-    try {
-      const [created] = await db.insert(products).values({
-        categoryId: cat.id,
-        masterProductId: master.id,
-        name: cleanProductName(master.name),
-        brand: master.brand,
-        volumeMl: master.volumeMl,
-        packQuantity: master.packQuantity,
-        exciseCode: master.exciseCode,
-        sku: master.sku,
-        mrp: '0.00',
-        costPrice: undefined,
-        syndicateId,
-      }).returning();
-
-      provisioned.push({
-        id: created.id,
-        name: created.name,
-        brand: created.brand,
-        barcode: created.barcode,
-        sku: created.sku,
-        exciseCode: created.exciseCode,
-        volumeMl: created.volumeMl,
-        packQuantity: created.packQuantity,
-        mrp: created.mrp,
-        costPrice: null,
-        isActive: true,
-        taxRate: cat.taxRate,
-      });
-    } catch {
-      // Conflict (race condition): another request provisioned the same product; skip
-    }
-  }
-
-  return provisioned;
+  const mapped = await mapMasterProducts(db, syndicateId, wanted.map((m) => m.id));
+  if (mapped.productIds.length === 0) return [];
+  const rows = await db
+    .select({
+      id: products.id, name: products.name, brand: products.brand, barcode: products.barcode, sku: products.sku,
+      exciseCode: products.exciseCode, volumeMl: products.volumeMl, packQuantity: products.packQuantity,
+      isActive: products.isActive, taxRate: categories.taxRate,
+    })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(and(inArray(products.id, mapped.productIds), eq(products.isActive, true)));
+  return rows.map((r) => ({ ...r, costPrice: null }));
 }
 
 export async function findLiveDuplicate(
@@ -290,7 +239,6 @@ export function itemValues(invoiceId: string, lines: DraftLine[]) {
     quantity: l.quantity,
     caseRate: l.caseRate ?? null,
     costPrice: l.costPrice,
-    mrp: l.mrp,
     taxRate: l.taxRate,
     lineCostTotal: l.lineCostTotal,
     unitDerivedTotal: l.unitDerivedTotal ?? null,
@@ -412,7 +360,8 @@ export async function createDraftFromUpload(input: UploadInput) {
   // For ICDC invoices: auto-provision tenant store products from master_products for any
   // unmatched lines that have a known excise code + volume. This is the primary mechanism
   // that makes invoice matching work for new tenants without any manual setup.
-  if (isIcdc && tenantSyndicateId) {
+  // Runs for every invoice layout, not just ICDC: any line with a brand code + size is looked up in the master catalog.
+  if (tenantSyndicateId) {
     const unmatchedLines = lines
       .filter((l) => l.matchStatus === 'UNMATCHED')
       .map((l) => ({ sku: l.sku, volumeMl: l.volumeMl }));
@@ -421,7 +370,8 @@ export async function createDraftFromUpload(input: UploadInput) {
       const newProducts = await provisionMasterProducts(unmatchedLines, input.branchId, tenantSyndicateId);
       if (newProducts.length > 0) {
         // Re-build draft lines with the enriched catalog so the provisioned products get matched
-        catalog = [...catalog, ...newProducts];
+        const known = new Set(catalog.map((c) => c.id));
+        catalog = [...catalog, ...newProducts.filter((p) => !known.has(p.id))];
         lines = buildDraftLines(extraction.table.lines, catalog);
       }
     }
@@ -500,8 +450,8 @@ export function linesFromInput(items: LineInput[], catalog: CatalogEntry[]): Dra
     const product = productId ? byId.get(productId) ?? null : null;
     const vol = item.volumeMl ?? product?.volumeMl ?? null;
     const v = validateLine({
-      quantity: item.quantity, costPrice: item.costPrice, mrp: item.mrp, extractedAmount: item.extractedAmount ?? null,
-      catalogMrp: product?.mrp ?? null, productId, matchStatus: status, flags: auto?.flags ?? [],
+      quantity: item.quantity, costPrice: item.costPrice, extractedAmount: item.extractedAmount ?? null,
+      productId, matchStatus: status, flags: auto?.flags ?? [],
       volumeMl: item.volumeMl ?? null, catalogVolumeMl: product ? (product.volumeMl ?? extractVolumeMl(product.name)) : null,
       packQuantity: item.packQuantity ?? null, catalogPackQuantity: product?.packQuantity ?? null,
     });
@@ -527,7 +477,6 @@ export function linesFromInput(items: LineInput[], catalog: CatalogEntry[]): Dra
       caseRate: item.caseRate ?? null,
       costPrice: costPriceStr,
       displayCostPrice: new Decimal(costPriceStr).toFixed(2),
-      mrp: new Decimal(item.mrp).toFixed(2),
       taxRate: new Decimal(item.taxRate ?? product?.taxRate ?? DEFAULT_TAX_RATE).toFixed(2),
       extractedAmount: item.extractedAmount ? new Decimal(item.extractedAmount).toFixed(2) : null,
       lineCostTotal: v.lineCostTotal,

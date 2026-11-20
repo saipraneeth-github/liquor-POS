@@ -263,6 +263,37 @@ export function supplierChallanPaymentLines(challanAmount: string): PostingLine[
   ]);
 }
 
+/**
+ * A customer return: the sale voucher reversed for the returned share.
+ *   Dr SALES (gross - tax)   Dr OUTPUT_GST (tax)
+ *       Cr DISCOUNT_ALLOWED (the share of the bill discount)   Cr CASH | BANK | SUNDRY_DEBTORS (what is given back)
+ */
+export function salesReturnLines(input: { gross: string; tax: string; discount: string; refund: string; refundLedger: MoneyLedgerCode }): PostingLine[] {
+  const gross = new Decimal(input.gross);
+  const tax = new Decimal(input.tax);
+  const discount = new Decimal(input.discount);
+  return buildVoucher<string>([
+    dr('SALES', gross.minus(tax)),
+    dr('OUTPUT_GST', tax),
+    cr('DISCOUNT_ALLOWED', discount),
+    cr(input.refundLedger, input.refund),
+  ]);
+}
+
+/** Bottles sent back to a supplier at cost: Dr SUNDRY_CREDITORS, Cr PURCHASES. */
+export function purchaseReturnLines(amount: string): PostingLine[] {
+  const amt = new Decimal(amount).toDecimalPlaces(2);
+  if (amt.lte(0)) throw new Error('Return amount must be positive');
+  return buildVoucher<string>([dr('SUNDRY_CREDITORS', amt), cr('PURCHASES', amt)]);
+}
+
+/** Payment to a supplier: Dr SUNDRY_CREDITORS, Cr CASH (cash) or BANK (UPI / card / bank transfer / cheque). */
+export function supplierPaymentLines(input: { amount: string; paymentMode: string }): PostingLine[] {
+  const amt = new Decimal(input.amount).toDecimalPlaces(2);
+  if (amt.lte(0)) throw new Error('Payment amount must be positive');
+  return buildVoucher<string>([dr('SUNDRY_CREDITORS', amt), cr(paymentLedgerCode(input.paymentMode, false), amt)]);
+}
+
 /** Credit (khata) repayment: Dr CASH | BANK, Cr SUNDRY_DEBTORS. */
 export function creditRepaymentLines(input: { amount: string; paymentMode: string | null }): PostingLine[] {
   return buildVoucher<string>([

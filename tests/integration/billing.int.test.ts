@@ -129,7 +129,7 @@ describe('void', () => {
 describe('concurrent bill creation', () => {
   it('never oversells and issues unique bill numbers', async () => {
     const [p] = await ctx.db.insert(ctx.schema.products).values({
-      name: 'Race Rum', brand: 'RR', mrp: '500.00', categoryId: ctx.products[0].categoryId,
+      name: 'Race Rum', brand: 'RR', mrp: '500.00', categoryId: ctx.products[0].categoryId, syndicateId: ctx.syndicateId,
     }).returning();
     await ctx.db.insert(ctx.schema.stock).values({ branchId: ctx.branchId, productId: p.id, quantity: 100 });
 

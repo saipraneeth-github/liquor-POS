@@ -16,6 +16,9 @@ import type {
   customers,
   creditTransactions,
   expenses,
+  supplierPayments,
+  salesReturns,
+  purchaseReturns,
 } from '../db/schema.js';
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -30,6 +33,11 @@ export interface DomainEventMap {
   'supplierInvoice.reversed': { invoice: typeof supplierInvoices.$inferSelect; items: (typeof supplierInvoiceItems.$inferSelect)[]; reversedById?: string | null };
   'credit.repayment':        { customer: typeof customers.$inferSelect; txn: typeof creditTransactions.$inferSelect };
   'expense.recorded':         { expense: typeof expenses.$inferSelect };
+  'expense.voided':           { expense: typeof expenses.$inferSelect };
+  'supplierPayment.recorded': { payment: typeof supplierPayments.$inferSelect };
+  'salesReturn.recorded':     { ret: typeof salesReturns.$inferSelect; bill: typeof bills.$inferSelect; totals: { gross: string; tax: string; discount: string; refund: string } };
+  'purchaseReturn.recorded':  { ret: typeof purchaseReturns.$inferSelect };
+  'supplierPayment.voided':   { payment: typeof supplierPayments.$inferSelect };
 }
 
 export type DomainEventName = keyof DomainEventMap;

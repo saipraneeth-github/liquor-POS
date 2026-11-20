@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export const inr = (v: string | number) =>
@@ -16,14 +17,16 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
 }
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
-  return (
+  // Rendered on <body>: a `.lc` page (container-type) would otherwise become the containing block of this fixed
+  // overlay, so the dialog opened somewhere down the page, out of sight.
+  return createPortal(
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center p-4 z-50 overflow-y-auto [&>*]:my-auto"
       role="dialog"
       aria-modal="true"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} p-6 border border-gray-200 dark:border-gray-700`}>
+      <div className={`bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} p-6 border border-gray-200 dark:border-gray-700`}>
         <div className="flex items-start justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
           <button
@@ -37,7 +40,8 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

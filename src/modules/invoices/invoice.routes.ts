@@ -3,6 +3,7 @@ import fastifyMultipart from '@fastify/multipart';
 import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
+import { QueueFullError, createLimiter } from '../../lib/limiter.js';
 import { requirePermission } from '../permissions/permission.service.js';
 import { db } from '../../db/client.js';
 import { isPlaceholderNumber } from './validate.engine.js';
@@ -23,7 +24,11 @@ const ALLOWED_DOWNLOAD_TYPES = new Set([
 const BranchParams = z.object({ branchId: z.string().uuid() });
 const IdParams = z.object({ id: z.string().uuid() });
 
+// At most N documents are parsed / OCR'd at once in this process; the rest queue (INVOICE_EXTRACT_CONCURRENCY, default 2)
+const extractionSlot = createLimiter(Math.max(1, Number(process.env.INVOICE_EXTRACT_CONCURRENCY) || 2));
+
 function sendInvoiceError(reply: FastifyReply, err: unknown) {
+  if (err instanceof QueueFullError) return reply.code(503).header('Retry-After', '10').send({ error: err.message });
   if (err instanceof DuplicateInvoiceError) {
     return reply.code(409).send({ error: err.message, message: err.message, existingInvoiceId: err.existingInvoiceId, invoiceNumber: err.invoiceNumber });
   }
@@ -91,9 +96,9 @@ export async function invoiceRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Validation failed', details: parsed.error.flatten() });
 
     try {
-      const result = await createDraftFromUpload({
+      const result = await extractionSlot(() => createDraftFromUpload({
         branchId: params.data.branchId, user, buffer: file.buffer, filename: file.filename, fields: parsed.data,
-      });
+      }));
       return reply.code(201).send(result);
     } catch (err) {
       return sendInvoiceError(reply, err);

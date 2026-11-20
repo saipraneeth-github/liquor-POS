@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { authFetch } from '../api/client';
 import { inr } from '../components/ui';
 import { showToast } from '../lib/print';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
@@ -35,7 +36,7 @@ export function KhataPanel({ branchId, canSetLimit, total, customer, onSelect }:
     if (!branchId) return;
     setLoading(true);
     const search = q?.trim() ? `?search=${encodeURIComponent(q.trim())}&limit=25` : '?limit=25';
-    fetch(`/api/v1/customers/${branchId}${search}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+    authFetch(`/api/v1/customers/${branchId}${search}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
       .then((r) => (r.ok ? r.json() : { customers: [] }))
       .then((d) => setResults(d.customers || []))
       .catch(() => setResults([]))
@@ -58,7 +59,7 @@ export function KhataPanel({ branchId, canSetLimit, total, customer, onSelect }:
     try {
       const body: Record<string, unknown> = { name: name.trim(), phone: p };
       if (canSetLimit) { if (limit.trim()) body.creditLimit = limit.trim(); body.creditAllowed = allow; }
-      const res = await fetch(`/api/v1/customers/${branchId}`, {
+      const res = await authFetch(`/api/v1/customers/${branchId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
         body: JSON.stringify(body),

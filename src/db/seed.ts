@@ -1,10 +1,11 @@
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from './client.js';
 import {
   syndicates, branches, users, categories, products, masterProducts, productServings, stock, tables, terminals, customers,
 } from './schema.js';
 import { TELANGANA_ICDC_PRODUCTS } from './data/telangana-products.js';
+import { upsertMasterProducts } from '../modules/catalog/catalog.service.js';
 
 export const SEED_PASSWORD = 'Password@123';
 
@@ -95,22 +96,14 @@ export async function seedDatabase(): Promise<void> {
   // 4b. Seed master_products (Telangana TSBCL ICDC catalog) — platform-owned, not tenant-scoped.
   //     These are canonical reference products; every new Telangana tenant's invoice uploads
   //     auto-match against this table, with no duplication per tenant.
+  await upsertMasterProducts(TELANGANA_ICDC_PRODUCTS.map((tp) => ({
+    state: 'TS', categoryName: tp.category, name: tp.name, brand: tp.brand, volumeMl: tp.volumeMl,
+    packQuantity: tp.packQuantity, exciseCode: tp.exciseCode, sku: tp.sku,
+  })));   // the master carries no prices; platform categories are created if missing
   for (const tp of TELANGANA_ICDC_PRODUCTS) {
-    await db.insert(masterProducts).values({
-      state: 'TS',
-      categoryName: tp.category,
-      name: tp.name,
-      brand: tp.brand,
-      volumeMl: tp.volumeMl,
-      packQuantity: tp.packQuantity,
-      exciseCode: tp.exciseCode,
-      sku: tp.sku,
-      referenceMrp: tp.mrp,
-      referenceCost: tp.costPrice,
-    }).onConflictDoNothing(); // unique on (state, excise_code, volume_ml)
 
-    // Also seed a demo tenant store product for the Demo Liquor Syndicate so the
-    // existing demo flow continues to work (linked to the master entry).
+    // Also seed a demo tenant store product for the Demo Liquor Syndicate so the existing demo flow continues to work
+    // (linked to the master entry). The demo business "typed" these prices; a real new tenant starts with none.
     if (seedDemoStock) {
       // Find the master product we just inserted
       const [master] = await db.select({ id: masterProducts.id }).from(masterProducts)
@@ -140,13 +133,15 @@ export async function seedDatabase(): Promise<void> {
   console.log(` Products seeded (${productData.length} demo products + master catalog: ${TELANGANA_ICDC_PRODUCTS.length} TSBCL ICDC items, demo stock: ${seedDemoStock})`);
 
   // 4b. Demo menu: two dishes and one bar bottle sold by the peg
-  const demoCat = async (name: string, taxRate: string) => {
-    await db.insert(categories).values({ name, taxRate }).onConflictDoNothing();
-    const [c] = await db.select().from(categories).where(eq(categories.name, name)).limit(1);
+  // Kitchen categories belong to the demo business; liquor categories are the platform's (syndicate_id NULL)
+  const demoCat = async (name: string, taxRate: string, owner: string | null = null) => {
+    await db.insert(categories).values({ name, taxRate, syndicateId: owner }).onConflictDoNothing();
+    const [c] = await db.select().from(categories)
+      .where(and(eq(categories.name, name), owner ? eq(categories.syndicateId, owner) : isNull(categories.syndicateId))).limit(1);
     return c.id;
   };
-  const starters = await demoCat('Starters', '5.00');
-  const mains = await demoCat('Main Course', '5.00');
+  const starters = await demoCat('Starters', '5.00', syndicate.id);
+  const mains = await demoCat('Main Course', '5.00', syndicate.id);
   const whisky = await demoCat('Whisky', '18.00');
   const demoItems = [
     { name: 'Paneer Tikka', menuType: 'KITCHEN' as const, categoryId: starters, mrp: '240.00', gstRate: '5.00', trackStock: false, hsnCode: '9963', description: 'Smoky, 6 pieces', volumeMl: null },

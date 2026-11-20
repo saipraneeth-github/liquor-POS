@@ -1,3 +1,4 @@
+import { assertZipSafe } from '../../../lib/zip-guard.js';
 import Papa from 'papaparse';
 import ExcelJS from 'exceljs';
 
@@ -37,6 +38,7 @@ export function excelValueToString(v: ExcelJS.CellValue): string {
 
 /** XLSX → rows of the first non-empty worksheet. */
 export async function parseXlsxRows(buf: Buffer): Promise<{ rows: string[][]; sheetName: string | null }> {
+  assertZipSafe(buf);   // refuse a zip bomb before anything is inflated
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf as unknown as ArrayBuffer);
   for (const ws of wb.worksheets) {

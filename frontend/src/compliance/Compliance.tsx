@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { businessDate } from '../lib/business-day';
+import { StockRegister } from './StockRegister';
 
 interface Category {
   id: string;
@@ -339,6 +340,8 @@ export function Compliance() {
           </div>
         </details>
       </div>
+
+      {branchId && <StockRegister branchId={branchId} />}
     </section>
   );
 }

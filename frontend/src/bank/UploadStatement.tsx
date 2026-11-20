@@ -163,7 +163,7 @@ export function UploadStatement({ account, onImported, onCancel }: { account: Ac
             <Info label="Already imported" value={preview.duplicateLines > 0 ? `${preview.duplicateLines} line(s) will be skipped` : 'none'} />
           </div>
           {preview.alreadyImported && <div className="p-3 rounded-lg bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 text-sm">This exact file has already been imported for this account.</div>}
-          {preview.warnings.filter((w) => w !== 'COLUMNS_GUESSED_FROM_CONTENT').map((w) => <Warn key={w} code={w} />)}
+          {preview.warnings.filter((w) => w !== 'COLUMNS_GUESSED_FROM_CONTENT').map((w) => <Warn key={w} code={w} samples={preview.skippedSamples} />)}
 
           <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800">
             <table className="min-w-full text-xs" id="bankPreviewTable">
@@ -218,7 +218,7 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Warn({ code }: { code: string }) {
+function Warn({ code, samples }: { code: string; samples?: string[] }) {
   const [base] = code.split(':');
   const text: Record<string, string> = {
     OCR_USED: 'Some of this PDF was read with text recognition (OCR). Check the figures carefully, or use the CSV/Excel version.',
@@ -227,9 +227,19 @@ function Warn({ code }: { code: string }) {
     NO_NARRATION_COLUMN: 'No narration/description column was found, so matching will rely on amounts and dates only.',
     BOTH_DEBIT_AND_CREDIT_ON_A_LINE: 'Some lines show both a debit and a credit. Check the column mapping.',
     ROWS_WITHOUT_AMOUNT: `${code.split(':')[1] ?? 'Some'} row(s) have a date but no amount we could read, so they were NOT imported. Check the Debit / Credit columns below, or the first rows of the file.`,
-    PDF_LINES_SKIPPED: `Some lines in the PDF could not be understood and were skipped (${code.split(':')[1] ?? ''}). The balance check above shows whether anything is missing.`,
+    PDF_LINES_SKIPPED: `${code.split(':')[1] ?? 'Some'} line(s) of the PDF were left out because they are not transactions we could read. Most are page headers, footers, addresses and totals. A line is left out when it has no date at the start, or has a date but no amount at the end. If the statement check above says "verified", nothing is missing. If it says it does not add up, a real transaction may be among them: use the CSV/Excel version of the statement instead.`,
   };
-  return <div className="p-3 rounded-lg bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 text-sm border border-amber-200 dark:border-amber-800">{text[base] ?? base}</div>;
+  return (
+    <div className="p-3 rounded-lg bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 text-sm border border-amber-200 dark:border-amber-800">
+      {text[base] ?? base}
+      {base === 'PDF_LINES_SKIPPED' && samples && samples.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer font-semibold">See what was left out{samples.length < Number(code.split(':')[1] ?? 0) ? ` (first ${samples.length})` : ''}</summary>
+          <ul className="mt-1 font-mono text-xs space-y-0.5 list-disc pl-5 break-words">{samples.map((s, i) => <li key={i}>{s}</li>)}</ul>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function BalanceBanner({ check, accept, setAccept }: { check: Preview['balanceCheck']; accept: boolean; setAccept: (v: boolean) => void }) {

@@ -1,0 +1,1 @@
+ALTER TABLE "supplier_invoice_items" DROP COLUMN IF EXISTS "mrp";

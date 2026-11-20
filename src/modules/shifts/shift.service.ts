@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { and, desc, eq, gte, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import { db } from '../../db/client.js';
-import { bills, shiftSessions, terminals, users } from '../../db/schema.js';
+import { bills, salesReturns, shiftSessions, terminals, users } from '../../db/schema.js';
 import type { Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError } from '../../lib/errors.js';
 import { businessDayBounds, isIsoDate } from '../../lib/business-day.js';
+import { cashExpensesRecordedBetween, cashRepaymentsBetween } from '../../lib/cash-movements.js';
 import { canAccessBranch, roleRank, ROLE_RANK } from '../../middleware/auth.guard.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import {
@@ -50,10 +51,30 @@ export type ShiftRow = typeof shiftSessions.$inferSelect;
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 async function shiftBills(shiftId: string, tx: Tx | typeof db = db) {
-  return tx
-    .select({ status: bills.status, paymentMode: bills.paymentMode, total: bills.total })
+  const bList = await tx
+    .select({ status: bills.status, paymentMode: bills.paymentMode, total: bills.total, id: bills.id })
     .from(bills)
     .where(eq(bills.shiftSessionId, shiftId));
+
+  const billIds = bList.map((b) => b.id);
+  const rets = billIds.length > 0
+    ? await tx
+        .select({ mode: salesReturns.refundMode, amount: salesReturns.refundAmount })
+        .from(salesReturns)
+        .where(inArray(salesReturns.billId, billIds))
+    : [];
+
+  return { bills: bList, returns: rets };
+}
+
+/** What the shift's drawer also took in / paid out without a bill: cash khata repayments and cash expenses by this cashier. */
+async function shiftCashMovements(shift: { branchId: string; cashierId: string; openedAt: Date | null }, until: Date, tx: Tx | typeof db = db) {
+  const from = shift.openedAt ?? until;
+  const [cashRepayments, cashExpenses] = await Promise.all([
+    cashRepaymentsBetween(tx, shift.branchId, from, until, shift.cashierId),
+    cashExpensesRecordedBetween(tx, shift.branchId, from, until, shift.cashierId),
+  ]);
+  return { cashRepayments, cashExpenses };
 }
 
 export async function getShift(id: string): Promise<ShiftRow | undefined> {
@@ -113,7 +134,12 @@ export async function getCurrentShift(user: JwtPayload): Promise<(ShiftRow & { t
     .orderBy(desc(shiftSessions.openedAt))
     .limit(1);
   if (!row) return null;
-  const summary = computeShiftSummary(row.shift.openingFloat, await shiftBills(row.shift.id));
+  const now = new Date();
+  const [{ bills: shiftRows, returns: shiftReturns }, movements] = await Promise.all([
+    shiftBills(row.shift.id),
+    shiftCashMovements(row.shift, new Date(now.getTime() + 1000)),
+  ]);
+  const summary = computeShiftSummary(row.shift.openingFloat, shiftRows, movements, shiftReturns);
   return { ...row.shift, terminalName: row.terminalName, summary };
 }
 
@@ -137,12 +163,14 @@ export async function closeShift(user: JwtPayload, id: string, input: CloseShift
     if (!shift) throw new NotFoundError('Shift not found');
     if (shift.status !== 'OPEN') throw new ConflictError('Shift is already closed');
 
-    const summary = computeShiftSummary(shift.openingFloat, await shiftBills(id, tx));
+    const closedAt = new Date();
+    const { bills: shiftRows, returns: shiftReturns } = await shiftBills(id, tx);
+    const summary = computeShiftSummary(shift.openingFloat, shiftRows, await shiftCashMovements(shift, new Date(closedAt.getTime() + 1000), tx), shiftReturns);
     const discrepancy = computeDiscrepancy(countedCash, summary.expectedCash);
 
     const [closed] = await tx.update(shiftSessions).set({
       status:          'CLOSED',
-      closedAt:        new Date(),
+      closedAt,
       cashCollected:   summary.cashCollected,
       cardCollected:   summary.cardCollected,
       upiCollected:    summary.upiCollected,

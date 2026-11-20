@@ -55,6 +55,17 @@ function isDatabaseError(err: unknown): boolean {
  * AppError → its status; unique violation → 409; FK violation → 422; other database error → 500
  * (logged, message hidden); other Error → 422 (engines throw plain Errors for business rules).
  */
+/**
+ * Where unexpected (500) errors are reported. errors.ts stays free of database imports (pure unit tests import it), so the
+ * app registers the real capture function at start-up (see buildApp).
+ */
+type CaptureFn = (err: unknown, req?: { method?: string; url?: string; user?: unknown }, status?: number) => void;
+let captureHook: CaptureFn | null = null;
+export function setErrorCaptureHook(fn: CaptureFn | null): void { captureHook = fn; }
+function captureServerError(err: unknown, req?: { method?: string; url?: string; user?: unknown }): void {
+  try { captureHook?.(err, req); } catch { /* reporting must never turn one error into two */ }
+}
+
 export function sendError(reply: FastifyReply, err: unknown, fallback = 'Request failed') {
   if (err instanceof AppError) {
     return reply.code(err.statusCode).send({ error: err.message, ...(err.details !== undefined ? { details: err.details } : {}) });
@@ -66,13 +77,22 @@ export function sendError(reply: FastifyReply, err: unknown, fallback = 'Request
     return reply.code(422).send({ error: 'Referenced record does not exist' });
   }
   if (isDatabaseError(err)) {
+    captureServerError(err, reply.request);
     reply.log.error({ err }, 'Unhandled database error');
     return reply.code(500).send({ error: 'Internal server error' });
   }
 
   // Guard against leaking internal Node system errors (e.g. ENOENT with paths) or runtime errors (e.g. TypeError)
   if (err instanceof TypeError || err instanceof ReferenceError || err instanceof SyntaxError || (err && typeof err === 'object' && 'code' in err)) {
+    captureServerError(err, reply.request);
     reply.log.error({ err }, 'Unhandled system or runtime error');
+    return reply.code(500).send({ error: 'Internal server error' });
+  }
+
+  // Infrastructure failures that arrive as plain Errors (no code) must not be echoed back as a "business rule"
+  if (err instanceof Error && /ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|socket hang up|fetch failed|getaddrinfo|connection (terminated|refused)/i.test(err.message)) {
+    captureServerError(err, reply.request);
+    reply.log.error({ err }, 'Unhandled network error');
     return reply.code(500).send({ error: 'Internal server error' });
   }
 

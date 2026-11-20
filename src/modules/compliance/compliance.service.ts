@@ -8,6 +8,7 @@ import { db } from '../../db/client.js';
 import {
   exciseQuotas,
   breakageLogs,
+  branchProductCosts,
   stock,
   stockAudit,
   products,
@@ -197,7 +198,10 @@ export async function recordBreakage(branchId: string, input: BreakageInput, use
       );
     }
 
-    const costValue = new Decimal(product.costPrice ?? '0').times(input.quantity).toFixed(2);
+    // The breakage is valued at what THIS branch paid, else the business-wide last cost
+    const [branchCost] = await tx.select({ costPrice: branchProductCosts.costPrice }).from(branchProductCosts)
+      .where(and(eq(branchProductCosts.branchId, branchId), eq(branchProductCosts.productId, input.productId))).limit(1);
+    const costValue = new Decimal(branchCost?.costPrice ?? product.costPrice ?? '0').times(input.quantity).toFixed(2);
 
     const [log] = await tx.insert(breakageLogs).values({
       branchId,

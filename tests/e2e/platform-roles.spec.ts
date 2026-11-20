@@ -68,7 +68,7 @@ test('Roles: built-in roles are fixed; create one, give it to a cashier, see it 
   await page.click('#roleSave');
   const item = page.locator('[data-role]', { hasText: roleName });
   await expect(item).toBeVisible();
-  await expect(item).toContainText('1 of 12 permissions');
+  await expect(item).toContainText(/1 of \d+ permissions/);
   await expect(page.locator('#roleEditor')).toContainText('0 people have this role');
 
   // Edit: add a permission with the group switch, then revert it, then save it
@@ -78,7 +78,7 @@ test('Roles: built-in roles are fixed; create one, give it to a cashier, see it 
   await expect(page.locator('[data-permission="discount.unlimited"]')).not.toBeChecked();
   await page.check('[data-permission="discount.unlimited"]');
   await page.click('#roleSave');
-  await expect(item).toContainText('2 of 12 permissions');
+  await expect(item).toContainText(/2 of \d+ permissions/);
 
   // Duplicating the built-in manager starts from everything a manager has
   await page.click('[data-role="manager"]');

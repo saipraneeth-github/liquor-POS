@@ -52,13 +52,14 @@ describe('Super Admin: branches across every business', () => {
 
   it('lists every branch with its business, staff, standing and what is switched off; filters and pages', async () => {
     const t = await newTenantWithBranches();
+    const [loose] = await ctx.db.insert(ctx.schema.branches).values({ name: 'Loose shop', code: `LS${stamp}`.slice(0, 10).toUpperCase() }).returning();   // no business
     const all = await list('?limit=200');
     expect(all.total).toBeGreaterThanOrEqual(4);                                                 // Main, Other, North, South
     expect(all.features.map((f) => f.key)).toEqual(expect.arrayContaining(['bank', 'accounting', 'bar']));
     const north = all.branches.find((b) => b.id === t.b1.id)!;
     expect(north).toMatchObject({ tenantId: t.tenantId, standing: 'ACTIVE', staff: 1, featuresOff: 0, tenantBranches: 2 });
     expect(north.tenant).toContain('Branchy');
-    expect(all.branches.find((b) => b.id === ctx.otherBranchId)).toMatchObject({ tenant: null, standing: 'NONE' });   // a branch with no business
+    expect(all.branches.find((b) => b.id === loose.id)).toMatchObject({ tenant: null, standing: 'NONE' });   // a branch with no business
 
     expect((await list(`?tenantId=${t.tenantId}`)).branches.map((b) => b.id).sort()).toEqual([t.b1.id, t.b2.id].sort());
     expect((await list(`?search=${encodeURIComponent(`South ${stamp}`)}`)).branches.map((b) => b.id)).toEqual([t.b2.id]);

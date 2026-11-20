@@ -4,6 +4,10 @@ import {
   ForgotPasswordSchema, ResetPasswordSchema, requestPasswordReset, resetPasswordWithToken,
 } from '../../modules/auth/auth.service.js';
 import { requireRole, getUser } from '../../middleware/auth.guard.js';
+import { db } from '../../db/client.js';
+import { users } from '../../db/schema.js';
+import { eq } from 'drizzle-orm';
+import { logAudit } from '../../lib/audit.js';
 
 export async function authRoutes(fastify: FastifyInstance) {
   // Rate-limit login attempts in production; skip in dev/test to avoid
@@ -71,6 +75,22 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Validation failed', details: parsed.error.flatten() });
     const ok = await changeOwnPassword(getUser(request).sub, parsed.data.currentPassword, parsed.data.newPassword);
     if (!ok) return reply.code(400).send({ error: 'Current password is incorrect' });
-    return { success: true };
+    // Every other session of this account just ended; hand back a fresh token so THIS one carries on.
+    const { iat: _iat, exp: _exp, ...claims } = getUser(request);
+    return { success: true, token: fastify.jwt.sign(claims) };
+  });
+
+  // End a Super Admin support sign-in. The support token itself proves who is behind it (`impersonatedBy`), so the browser
+  // never has to keep the Super Admin's own token while support is looking at a tenant: a fresh one is issued here, only if
+  // that person is still an active platform owner.
+  fastify.post('/auth/support-return', { preHandler: requireRole('owner') }, async (request, reply) => {
+    const claims = getUser(request);
+    if (!claims.impersonatedBy) return reply.code(400).send({ error: 'This is not a support sign-in' });
+    const [sa] = await db.select().from(users).where(eq(users.id, claims.impersonatedBy)).limit(1);
+    if (!sa || !sa.isActive || sa.role !== 'owner' || sa.branchId || sa.syndicateId) {
+      return reply.code(403).send({ error: 'The Super Admin who started this support session can no longer sign back in. Sign in again.' });
+    }
+    await logAudit(sa.id, 'support.sign_out_as', { type: 'user', id: claims.sub });
+    return { token: fastify.jwt.sign({ sub: sa.id, email: sa.email, role: sa.role, branchId: null, syndicateId: null }) };
   });
 }

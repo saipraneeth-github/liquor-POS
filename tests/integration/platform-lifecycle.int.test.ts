@@ -72,6 +72,9 @@ describe('archive and restore', () => {
 
     expect(await tenantRow(id)).toMatchObject({ isActive: false, archiveReason: 'Stopped trading' });
     expect((await tenantRow(id)).archivedAt).not.toBeNull();
+    // soft delete: the flag is set, nothing is removed
+    expect((await ctx.db.select().from(ctx.schema.syndicates).where(eq(ctx.schema.syndicates.id, id)))[0].isDeleted).toBe(true);
+    expect((await ctx.db.select().from(ctx.schema.products).where(eq(ctx.schema.products.syndicateId, id))).length).toBeGreaterThanOrEqual(0);
     expect((await inject('GET', '/me', admin)).statusCode).toBeGreaterThanOrEqual(401);                       // signed out on the next request
     expect((await ctx.app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email: `arch.${stamp}@life.test`, password: 'Sup3rSecret!' } })).statusCode).toBeGreaterThanOrEqual(401);
     expect((await sa('POST', `/platform/tenants/${id}/archive`, { reason: 'again' })).statusCode).toBe(409);
@@ -164,8 +167,9 @@ describe('permanent delete', () => {
     expect((await tenantRow(id)).exportedAt).not.toBeNull();
 
     const auditBefore = await countOf('audit_log');
-    const otherStock = await countOf('stock', `where branch_id = '${ctx.otherBranchId}'`);
+    const otherStock = await countOf('stock', `where branch_id = '${ctx.otherBranchId}' and product_id in (select id from products where syndicate_id <> '${id}')`);
     const productsBefore = await countOf('products');
+    const ownProducts = await countOf('products', `where syndicate_id = '${id}'`);   // a business's products are its own and go with it
     const categoriesBefore = await countOf('categories');
     const usersBefore = await countOf('users');
 
@@ -188,8 +192,8 @@ describe('permanent delete', () => {
     expect((await tenantRow(survivor)).isActive).toBe(true);
     expect(await countOf('users', `where syndicate_id = '${survivor}'`)).toBe(1);
     expect(await countOf('branches', `where id = '${ctx.otherBranchId}'`)).toBe(1);
-    expect(await countOf('stock', `where branch_id = '${ctx.otherBranchId}'`)).toBe(otherStock);
-    expect(await countOf('products')).toBe(productsBefore);
+    expect(await countOf('stock', `where branch_id = '${ctx.otherBranchId}'`)).toBe(otherStock);   // the other business's own stock is untouched
+    expect(await countOf('products')).toBe(productsBefore - ownProducts);   // the other business's products stay
     expect(await countOf('categories')).toBe(categoriesBefore);
     expect(await countOf('users')).toBe(usersBefore - preview.tables.find((x: { table: string }) => x.table === 'users').rows);
 

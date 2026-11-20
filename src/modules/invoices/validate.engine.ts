@@ -16,10 +16,7 @@ export const PROVENANCE_FLAGS = ['CASES_CONVERTED'] as const;
 export interface LineToValidate {
   quantity: number | null;
   costPrice: string | null;
-  mrp: string | null;
   extractedAmount: string | null;
-  /** MRP of the matched catalog product (null when unmatched). */
-  catalogMrp: string | null;
   confidence?: number | null;
   productId?: string | null;
   matchStatus?: string | null;
@@ -50,18 +47,15 @@ export function validateLine(line: LineToValidate): ValidatedLine {
   const flags = new Set((line.flags ?? []).filter((f) => !VALIDATION_FLAGS.has(f)));
   const qty = line.quantity;
   const cost = line.costPrice !== null ? new Decimal(line.costPrice) : null;
-  const mrp = line.mrp !== null ? new Decimal(line.mrp) : null;
 
-  // Review/approval need positive qty, cost and MRP (free goods go through the direct approval endpoint)
-  if (qty === null || qty <= 0 || cost === null || cost.lte(0) || mrp === null || mrp.lte(0)) flags.add('INCOMPLETE');
+  // Review/approval need a positive quantity and cost. An invoice has no selling price: that is typed by the business (Pricing).
+  if (qty === null || qty <= 0 || cost === null || cost.lte(0)) flags.add('INCOMPLETE');
 
   const computed = qty !== null && cost !== null ? cost.mul(qty).toDecimalPlaces(2, Decimal.ROUND_HALF_UP) : null;
   if (computed !== null && line.extractedAmount !== null
       && computed.minus(line.extractedAmount).abs().greaterThan(AMOUNT_TOLERANCE)) {
     flags.add('AMOUNT_MISMATCH');
   }
-  if (cost !== null && mrp !== null && mrp.gt(0) && cost.gt(mrp)) flags.add('COST_ABOVE_MRP');
-  if (mrp !== null && mrp.gt(0) && line.catalogMrp !== null && !mrp.equals(line.catalogMrp)) flags.add('MRP_CHANGED');
   if (line.confidence !== null && line.confidence !== undefined && line.confidence < LOW_CONFIDENCE_THRESHOLD) flags.add('LOW_CONFIDENCE');
   // The product a line is attached to must be the same bottle size the invoice delivered (even a manual pick)
   if (line.productId && line.volumeMl && line.catalogVolumeMl && line.volumeMl !== line.catalogVolumeMl) flags.add('VOLUME_MISMATCH');

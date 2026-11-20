@@ -30,10 +30,11 @@ const pageMinRole: Record<string, string> = {
   '/platform/plans': 'owner',
   '/platform/users': 'owner',
   '/platform/audit': 'owner',
+  '/platform/errors': 'owner',
 };
 
 // Pages tied to one SaaS role: the Platform console is Super Admin only, Business Settings is Admin only
-const pageOnlyRole: Record<string, string> = { '/platform': 'super_admin', '/platform/roles': 'super_admin', '/platform/branches': 'super_admin', '/platform/plans': 'super_admin', '/platform/users': 'super_admin', '/platform/audit': 'super_admin' };
+const pageOnlyRole: Record<string, string> = { '/platform': 'super_admin', '/platform/roles': 'super_admin', '/platform/branches': 'super_admin', '/platform/plans': 'super_admin', '/platform/users': 'super_admin', '/platform/audit': 'super_admin', '/platform/errors': 'super_admin' };
 
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 

@@ -94,7 +94,7 @@ describe('syndicate owner isolation', () => {
   });
 
   it('closing history only shows accessible branches', async () => {
-    await post('/api/v1/closing', { branchId: ctx.otherBranchId, openingCash: '0', actualCashCounted: '0' }, ctx.authFor({
+    await post('/api/v1/closing', { branchId: ctx.otherBranchId, openingCash: '0', actualCashCounted: '0', businessDate: '2020-01-02' }   /* a past day: closing today would (correctly) stop the later bills */, ctx.authFor({
       sub: ctx.otherBranchManager.id, email: ctx.otherBranchManager.email, role: 'manager', branchId: ctx.otherBranchId,
     }));
     const res = await get('/api/v1/closing', ctx.auth('owner'));
@@ -152,7 +152,7 @@ describe('consolidated invoices', () => {
     expect((await post(`/api/v1/bills/${toVoid.id}/void`, { voidReason: 'Wrong item' }, ctx.auth('manager'))).statusCode).toBe(200);
     // other branch (not in the syndicate) — must be excluded
     const om = ctx.authFor({ sub: ctx.otherBranchManager.id, email: ctx.otherBranchManager.email, role: 'manager', branchId: ctx.otherBranchId });
-    expect((await bill(ctx.otherBranchId, whisky.id, 3, om)).statusCode).toBe(201);
+    expect((await bill(ctx.otherBranchId, ctx.otherProducts[0].id, 3, om)).statusCode).toBe(201);
 
     const today = businessDateOf();
     const url = `/api/v1/syndicates/${ctx.syndicateId}/consolidated-invoices`;

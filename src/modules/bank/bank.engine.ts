@@ -506,7 +506,10 @@ const DATE_AT_START = /^(\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}[-/. ]+[A-Za-z]{
 const MONEY_AT_END = /(?:^|\s)((?:₹|rs\.?\s?)?\(?-?\d[\d,]*\.\d{1,2}\)?(?:\s*(?:dr|cr)\b\.?)?)\s*$/i;
 const REFERENCE_TOKEN = /\b(?:[A-Z]{0,8}\d{6,}|\d{9,})\b/;
 
-export interface TextTable { rows: string[][]; mapping: ColumnMapping; headerRow: number; hints: BalanceHints; skippedLines: number }
+export interface TextTable { rows: string[][]; mapping: ColumnMapping; headerRow: number; hints: BalanceHints; skippedLines: number; skippedSamples: string[] }
+
+/** How many skipped lines are quoted back to the user so they can see what was left out. */
+const SKIPPED_SAMPLES = 8;
 
 /**
  * Text lines from a PDF/OCR → the same row shape a spreadsheet gives, so ONE normaliser handles everything.
@@ -516,6 +519,8 @@ export interface TextTable { rows: string[][]; mapping: ColumnMapping; headerRow
 export function textLinesToTable(textLines: string[]): TextTable {
   const rows: string[][] = [['Date', 'Value Date', 'Narration', 'Reference', 'Amount', 'Dr/Cr', 'Balance']];
   let skipped = 0;
+  const skippedSamples: string[] = [];
+  const skip = (line: string) => { skipped++; if (skippedSamples.length < SKIPPED_SAMPLES) skippedSamples.push(line.length > 140 ? `${line.slice(0, 137)}...` : line); };
   const hints: BalanceHints = { opening: null, closing: null };
 
   for (const raw of textLines) {
@@ -544,7 +549,7 @@ export function textLinesToTable(textLines: string[]): TextTable {
       if (rows.length > 1 && !MONEY_AT_END.test(line) && line.length < 160 && !NOISE_ROW_RE.test(line)) {
         last[2] = `${last[2]} ${line}`.trim();
       } else {
-        skipped++;
+        skip(line);
       }
       continue;
     }
@@ -563,7 +568,7 @@ export function textLinesToTable(textLines: string[]): TextTable {
       tokens.unshift(m[1].trim());
       rest = rest.slice(0, rest.length - m[0].length).replace(/\s+$/, '');
     }
-    if (tokens.length === 0) { skipped++; continue; }
+    if (tokens.length === 0) { skip(line); continue; }
 
     let amountRaw = '';
     let balanceRaw = '';
@@ -593,6 +598,7 @@ export function textLinesToTable(textLines: string[]): TextTable {
     headerRow: 0,
     hints,
     skippedLines: skipped,
+    skippedSamples,
   };
 }
 

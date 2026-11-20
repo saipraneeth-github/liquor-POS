@@ -1,3 +1,4 @@
+import { hostBlockReason } from '../../lib/print/address-policy.js';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { branches, syndicates } from '../../db/schema.js';
@@ -12,7 +13,8 @@ import { disabledFeaturesByBranch } from '../platform/branch-admin.service.js';
 
 const GSTIN = z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be exactly 15 alphanumeric characters (e.g. 36AABCU9603R1ZM)');
 
-const PRINTER_HOST = z.string().trim().max(253, 'Printer host cannot exceed 253 characters').regex(/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/, 'Printer host must be a hostname or IP address');
+const PRINTER_HOST = z.string().trim().max(253, 'Printer host cannot exceed 253 characters').regex(/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/, 'Printer host must be a hostname or IP address')
+  .refine((h) => hostBlockReason(h) === null, { message: 'Printer host cannot be a loopback (in production), link-local or unspecified address' });
 
 const BRANCH_NAME = z.string().trim().min(1, 'Branch name is required').max(200, 'Branch name cannot exceed 200 characters').refine((s) => !/[<>]/.test(s), 'Branch name must not contain < or >');
 

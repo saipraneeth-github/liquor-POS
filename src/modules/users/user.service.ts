@@ -66,6 +66,7 @@ const publicColumns = {
   branchId:    users.branchId,
   syndicateId: users.syndicateId,
   isActive:    users.isActive,
+  mustChangePassword: users.mustChangePassword,
   createdAt:   users.createdAt,
 };
 
@@ -391,7 +392,7 @@ export async function resetUserPassword(actor: JwtPayload, userId: string) {
   const target = await loadManageableTarget(actor, userId, true);
   if (target.id === actor.sub) throw new BusinessRuleError('Use "Change password" for your own account');
   const password = temporaryPassword();
-  await db.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, userId));
+  await db.update(users).set({ passwordHash: await hashPassword(password), passwordChangedAt: new Date(), mustChangePassword: true }).where(eq(users.id, userId));
   await logAudit(actor.sub, 'user.password_reset', { type: 'user', id: userId });
   return { email: target.email, temporaryPassword: password };
 }

@@ -42,7 +42,9 @@ export async function userRoutes(fastify: FastifyInstance) {
     try {
       // `access` tells the app to show the subscription screen instead of the pages when the tenant is locked
       const access = (request as unknown as { tenantAccess?: string }).tenantAccess ?? 'OK';
-      return { ...(await getMe(getUser(request).sub)), access };
+      const me = await getMe(getUser(request).sub);
+      // a support sign-in is not the person: it must not be asked to choose their new password
+      return { ...me, ...(getUser(request).impersonatedBy ? { mustChangePassword: false } : {}), access };
     } catch (err) {
       return sendError(reply, err, 'Profile lookup failed');
     }

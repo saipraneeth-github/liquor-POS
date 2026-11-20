@@ -3,7 +3,7 @@ import { getCategoryInfo } from '../components/category-icons';
 import { X, Trash2, AlertTriangle, FileText, Camera, PackageOpen, Loader2, Pencil, Check, Eye } from 'lucide-react';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { ProtectedButton, Modal } from '../components/ui';
-import { api } from '../api/client';
+import { api, authFetch } from '../api/client';
 import { useAuth, isManagerLike, userCan } from '../auth/AuthProvider';
 import { showToast } from '../lib/toast';
 import { businessDate } from '../lib/business-day';
@@ -71,7 +71,6 @@ interface InvoiceItem {
   packQuantity?: number | null;
   caseRate?: string | null;
   costPrice: string;
-  mrp: string;
   taxRate?: string;
   lineCostTotal: string;
   unitDerivedTotal?: string | null;
@@ -192,11 +191,12 @@ interface CreateProductModalState {
   brand: string;
   volumeMl: string;
   packQuantity: string;
-  mrp: string;
   costPrice: string;
   barcode: string;
   sku: string;
   exciseCode: string;
+  /** Set when the product is taken from the master catalog: the server then takes its identity from the master. */
+  masterProductId?: string;
 }
 
 /** What the bill's lines add up to. A bill typed in by hand carries a stale "0.00" until it is saved, so work it out from the lines. */
@@ -355,8 +355,9 @@ export function InvoiceUpload() {
 
   const loadBrandMappings = async () => {
     try {
-      const res = await api.get<{ mappings: BrandMappingRow[] }>('/inventory/brand-mappings');
-      setBrandMappings(res.mappings || []);
+      // The server returns the business's mappings as a list (scoped to the branch asked for)
+      const res = await api.get<BrandMappingRow[] | { mappings: BrandMappingRow[] }>('/inventory/brand-mappings' + (branchId ? `?branchId=${branchId}` : ''));
+      setBrandMappings(Array.isArray(res) ? res : res.mappings || []);
     } catch {
       // quiet fail
     }
@@ -421,8 +422,7 @@ export function InvoiceUpload() {
         categoryName: cName,
         branchId,
         packQuantity: it?.packQuantity ?? (volumeMl === 180 ? 48 : volumeMl === 375 ? 24 : volumeMl === 90 ? 96 : 12),
-        costPrice: it?.costPrice,
-        mrp: it?.mrp,
+        costPrice: it?.costPrice,   // the buying cost on the invoice; the selling price is typed in Products → Pricing, never taken from here
       });
       showToast(`Brand code "${brandCode}" ${volumeMl ? `(${volumeMl}ml)` : ''} mapped to "${pName}"`, 'success');
       await loadBrandMappings();
@@ -593,7 +593,7 @@ export function InvoiceUpload() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`/api/v1/invoices/${branchId}/upload`, {
+      const res = await authFetch(`/api/v1/invoices/${branchId}/upload`, {
         method: 'POST',
         headers: token ? { Authorization: 'Bearer ' + token } : {},
         body: fd,
@@ -652,7 +652,7 @@ export function InvoiceUpload() {
       try {
         const fd = new FormData();
         fd.append('file', files[i]);
-        const res = await fetch(`/api/v1/invoices/${branchId}/upload`, {
+        const res = await authFetch(`/api/v1/invoices/${branchId}/upload`, {
           method: 'POST',
           headers: token ? { Authorization: 'Bearer ' + token } : {},
           body: fd,
@@ -704,9 +704,8 @@ export function InvoiceUpload() {
           productName: first?.name,
           rawDescription: first?.name || 'Item 1',
           quantity: 1,
-          costPrice: first?.costPrice || '500.00',
-          mrp: first?.mrp || '700.00',
-          lineCostTotal: first?.costPrice || '500.00',
+          costPrice: first?.costPrice || '0.00',
+          lineCostTotal: first?.costPrice || '0.00',
           matchStatus: first ? 'MANUAL' : 'UNMATCHED',
           flags: [],
         },
@@ -775,9 +774,9 @@ export function InvoiceUpload() {
       .filter(Boolean);
     const brand = cleanWords.slice(0, Math.min(3, cleanWords.length)).join(' ') || cleanDesc;
 
-    // 5. Pre-fill Cost & MRP if available on the invoice line
+    // 5. Pre-fill the buying cost from the invoice line. An invoice has no selling price: the business types that in
+    //    Products → Pricing after the product exists.
     const costPrice = parseFloat(item.costPrice) > 0 ? item.costPrice : '';
-    const mrp = parseFloat(item.mrp) > 0 ? item.mrp : '';
 
     // 6. The excise brand code from the ICDC extraction travels in item.sku/barcode.
     //    Barcode stays empty unless the item actually has a retail barcode.
@@ -794,7 +793,6 @@ export function InvoiceUpload() {
       brand,
       volumeMl,
       packQuantity,
-      mrp,
       costPrice,
       barcode,
       sku: '',
@@ -808,7 +806,6 @@ export function InvoiceUpload() {
         const master = await api.get<{
           id: string; categoryName: string; name: string; brand: string;
           volumeMl: number; packQuantity: number; exciseCode: string; sku: string;
-          referenceMrp: string | null; referenceCost: string | null;
         }>(`/master-products/lookup?exciseCode=${encodeURIComponent(exciseCode)}&volumeMl=${structuredVol}`);
 
         // Find matching category id
@@ -824,11 +821,11 @@ export function InvoiceUpload() {
           brand: master.brand,
           volumeMl: String(master.volumeMl),
           packQuantity: String(master.packQuantity),
-          mrp: master.referenceMrp ? String(master.referenceMrp) : (mrp || ''),
-          costPrice: master.referenceCost ? String(master.referenceCost) : (costPrice || ''),
+          costPrice: costPrice || '',
           barcode: '',
           sku: master.sku,
           exciseCode: master.exciseCode,
+          masterProductId: master.id,
         });
         setMasterAutofilled(true);
       } catch {
@@ -844,7 +841,7 @@ export function InvoiceUpload() {
     if (!createProductModal) return;
 
     const {
-      lineIdx, name, brand, categoryId, volumeMl, packQuantity, mrp, costPrice, barcode, sku, exciseCode,
+      lineIdx, name, brand, categoryId, volumeMl, packQuantity, costPrice, barcode, sku, exciseCode, masterProductId,
     } = createProductModal;
 
     if (!name.trim()) {
@@ -854,16 +851,6 @@ export function InvoiceUpload() {
     if (!categoryId) {
       setProductFormError('Please select a category (e.g. Whisky, Beer).');
       return;
-    }
-    // Selling MRP is optional when adding a product from a supplier invoice
-    let mrpFormatted = '0.00';
-    if (mrp.trim()) {
-      const mrpNum = parseFloat(mrp);
-      if (isNaN(mrpNum) || mrpNum < 0) {
-        setProductFormError('Selling MRP must be a valid non-negative number.');
-        return;
-      }
-      mrpFormatted = mrpNum.toFixed(2);
     }
     if (costPrice && (isNaN(parseFloat(costPrice)) || parseFloat(costPrice) <= 0)) {
       setProductFormError('Cost price must be a valid positive amount.');
@@ -878,8 +865,8 @@ export function InvoiceUpload() {
         name: name.trim(),
         brand: brand.trim() || name.trim().split(' ')[0] || 'Generic',
         categoryId,
-        mrp: mrpFormatted,
       };
+      if (masterProductId) payload.masterProductId = masterProductId;
       if (costPrice.trim()) payload.costPrice = parseFloat(costPrice).toFixed(2);
       if (volumeMl.trim()) payload.volumeMl = parseInt(volumeMl, 10);
       if (packQuantity.trim()) payload.packQuantity = parseInt(packQuantity, 10);
@@ -900,7 +887,6 @@ export function InvoiceUpload() {
         item.productName = created.name;
         item.matchStatus = 'MANUAL';
         if (created.costPrice) item.costPrice = created.costPrice;
-        if (created.mrp) item.mrp = created.mrp;
         item.lineCostTotal = (item.quantity * parseFloat(item.costPrice || '0')).toFixed(2);
         updatedItems[lineIdx] = item;
         setActiveInvoice({ ...activeInvoice, items: updatedItems });
@@ -959,7 +945,6 @@ export function InvoiceUpload() {
     item.matchStatus = 'MANUAL';
     if (selectedProduct.volumeMl) item.volumeMl = selectedProduct.volumeMl;
     if (selectedProduct.packQuantity) item.packQuantity = selectedProduct.packQuantity;
-    if (selectedProduct.mrp && (!item.mrp || item.mrp === '0.00')) item.mrp = selectedProduct.mrp;
     items[lineIdx] = item;
     setActiveInvoice({ ...activeInvoice, items });
     setChangingMatchLineIdx(null);
@@ -1032,7 +1017,6 @@ export function InvoiceUpload() {
         quantity: it.quantity,
         caseRate: it.caseRate,
         costPrice: it.costPrice,
-        mrp: it.mrp,
       })),
     };
 
@@ -2190,6 +2174,8 @@ export function InvoiceUpload() {
                                               productId: chosen.id,
                                               productName: cleanProductName(chosen.name),
                                               matchStatus: 'MATCHED',
+                                              volumeMl: chosen.volumeMl || nextItems[idx].volumeMl,
+                                              packQuantity: chosen.packQuantity || nextItems[idx].packQuantity,
                                             };
                                             setActiveInvoice({ ...activeInvoice, items: nextItems });
                                           }
@@ -2710,7 +2696,7 @@ export function InvoiceUpload() {
             {masterAutofilled && (
               <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg font-medium flex items-center gap-1.5">
                 <span className="font-bold">✓</span>
-                <span>Auto-filled from official Telangana Excise (TSBCL) catalog</span>
+                <span>Found in the master catalog (TSBCL): name, size and pack are taken from it. Set your selling price afterwards in Products → Pricing.</span>
               </div>
             )}
 
@@ -2802,7 +2788,7 @@ export function InvoiceUpload() {
                 </div>
               </div>
 
-              {/* Price Row: Cost Price & MRP */}
+              {/* An invoice only has what the business PAID. The selling price is set afterwards in Products → Pricing. */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-700" htmlFor="newProdCost">
@@ -2817,18 +2803,7 @@ export function InvoiceUpload() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-gray-700" htmlFor="newProdMrp">
-                    Selling MRP (₹) <span className="text-gray-400 font-normal">(Optional)</span>
-                  </label>
-                  <input
-                    id="newProdMrp"
-                    className="w-full mt-1 p-2.5 border rounded-lg text-sm bg-white font-mono font-bold text-gray-900"
-                    value={createProductModal.mrp}
-                    onChange={(e) => setCreateProductModal({ ...createProductModal, mrp: e.target.value })}
-                    placeholder="e.g. 180.00 (or leave empty)"
-                  />
-                </div>
+                <div className="text-xs text-gray-500 self-end pb-2">Your selling price is set later in Products → Pricing.</div>
               </div>
 
               {/* Barcode & SKU (Optional) */}

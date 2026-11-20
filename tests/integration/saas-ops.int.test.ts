@@ -144,6 +144,9 @@ describe('passwords', () => {
     const { temporaryPassword, email } = res.json();
     expect(temporaryPassword).toHaveLength(12);
     expect((await login(email, temporaryPassword)).statusCode).toBe(200);
+    // a reset makes the person choose their own password first; later tests in this file use this cashier's token as normal
+    expect((await ctx.db.select().from(ctx.schema.users).where(eq(ctx.schema.users.id, ctx.users.cashier.id)))[0].mustChangePassword).toBe(true);
+    await ctx.db.update(ctx.schema.users).set({ mustChangePassword: false }).where(eq(ctx.schema.users.id, ctx.users.cashier.id));
 
     expect((await inject('POST', `/api/v1/users/${ctx.users.cashier.id}/reset-password`, ctx.auth('steward'))).statusCode).toBe(403);
     expect((await inject('POST', `/api/v1/users/${ctx.users.manager.id}/reset-password`, ctx.auth('manager'))).statusCode).toBe(403);   // self (same rank)
@@ -180,6 +183,18 @@ describe('support sign-in', () => {
     expect(decoded.exp - decoded.iat).toBe(30 * 60);
     const events = (await inject('GET', '/api/v1/platform/audit', superAdmin)).json().events;
     expect(events[0]).toMatchObject({ action: 'support.sign_in_as', actor: 'Platform Root' });
+  });
+
+  it('ending it hands back a fresh Super Admin token from the server (the browser never keeps one)', async () => {
+    const { token } = (await inject('POST', `/api/v1/platform/tenants/${ctx.syndicateId}/impersonate`, superAdmin)).json();
+    const back = await inject('POST', '/api/v1/auth/support-return', { authorization: `Bearer ${token}` });
+    expect(back.statusCode, back.body).toBe(200);
+    const decoded = ctx.app.jwt.decode(back.json().token) as { sub: string; role: string; syndicateId: string | null; impersonatedBy?: string };
+    expect(decoded).toMatchObject({ sub: superAdminId, role: 'owner', syndicateId: null });
+    expect(decoded.impersonatedBy).toBeUndefined();
+    expect((await inject('GET', '/api/v1/platform/dashboard', { authorization: `Bearer ${back.json().token}` })).statusCode).toBe(200);
+    // an ordinary Admin token is not a support sign-in
+    expect((await inject('POST', '/api/v1/auth/support-return', ctx.auth('owner'))).statusCode).toBe(400);
   });
 });
 

@@ -18,7 +18,7 @@ beforeAll(async () => {
   const [cat] = await ctx.db.insert(ctx.schema.categories).values({ name: 'IMFL', taxRate: '18.00' }).returning();
   const rows = await ctx.db.insert(ctx.schema.products).values(TELANGANA_ICDC_PRODUCTS.map((p) => ({
     name: p.name, brand: p.brand, sku: p.sku, exciseCode: p.exciseCode, mrp: p.mrp, costPrice: p.costPrice,
-    volumeMl: p.volumeMl, packQuantity: p.packQuantity, categoryId: cat.id,
+    volumeMl: p.volumeMl, packQuantity: p.packQuantity, categoryId: cat.id, syndicateId: ctx.syndicateId,
   }))).returning();
   productByKey = new Map(rows.map((r) => [`${r.exciseCode}/${r.volumeMl}`, r.id]));
 }, 120_000);

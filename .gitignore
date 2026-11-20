@@ -49,3 +49,5 @@ scratch/
 # Local sample/test invoices and statements (kept local only)
 Bank Invoices/
 Testing_invoices/
+.playwright-mcp/
+

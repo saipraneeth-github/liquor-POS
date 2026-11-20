@@ -1,12 +1,13 @@
 import { db } from '../../db/client.js';
-import { bills, dailyClosings } from '../../db/schema.js';
+import { bills, dailyClosings, salesReturns, shiftSessions, terminals, users } from '../../db/schema.js';
 import { eq, and, gte, lt, inArray, desc, sql } from 'drizzle-orm';
 import { reconcileDailyClosing, type CashFloatInput } from './closing.engine.js';
 import { businessDateOf, businessDayBounds } from '../../lib/business-day.js';
 import type { JwtPayload } from '../auth/auth.service.js';
-import { BusinessRuleError, ConflictError } from '../../lib/errors.js';
+import { BusinessRuleError, ConflictError, NotFoundError } from '../../lib/errors.js';
 import { logAudit } from '../../lib/audit.js';
 import { Decimal } from 'decimal.js';
+import { cashExpensesOnDate, cashRepaymentsBetween } from '../../lib/cash-movements.js';
 
 export interface SubmitClosingInput {
   branchId: string;
@@ -53,24 +54,54 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
   }
   // ────────────────────────────────────────────────────────────────────────────
 
-  const dayBills = await db
-    .select({
-      id: bills.id,
-      total: bills.total,
-      taxAmount: bills.taxAmount,
-      paymentMode: bills.paymentMode,
-      status: bills.status,
-    })
-    .from(bills)
-    .where(and(
-      eq(bills.branchId, input.branchId),
-      gte(bills.createdAt, start),
-      lt(bills.createdAt, end),
-    ));
+  // A day cannot be closed while a register is still open: its sales and cash are not final.
+  const openShifts = await db
+    .select({ terminal: terminals.terminalName, cashier: users.name })
+    .from(shiftSessions)
+    .innerJoin(terminals, eq(terminals.id, shiftSessions.terminalId))
+    .innerJoin(users, eq(users.id, shiftSessions.cashierId))
+    .where(and(eq(shiftSessions.branchId, input.branchId), eq(shiftSessions.status, 'OPEN'), lt(shiftSessions.openedAt, end)));
+  if (openShifts.length > 0) {
+    const who = openShifts.map((s) => `${s.terminal} (${s.cashier})`).join(', ');
+    throw new BusinessRuleError(`Close every open cashier shift before closing the day. Still open: ${who}.`);
+  }
+
+  const [dayBills, dayReturns, cashRepayments, cashExpenses] = await Promise.all([
+    db
+      .select({
+        id: bills.id,
+        total: bills.total,
+        taxAmount: bills.taxAmount,
+        paymentMode: bills.paymentMode,
+        status: bills.status,
+      })
+      .from(bills)
+      .where(and(
+        eq(bills.branchId, input.branchId),
+        gte(bills.createdAt, start),
+        lt(bills.createdAt, end),
+      )),
+    db
+      .select({
+        refundMode: salesReturns.refundMode,
+        refundAmount: salesReturns.refundAmount,
+        taxAmount: salesReturns.taxAmount,
+      })
+      .from(salesReturns)
+      .where(and(
+        eq(salesReturns.branchId, input.branchId),
+        gte(salesReturns.createdAt, start),
+        lt(salesReturns.createdAt, end),
+      )),
+    cashRepaymentsBetween(db, input.branchId, start, end),
+    cashExpensesOnDate(db, input.branchId, businessDate),
+  ]);
 
   const cashFloat: CashFloatInput = {
     openingCash: input.openingCash,
     cashWithdrawals: input.cashWithdrawals,
+    cashRepayments,
+    cashExpenses,
   };
 
   const salesOverride = (input.cashSales !== undefined || input.cardSales !== undefined || input.upiSales !== undefined || input.creditSales !== undefined)
@@ -92,7 +123,7 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
 
   // Managers may correct card/UPI/cash figures to match a bank or EDC settlement, but never silently:
   // any figure that differs from what the system computed needs a written reason, and the variance is kept.
-  const system = reconcileDailyClosing(billRows, cashFloat, input.actualCashCounted);
+  const system = reconcileDailyClosing(billRows, cashFloat, input.actualCashCounted, undefined, dayReturns);
   const variances: string[] = [];
   if (salesOverride) {
     for (const key of ['cashSales', 'cardSales', 'upiSales', 'creditSales'] as const) {
@@ -109,7 +140,7 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
     );
   }
 
-  const recon = reconcileDailyClosing(billRows, cashFloat, input.actualCashCounted, salesOverride);
+  const recon = reconcileDailyClosing(billRows, cashFloat, input.actualCashCounted, salesOverride, dayReturns);
   const storedNotes = variances.length > 0
     ? `${(input.notes ?? '').trim()}\n[Figures overridden by ${user.email}] ${variances.join('; ')}`
     : input.notes;
@@ -128,6 +159,8 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
       grossSales: recon.grossSales,
       totalTax: recon.totalTax,
       cashWithdrawals: recon.cashWithdrawals,
+      cashRepayments: recon.cashRepayments,
+      cashExpenses: recon.cashExpenses,
       expectedCashInDrawer: recon.expectedCashInDrawer,
       actualCashCounted: recon.actualCashCounted,
       cashDiscrepancy: recon.cashDiscrepancy,
@@ -145,6 +178,25 @@ export async function performDailyClosing(input: SubmitClosingInput, user: JwtPa
   }
 
   return { ...closingRecord, businessDate };
+}
+
+/**
+ * Reopens a closed day (closed too early, or a figure was wrong): the closing record is removed so the day takes bills
+ * again and can be closed afresh. The full record is kept in the audit log, so nothing is lost.
+ */
+export async function reopenDailyClosing(closingId: string, reason: string, user: JwtPayload) {
+  if (reason.trim().length < 10) throw new BusinessRuleError('Give a reason of at least 10 characters for reopening the day.');
+  const [closing] = await db.select().from(dailyClosings).where(eq(dailyClosings.id, closingId)).limit(1);
+  if (!closing) throw new NotFoundError('Closing not found');
+  await db.delete(dailyClosings).where(eq(dailyClosings.id, closingId));
+  await logAudit(user.sub, 'closing.reopen', { type: 'daily_closing', id: closingId }, { reason: reason.trim(), branchId: closing.branchId, closing });
+  return { reopened: true, branchId: closing.branchId, closingDate: closing.closingDate };
+}
+
+/** The branch a closing belongs to (for the access check before reopening). */
+export async function closingBranchId(closingId: string): Promise<string | null> {
+  const [row] = await db.select({ branchId: dailyClosings.branchId }).from(dailyClosings).where(eq(dailyClosings.id, closingId)).limit(1);
+  return row?.branchId ?? null;
 }
 
 /** Closing history. `branchIds === 'ALL'` → every branch. */
@@ -177,20 +229,36 @@ export async function getDailyClosingPreview(branchId: string, requestedDate?: s
     )
     .limit(1);
 
-  const dayBills = await db
-    .select({
-      id: bills.id,
-      total: bills.total,
-      taxAmount: bills.taxAmount,
-      paymentMode: bills.paymentMode,
-      status: bills.status,
-    })
-    .from(bills)
-    .where(and(
-      eq(bills.branchId, branchId),
-      gte(bills.createdAt, start),
-      lt(bills.createdAt, end),
-    ));
+  const [dayBills, dayReturns, cashRepayments, cashExpenses] = await Promise.all([
+    db
+      .select({
+        id: bills.id,
+        total: bills.total,
+        taxAmount: bills.taxAmount,
+        paymentMode: bills.paymentMode,
+        status: bills.status,
+      })
+      .from(bills)
+      .where(and(
+        eq(bills.branchId, branchId),
+        gte(bills.createdAt, start),
+        lt(bills.createdAt, end),
+      )),
+    db
+      .select({
+        refundMode: salesReturns.refundMode,
+        refundAmount: salesReturns.refundAmount,
+        taxAmount: salesReturns.taxAmount,
+      })
+      .from(salesReturns)
+      .where(and(
+        eq(salesReturns.branchId, branchId),
+        gte(salesReturns.createdAt, start),
+        lt(salesReturns.createdAt, end),
+      )),
+    cashRepaymentsBetween(db, branchId, start, end),
+    cashExpensesOnDate(db, branchId, businessDate),
+  ]);
 
   const [lastClosing] = await db
     .select({ actualCashCounted: dailyClosings.actualCashCounted })
@@ -211,6 +279,8 @@ export async function getDailyClosingPreview(branchId: string, requestedDate?: s
     })),
     { openingCash: suggestedOpeningCash, cashWithdrawals: '0' },
     suggestedOpeningCash,
+    undefined,
+    dayReturns,
   );
 
   return {
@@ -225,10 +295,19 @@ export async function getDailyClosingPreview(branchId: string, requestedDate?: s
       upiSales: rawRecon.upiSales,
       creditSales: rawRecon.creditSales,
       grossSales: rawRecon.grossSales,
+      grossBilled: rawRecon.grossBilled,
+      totalRefunds: rawRecon.totalRefunds,
+      cashRefunds: rawRecon.cashRefunds,
+      cardRefunds: rawRecon.cardRefunds,
+      upiRefunds: rawRecon.upiRefunds,
+      creditRefunds: rawRecon.creditRefunds,
       totalTax: rawRecon.totalTax,
       paidBillsCount: rawRecon.paidBillsCount,
       voidedBillsCount: rawRecon.voidedBillsCount,
       totalBillsCount: rawRecon.totalBillsCount,
+      // cash that moved without a bill: the drawer = opening + cash sales + cashRepayments - cashExpenses - withdrawals
+      cashRepayments: new Decimal(cashRepayments).toFixed(2),
+      cashExpenses: new Decimal(cashExpenses).toFixed(2),
     },
   };
 }

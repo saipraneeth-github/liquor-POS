@@ -4,27 +4,18 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { setupIntegration, type IntegrationContext } from './helpers.js';
 import { TELANGANA_ICDC_PRODUCTS } from '../../src/db/data/telangana-products.js';
+import { upsertMasterProducts } from '../../src/modules/catalog/catalog.service.js';
 
 const FILE = join(process.cwd(), 'Testing_invoices', 'ICDCB.pdf');
 let ctx: IntegrationContext;
 
 beforeAll(async () => {
   ctx = await setupIntegration();
-  // Populate the master_products table with Telangana products (simulating platform master catalog)
-  for (const tp of TELANGANA_ICDC_PRODUCTS) {
-    await ctx.db.insert(ctx.schema.masterProducts).values({
-      state: 'TS',
-      categoryName: tp.category,
-      name: tp.name,
-      brand: tp.brand,
-      volumeMl: tp.volumeMl,
-      packQuantity: tp.packQuantity,
-      exciseCode: tp.exciseCode,
-      sku: tp.sku,
-      referenceMrp: tp.mrp,
-      referenceCost: tp.costPrice,
-    }).onConflictDoNothing();
-  }
+  // Populate the master catalog with Telangana products (the platform operation: creates platform categories, no prices)
+  await upsertMasterProducts(TELANGANA_ICDC_PRODUCTS.map((tp) => ({
+    state: 'TS', categoryName: tp.category, name: tp.name, brand: tp.brand, volumeMl: tp.volumeMl,
+    packQuantity: tp.packQuantity, exciseCode: tp.exciseCode, sku: tp.sku,
+  })), ctx.db);
 }, 120_000);
 
 afterAll(async () => { await ctx?.app.close(); });

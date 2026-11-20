@@ -97,10 +97,10 @@ describe('supplier invoices: upload, extraction, review & approval workflow', ()
       matchMethod: 'BARCODE',
       quantity: 12,
       costPrice: '800.000000',
-      mrp: '1020.00',
       lineCostTotal: '9600.00',
     });
-    expect(uploaded.items[0].flags).toContain('MRP_CHANGED');
+    expect(uploaded.items[0]).not.toHaveProperty('mrp');   // a printed MRP column is read for case-rate detection only, never kept
+    expect(uploaded.items[0].flags).not.toContain('MRP_CHANGED');
     expect(uploaded.items[1]).toMatchObject({
       productId: null,
       matchStatus: 'UNMATCHED',

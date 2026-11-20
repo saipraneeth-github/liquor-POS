@@ -56,7 +56,6 @@ export async function checkoutTable(tableId: string, input: CheckoutTableInput, 
       customerId:    input.customerId,
       customerGstin: input.customerGstin,
       clientRef:     `table-session:${session.id}`,
-      skipStockDeduction: true,
       items: billable.map((i) => ({
         productId: i.productId,
         ...(i.servingId ? { servingId: i.servingId } : {}),
@@ -64,6 +63,7 @@ export async function checkoutTable(tableId: string, input: CheckoutTableInput, 
       })),
     },
     user,
+    { internal: { skipStockDeduction: true } },
   );
 
   await closeTable(tableId, input.branchId, bill.id);

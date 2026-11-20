@@ -22,6 +22,7 @@ import { db } from '../../db/client.js';
 import { emailOutbox } from '../../db/schema.js';
 import { integrationStatus } from '../../config/integrations.js';
 import { currentGateway } from './gateway.js';
+import { redactMailBody } from '../notifications/redact.js';
 import { confirmPayment, handleWebhook, mockPay, startPayment } from './payment.service.js';
 import { changePlanSelfService, generateInvoice } from '../platform/platform.service.js';
 import { runBillingCycle } from '../platform/dunning.service.js';
@@ -103,7 +104,9 @@ export async function paymentRoutes(app: FastifyInstance) {
 
   app.get('/platform/outbox', { preHandler: owner }, async (req, reply) => {
     if (!(await isPlatformOwner(getUser(req)))) return reply.code(403).send({ error: 'Forbidden: Super Admin only' });
-    return { emails: await db.select().from(emailOutbox).orderBy(desc(emailOutbox.createdAt)).limit(30) };
+    const emails = await db.select().from(emailOutbox).orderBy(desc(emailOutbox.createdAt)).limit(30);
+    // a reset link is a password: never list it in production, even for the Super Admin
+    return { emails: process.env.NODE_ENV === 'production' ? emails.map((e) => ({ ...e, body: redactMailBody(e.kind ?? undefined, e.body) })) : emails };
   });
 
   app.post('/platform/billing/run', { preHandler: owner }, async (req, reply) => {
@@ -117,7 +120,7 @@ export async function paymentRoutes(app: FastifyInstance) {
  * string body parser. Always answers 200 for valid signatures (gateways retry on any other status).
  */
 export async function webhookRoutes(app: FastifyInstance) {
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => done(null, body));
+  app.addContentTypeParser('application/json', { parseAs: 'string', bodyLimit: 256 * 1024 }, (_req, body, done) => done(null, body));
 
   // Signature is verified in the handler; the cap just stops unauthenticated floods from burning CPU.
   const webhookLimit = process.env.NODE_ENV === 'production'

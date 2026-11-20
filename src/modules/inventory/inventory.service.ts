@@ -14,13 +14,18 @@ import {
   schemePurchases,
   breakageLogs,
   brandCodeMappings,
+  branchProductCosts,
+  branches,
   categories,
+  masterProducts,
 } from '../../db/schema.js';
+import { branchCostMap, branchTenantId, categoryScope, mapMasterProducts, requireTenantId } from '../catalog/catalog.service.js';
+import type { Tenant } from '../menu/menu-access.js';
 import { deleteAllInvoices } from '../invoices/invoice.service.js';
 import { eq, and, or, isNull, gte, inArray, sql, ilike } from 'drizzle-orm';
 import { estimateIndent, type IndentEstimationResult } from '../stock/indent.engine.js';
 import { emitDomainEvent, type Tx } from '../../lib/domain-events.js';
-import { BusinessRuleError } from '../../lib/errors.js';
+import { BusinessRuleError, NotFoundError } from '../../lib/errors.js';
 import { cleanProductName } from '../../lib/product-name.js';
 
 // ─── SHARED APPROVAL EFFECTS (direct approval + invoice upload workflow) ────────
@@ -29,7 +34,6 @@ type InvoiceRow = typeof supplierInvoices.$inferSelect;
 type InvoiceItemRow = typeof supplierInvoiceItems.$inferSelect;
 export type InvoiceProductMap = Map<string, {
   id: string;
-  mrp: string;
   packQuantity: number | null;
   volumeMl?: number | null;
   costPrice?: string | null;
@@ -37,12 +41,12 @@ export type InvoiceProductMap = Map<string, {
 }>;
 
 /** Loads the referenced products (single query); throws 422 listing any unknown product ids. */
-export async function loadInvoiceProducts(tx: Tx, productIds: string[]): Promise<InvoiceProductMap> {
+export async function loadInvoiceProducts(tx: Tx, productIds: string[], invoiceId?: string): Promise<InvoiceProductMap> {
   const ids = [...new Set(productIds)];
   const productRows = ids.length === 0 ? [] : await tx
     .select({
       id: products.id,
-      mrp: products.mrp,
+      syndicateId: products.syndicateId,
       packQuantity: products.packQuantity,
       volumeMl: products.volumeMl,
       costPrice: products.costPrice,
@@ -50,6 +54,13 @@ export async function loadInvoiceProducts(tx: Tx, productIds: string[]): Promise
     })
     .from(products)
     .where(inArray(products.id, ids));
+  // An invoice can only touch the catalog of its own business (stock and cost would otherwise land on another tenant's item)
+  if (invoiceId && productRows.length > 0) {
+    const [owner] = await tx.select({ syndicateId: branches.syndicateId }).from(supplierInvoices)
+      .innerJoin(branches, eq(branches.id, supplierInvoices.branchId)).where(eq(supplierInvoices.id, invoiceId)).limit(1);
+    const foreign = productRows.filter((p) => p.syndicateId !== (owner?.syndicateId ?? null));
+    if (foreign.length > 0) throw new BusinessRuleError(`Unknown products: ${foreign.map((p) => p.id).join(', ')}`);
+  }
   const productMap: InvoiceProductMap = new Map(productRows.map((p) => [p.id, p]));
   const missing = ids.filter((id) => !productMap.has(id));
   if (missing.length > 0) throw new BusinessRuleError(`Unknown products: ${missing.join(', ')}`);
@@ -74,7 +85,6 @@ export async function applyApprovedInvoice(
   const stockAuditInserts = [];
   const productUpdatesMap = new Map<string, {
     costPrice: string;
-    mrp?: string | null;
     previousCostPrice?: string | null;
     costPerCase?: string | null;
     lastInvoiceId?: string;
@@ -82,7 +92,9 @@ export async function applyApprovedInvoice(
     lastInvoiceDate?: string;
     costUpdatedAt?: string;
   }>();
-  const priceAuditInserts = [];
+
+  const branchCosts = await branchCostMap(tx, invoice.branchId, items.map((i) => i.productId).filter(Boolean) as string[]);
+  const costRows = new Map<string, typeof branchProductCosts.$inferInsert>();
 
   for (const item of items) {
     const productId = item.productId;
@@ -111,14 +123,19 @@ export async function applyApprovedInvoice(
     totalCases = totalCases.plus(new Decimal(item.quantity).div(packSize));
     totalValue = totalValue.plus(item.lineCostTotal);
 
-    const newMrp = new Decimal(item.mrp).toFixed(2);
-    const mrpChanged = !new Decimal(product.mrp).equals(newMrp);
-
     // Store unit-level cost price at high precision (DECIMAL 14, 6)
     const newCostPrice = new Decimal(item.costPrice).toFixed(6);
-    const prevCostPrice = product.costPrice ? new Decimal(product.costPrice).toFixed(6) : null;
+    // "previous cost" = what THIS branch paid last time (none if it never bought the item: another outlet's price is not its history)
+    const branchPrev = costRows.get(productId)?.costPrice ?? branchCosts.get(productId)?.costPrice ?? null;
+    const prevCostPrice = branchPrev ? new Decimal(branchPrev).toFixed(6) : null;
     const caseRateVal = item.caseRate ? new Decimal(item.caseRate).toFixed(2) : null;
 
+    costRows.set(productId, {
+      branchId: invoice.branchId, productId, costPrice: newCostPrice, previousCostPrice: prevCostPrice, costPerCase: caseRateVal,
+      lastInvoiceId: invoice.id, lastInvoiceNumber: invoice.invoiceNumber,
+      lastInvoiceDate: invoice.invoiceDate instanceof Date ? invoice.invoiceDate : (invoice.invoiceDate ? new Date(String(invoice.invoiceDate)) : new Date()),
+      costUpdatedAt: new Date(),
+    });
     productUpdatesMap.set(productId, {
       costPrice: newCostPrice,
       previousCostPrice: prevCostPrice ?? null,
@@ -127,15 +144,10 @@ export async function applyApprovedInvoice(
       lastInvoiceNumber: invoice.invoiceNumber,
       lastInvoiceDate: invoice.invoiceDate instanceof Date ? invoice.invoiceDate.toISOString() : (invoice.invoiceDate ? String(invoice.invoiceDate) : new Date().toISOString()),
       costUpdatedAt: new Date().toISOString(),
-      mrp: mrpChanged ? newMrp : null,
     });
 
-    if (mrpChanged) {
-      priceAuditInserts.push({ productId, userId, oldMrp: product.mrp, newMrp });
-      productMap.set(productId, { ...product, mrp: newMrp, costPrice: newCostPrice, previousCostPrice: prevCostPrice ?? undefined });
-    } else {
-      productMap.set(productId, { ...product, costPrice: newCostPrice, previousCostPrice: prevCostPrice ?? undefined });
-    }
+    // An invoice carries what the business PAID. It never changes what the business SELLS at (that is typed in Pricing).
+    productMap.set(productId, { ...product, costPrice: newCostPrice, previousCostPrice: prevCostPrice ?? undefined });
   }
 
   // Batch insert stock and aggregate quantities on conflict
@@ -149,7 +161,19 @@ export async function applyApprovedInvoice(
   // Batch insert stock audits
   await tx.insert(stockAudit).values(stockAuditInserts);
 
-  // Batch update products
+  // This branch's own cost record (upsert): the figures the Products page and margins show for this outlet
+  if (costRows.size > 0) {
+    await tx.insert(branchProductCosts).values([...costRows.values()]).onConflictDoUpdate({
+      target: [branchProductCosts.branchId, branchProductCosts.productId],
+      set: {
+        costPrice: sql`excluded.cost_price`, previousCostPrice: sql`excluded.previous_cost_price`, costPerCase: sql`excluded.cost_per_case`,
+        lastInvoiceId: sql`excluded.last_invoice_id`, lastInvoiceNumber: sql`excluded.last_invoice_number`,
+        lastInvoiceDate: sql`excluded.last_invoice_date`, costUpdatedAt: sql`excluded.cost_updated_at`,
+      },
+    });
+  }
+
+  // Batch update products (the business-wide "latest" figures)
   const updatesArr = Array.from(productUpdatesMap.entries());
   if (updatesArr.length > 0) {
     // ⚡ Bolt Optimization: Batch update products with CASE WHEN
@@ -159,11 +183,6 @@ export async function applyApprovedInvoice(
       updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.costPrice}`),
       sql` `
     )} ELSE ${products.costPrice} END AS numeric)`;
-
-    const mrpCaseSql = sql`CAST(CASE ${sql.join(
-      updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.mrp ?? products.mrp}`),
-      sql` `
-    )} ELSE ${products.mrp} END AS numeric)`;
 
     const previousCostPriceCaseSql = sql`CAST(CASE ${sql.join(
       updatesArr.map(([id, data]) => sql`WHEN ${products.id} = ${id} THEN ${data.previousCostPrice}`),
@@ -199,7 +218,6 @@ export async function applyApprovedInvoice(
     await tx.update(products)
       .set({
         costPrice: costPriceCaseSql,
-        mrp: mrpCaseSql,
         previousCostPrice: previousCostPriceCaseSql,
         costPerCase: costPerCaseCaseSql,
         lastInvoiceId: lastInvoiceIdCaseSql,
@@ -208,11 +226,6 @@ export async function applyApprovedInvoice(
         costUpdatedAt: costUpdatedAtCaseSql,
       })
       .where(inArray(products.id, updatesArr.map(([id]) => id)));
-  }
-
-  // Batch insert price audits if any
-  if (priceAuditInserts.length > 0) {
-    await tx.insert(priceAudit).values(priceAuditInserts);
   }
 
   // Auto-credit any active supplier schemes matching this branch and supplier name
@@ -318,15 +331,9 @@ export async function clearCompleteInventory(branchId: string): Promise<{ delete
     await tx.delete(stockByType).where(eq(stockByType.branchId, branchId));   // the other counters' bottles go with the stock
     const deleted = await tx.delete(stock).where(eq(stock.branchId, branchId)).returning({ id: stock.id });
 
-    await tx.update(products).set({
-      costPrice: null,
-      previousCostPrice: null,
-      costPerCase: null,
-      lastInvoiceId: null,
-      lastInvoiceNumber: null,
-      lastInvoiceDate: null,
-      costUpdatedAt: null,
-    });
+    // Costs are per branch: forget only what THIS branch paid. (An unscoped update of `products` used to wipe the
+    // business-wide cost fields of every business.)
+    await tx.delete(branchProductCosts).where(eq(branchProductCosts.branchId, branchId));
 
     return deleted.length;
   });
@@ -334,10 +341,12 @@ export async function clearCompleteInventory(branchId: string): Promise<{ delete
   return { deletedStock, deletedInvoices };
 }
 
-export async function getBrandCodeMappings(branchId?: string) {
-  const conditions = branchId
-    ? [or(eq(brandCodeMappings.branchId, branchId), isNull(brandCodeMappings.branchId))]
-    : [];
+/** Brand-code mappings of the caller's business (a mapping belongs to the business that owns its product). */
+export async function getBrandCodeMappings(tenant: Tenant, branchId?: string) {
+  const conditions = [
+    tenant === 'ALL' ? undefined : tenant === null ? sql`false` : eq(brandCodeMappings.syndicateId, tenant),
+    branchId ? or(eq(brandCodeMappings.branchId, branchId), isNull(brandCodeMappings.branchId)) : undefined,
+  ].filter((c) => c !== undefined);
   return db
     .select({
       id: brandCodeMappings.id,
@@ -357,7 +366,7 @@ export async function getBrandCodeMappings(branchId?: string) {
     .where(conditions.length ? and(...conditions) : undefined);
 }
 
-export async function upsertBrandCodeMapping(input: {
+export async function upsertBrandCodeMapping(tenant: Tenant, input: {
   brandCode: string;
   volumeMl?: number | null;
   productId?: string;
@@ -368,23 +377,36 @@ export async function upsertBrandCodeMapping(input: {
   mrp?: string | null;
   costPrice?: string | null;
 }) {
+  const tenantId = requireTenantId(tenant);
+  let stateCode = 'TS';
+  if (input.branchId) {
+    // A mapping can only be placed on a branch of the same business
+    const b = await branchTenantId(db, input.branchId);
+    if (b.syndicateId !== tenantId) throw new NotFoundError('Branch not found');
+    stateCode = b.stateCode;
+  }
   const trimmedCode = input.brandCode.trim();
   const normCode = trimmedCode.replace(/^0+/, '') || '0';
   const paddedCode = trimmedCode.padStart(4, '0');
   const vol = input.volumeMl ?? null;
   let prodId = input.productId;
 
-  if (!prodId) {
+  if (prodId) {
+    const [own] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, prodId), eq(products.syndicateId, tenantId))).limit(1);
+    if (!own) throw new NotFoundError('Product not found');
+  } else {
     const rawClean = cleanProductName(input.productName?.trim() || trimmedCode);
     let nameToSearch = rawClean;
     if (vol && !nameToSearch.toLowerCase().includes(`${vol}ml`)) {
       nameToSearch = `${nameToSearch} ${vol}ml`;
     }
 
+    // Only the business's own products are candidates (never another business's)
     const [found] = await db
       .select({ id: products.id })
       .from(products)
-      .where(
+      .where(and(
+        eq(products.syndicateId, tenantId),
         or(
           eq(products.name, nameToSearch),
           and(
@@ -396,21 +418,31 @@ export async function upsertBrandCodeMapping(input: {
             vol ? eq(products.volumeMl, vol) : undefined,
           ),
         ),
-      )
+      ))
       .limit(1);
 
     if (found) {
       prodId = found.id;
     } else {
+      // Prefer the state's master product (identity from the master, NO price); only then a custom item
+      const master = vol ? (await db.select({ id: masterProducts.id }).from(masterProducts)
+        .where(and(eq(masterProducts.state, stateCode), eq(masterProducts.isActive, true), vol ? eq(masterProducts.volumeMl, vol) : undefined,
+          inArray(masterProducts.exciseCode, [trimmedCode, normCode, paddedCode]))).limit(1))[0] : undefined;
+      if (master) {
+        const mapped = await mapMasterProducts(db, tenantId, [master.id]);
+        prodId = mapped.productIds[0];
+      }
+    }
+    if (!prodId) {
       let catId: string | null = null;
       if (input.categoryName) {
-        const [cat] = await db.select({ id: categories.id }).from(categories).where(ilike(categories.name, `%${input.categoryName.trim()}%`)).limit(1);
+        const [cat] = await db.select({ id: categories.id }).from(categories)
+          .where(and(ilike(categories.name, `%${input.categoryName.trim()}%`), categoryScope(tenantId))).limit(1);
         catId = cat?.id ?? null;
       }
-      if (!catId) {
-        const [firstCat] = await db.select({ id: categories.id }).from(categories).limit(1);
-        catId = firstCat?.id ?? null;
-      }
+      // No guessing a category: the item's tax depends on it
+      if (!catId) throw new BusinessRuleError('This brand code is not in the master catalog, so choose a category to create it as your own product');
+      const mrp = input.mrp && new Decimal(input.mrp).gt(0) ? new Decimal(input.mrp).toFixed(2) : '0.00';
       const [newProd] = await db.insert(products).values({
         name: nameToSearch,
         brand: input.brandCode.trim() || 'General',
@@ -420,14 +452,16 @@ export async function upsertBrandCodeMapping(input: {
         volumeMl: vol,
         packQuantity: input.packQuantity ?? (vol === 180 ? 48 : vol === 375 ? 24 : vol === 90 ? 96 : 12),
         categoryId: catId,
-        mrp: input.mrp || '100.00',
-        costPrice: input.costPrice || '80.00',
+        mrp,                                   // typed by the business or left unpriced; never invented
+        costPrice: input.costPrice && new Decimal(input.costPrice).gt(0) ? new Decimal(input.costPrice).toFixed(2) : undefined,
+        syndicateId: tenantId,
       }).returning();
       prodId = newProd.id;
     }
   }
 
   const existingConds = [
+    eq(brandCodeMappings.syndicateId, tenantId),
     or(
       eq(brandCodeMappings.brandCode, trimmedCode),
       eq(brandCodeMappings.brandCode, normCode),
@@ -475,12 +509,16 @@ export async function upsertBrandCodeMapping(input: {
       productName: cleanInputName,
       categoryName: input.categoryName,
       branchId: input.branchId,
+      syndicateId: tenantId,
     })
     .returning();
   return created;
 }
 
-export async function deleteBrandCodeMapping(id: string) {
+export async function deleteBrandCodeMapping(tenant: Tenant, id: string) {
+  // Another business's mapping is reported as missing, like any foreign row
+  const [row] = await db.select({ syndicateId: brandCodeMappings.syndicateId }).from(brandCodeMappings).where(eq(brandCodeMappings.id, id)).limit(1);
+  if (!row || (tenant !== 'ALL' && row.syndicateId !== tenant)) throw new NotFoundError('Mapping not found');
   await db.delete(brandCodeMappings).where(eq(brandCodeMappings.id, id));
   return { success: true };
 }

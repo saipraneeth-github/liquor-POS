@@ -251,6 +251,7 @@ export interface ParseOutcome {
   periodStart: string | null;
   periodEnd: string | null;
   warnings: string[];
+  skippedSamples: string[];        // PDF lines that were left out (first few), quoted back to the user
   sampleRows: string[][];          // the first raw rows, so the user can see what the mapping refers to
   totalRows: number;
 }
@@ -286,6 +287,7 @@ export async function parseStatementFile(buf: Buffer, fields: UploadFields = {})
   if (detected.kind === 'IMAGE') throw new UnsupportedFileError('Photos of statements are not supported. Download the statement as CSV, Excel (.xlsx) or a PDF.');
   const fileHash = createHash('sha256').update(buf).digest('hex');
   const warnings: string[] = [];
+  let skippedSamples: string[] = [];
 
   let rows: string[][];
   let source: ParseOutcome['source'];
@@ -323,7 +325,7 @@ export async function parseStatementFile(buf: Buffer, fields: UploadFields = {})
     pdfHints = table.hints;
     fixedMapping = table.mapping;
     fixedHeaderRow = table.headerRow;
-    if (table.skippedLines > 0) warnings.push(`PDF_LINES_SKIPPED:${table.skippedLines}`);
+    if (table.skippedLines > 0) { warnings.push(`PDF_LINES_SKIPPED:${table.skippedLines}`); skippedSamples = table.skippedSamples; }
   }
   if (rows.length === 0) throw new BusinessRuleError('The file has no readable rows.');
 
@@ -388,7 +390,7 @@ export async function parseStatementFile(buf: Buffer, fields: UploadFields = {})
     source, fileHash, headers, headerRow, mapping, method, mappingConfidence: confidence, dayFirst,
     lines, skippedRows: normalised.skipped.length, hints, balanceCheck,
     periodStart: dates[0] ?? null, periodEnd: dates[dates.length - 1] ?? null,
-    warnings, sampleRows: rows.slice(0, 25), totalRows: rows.length,
+    warnings, skippedSamples, sampleRows: rows.slice(0, 25), totalRows: rows.length,
   };
 }
 
@@ -464,6 +466,12 @@ export async function importStatement(user: JwtPayload, accountId: string, buf: 
   await logAudit(user.sub, 'bank.statement.import', { type: 'bank_statement', id: statement.id }, {
     accountId: account.id, lines: fresh.length, duplicates: dup.size, balanceCheck: parsed.balanceCheck.status,
   });
+  // Importing past a failed balance check is a deliberate override: record who did it (actor + timestamp are on the row)
+  if (parsed.balanceCheck.status === 'FAIL') {
+    await logAudit(user.sub, 'bank.statement.balance_override', { type: 'bank_statement', id: statement.id }, {
+      accountId: account.id, message: parsed.balanceCheck.message,
+    });
+  }
 
   const matched = fresh.length > 0 ? await runAutoMatch(user, statement.id) : { suggested: 0, unmatched: 0, autoIgnored: 0 };
   return { statement, imported: fresh.length, duplicates: dup.size, balanceCheck: parsed.balanceCheck, warnings: parsed.warnings, match: matched };

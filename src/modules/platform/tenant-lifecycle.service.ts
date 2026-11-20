@@ -80,7 +80,7 @@ interface Owned {
 }
 
 /** Walks down the foreign keys from the business. `withRows` also reads the rows (for the export). */
-async function collectOwned(exec: Exec, syndicateId: string, withRows: boolean) {
+async function collectOwned(exec: Exec, syndicateId: string, withRows: boolean, parallel = false) {
   const { fks, cols } = await loadSchemaInfo(exec);
   const owned = new Map<string, Owned>();
   const get = (t: string): Owned => { let o = owned.get(t); if (!o) { o = { ids: new Set(), reach: [], rows: [], count: 0 }; owned.set(t, o); } return o; };
@@ -95,7 +95,10 @@ async function collectOwned(exec: Exec, syndicateId: string, withRows: boolean) 
   const queue: Array<{ table: string; ids: string[] }> = [{ table: 'syndicates', ids: [syndicateId] }];
   while (queue.length) {
     const { table, ids } = queue.shift()!;
-    for (const fk of fks.filter((f) => f.parent === table && f.parentCol === 'id' && !KEEP_ROWS.has(f.child))) {
+    const edges = fks.filter((f) => f.parent === table && f.parentCol === 'id' && !KEEP_ROWS.has(f.child));
+    // Each edge is one round trip: on a hosted database that is what makes this slow. Read-only callers (preview, export)
+    // run them side by side; inside a transaction (delete) they must stay one after another (one connection).
+    const fetchEdge = async (fk: Fk) => {
       const childCols = cols.get(fk.child) ?? [];
       const hasId = childCols.some((c) => c.name === 'id');
       const select = withRows
@@ -105,6 +108,11 @@ async function collectOwned(exec: Exec, syndicateId: string, withRows: boolean) 
       for (const part of chunks(ids)) {
         found.push(...rowsOf<Record<string, unknown>>(await exec.execute(sql.raw(`select ${select} from ${q(fk.child)} where ${q(fk.childCol)} = any(${uuidArr(part)})`))));
       }
+      return { fk, hasId, found };
+    };
+    const results = parallel ? await Promise.all(edges.map(fetchEdge)) : await edges.reduce<Promise<Awaited<ReturnType<typeof fetchEdge>>[]>>(
+      async (acc, fk) => { const a = await acc; a.push(await fetchEdge(fk)); return a; }, Promise.resolve([]));
+    for (const { fk, hasId, found } of results) {
       if (found.length === 0) continue;
       const o = get(fk.child);
       const fresh: string[] = [];
@@ -149,7 +157,7 @@ export async function archiveTenant(actorId: string | null, id: string, reason: 
   const t = await loadTenant(id);
   if (t.archivedAt) throw new ConflictError('This business is already archived');
   const now = new Date();
-  await db.update(syndicates).set({ archivedAt: now, archiveReason: reason, isActive: false, nextPlan: null, nextPlanFrom: null }).where(eq(syndicates.id, id));
+  await db.update(syndicates).set({ archivedAt: now, archiveReason: reason, isDeleted: true, isActive: false, nextPlan: null, nextPlanFrom: null }).where(eq(syndicates.id, id));
   await logAudit(actorId, 'tenant.archive', { type: 'tenant', id }, {
     reason, before: { isActive: t.isActive, archivedAt: null }, after: { isActive: false, archivedAt: now.toISOString() }, deletableFrom: new Date(now.getTime() + retentionDays() * DAY).toISOString(),
   });
@@ -159,7 +167,7 @@ export async function archiveTenant(actorId: string | null, id: string, reason: 
 export async function restoreTenant(actorId: string | null, id: string) {
   const t = await loadTenant(id);
   if (!t.archivedAt) throw new BusinessRuleError('This business is not archived');
-  await db.update(syndicates).set({ archivedAt: null, archiveReason: null, isActive: true }).where(eq(syndicates.id, id));
+  await db.update(syndicates).set({ archivedAt: null, archiveReason: null, isDeleted: false, isActive: true }).where(eq(syndicates.id, id));
   await logAudit(actorId, 'tenant.restore', { type: 'tenant', id }, { before: { isActive: false, archivedAt: t.archivedAt.toISOString() }, after: { isActive: true, archivedAt: null } });
   return { restored: true };
 }
@@ -169,7 +177,7 @@ export async function restoreTenant(actorId: string | null, id: string) {
 /** Every row the business owns, table by table (no password hashes, no scanned-file data). Marks the business as exported. */
 export async function exportTenant(actorId: string | null, id: string) {
   const t = await loadTenant(id);
-  const { owned } = await collectOwned(db, id, true);
+  const { owned } = await collectOwned(db, id, true, true);
   const tables = Object.fromEntries([...owned.entries()].map(([name, o]) => [name, o.rows]));
   const total = [...owned.values()].reduce((s, o) => s + o.count, 0);
   const now = new Date();
@@ -189,25 +197,26 @@ async function unpaid(id: string) {
 /** What deleting would remove, and whether (and when) it is allowed. Changes nothing. */
 export async function deletePreview(id: string) {
   const t = await loadTenant(id);
-  const { owned } = await collectOwned(db, id, false);
+  const { owned } = await collectOwned(db, id, false, true);
   const tables = [...owned.entries()].map(([table, o]) => ({ table, rows: o.count })).filter((x) => x.rows > 0).sort((a, b) => b.rows - a.rows);
   const eligibleFrom = t.archivedAt ? new Date(t.archivedAt.getTime() + retentionDays() * DAY) : null;
   const daysLeft = eligibleFrom ? Math.max(0, Math.ceil((eligibleFrom.getTime() - Date.now()) / DAY)) : null;
   const inv = await unpaid(id);
   return {
-    name: t.name, archived: !!t.archivedAt, archivedAt: t.archivedAt, archiveReason: t.archiveReason, eligibleFrom, daysLeft,
+    name: t.name, archived: !!t.archivedAt, isDeleted: t.isDeleted, archivedAt: t.archivedAt, archiveReason: t.archiveReason, eligibleFrom, daysLeft,
     eligible: !!t.archivedAt && daysLeft === 0, unpaidInvoices: inv, exportedAt: t.exportedAt,
     totalRows: tables.reduce((s, x) => s + x.rows, 0), tables,
   };
 }
 
 /**
- * Permanently removes the business and everything it owns. Refused unless it has been archived for 30 days, has no unpaid
+ * HARD delete (Super Admin only): permanently removes the business and everything it owns, products included. The soft delete
+ * (archive: is_deleted = true) keeps every row; this is the only thing that removes them. Refused unless it has been archived for 30 days, has no unpaid
  * invoice, and the caller typed the business name exactly. All-or-nothing.
  */
 export async function deleteTenant(actorId: string | null, id: string, confirmName: string) {
   const t = await loadTenant(id);
-  if (!t.archivedAt) throw new BusinessRuleError('Archive the business first. It can only be deleted after 30 days in the archive.');
+  if (!t.archivedAt || !t.isDeleted) throw new BusinessRuleError('Archive the business first (that is the soft delete: nothing is removed). It can only be hard deleted after 30 days in the archive.');
   const eligibleFrom = new Date(t.archivedAt.getTime() + retentionDays() * DAY);
   if (eligibleFrom.getTime() > Date.now()) {
     const left = Math.ceil((eligibleFrom.getTime() - Date.now()) / DAY);

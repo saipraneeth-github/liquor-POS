@@ -1,4 +1,5 @@
 import { startGlobalLoading, stopGlobalLoading } from '../context/LoadingContext.js';
+import { notifySessionExpired } from './session.js';
 
 const API_BASE = '/api/v1';
 
@@ -50,7 +51,22 @@ function getActionCopy(url: string, method: string): { title: string; subtitle: 
   return { title: 'Processing Action…', subtitle: 'Please wait while the server completes the operation.' };
 }
 
+/**
+ * fetch() with the signed-in token attached. A 401 on a request that carried a token means the session is over
+ * (expired, revoked, password changed, account deactivated): the app is told once and signs the person out.
+ * `notify401: false` lets a caller keep its own data first (the POS parks the bill before the sign-out).
+ */
+export async function authFetch(input: string, init: RequestInit = {}, opts: { notify401?: boolean } = {}): Promise<Response> {
+  const token = localStorage.getItem('token');
+  const headers = new Headers(init.headers);
+  if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(input, { ...init, headers });
+  if (res.status === 401 && token && opts.notify401 !== false) notifySessionExpired();
+  return res;
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
+  if (res.status === 401 && localStorage.getItem('token')) notifySessionExpired();
   if (!res.ok) {
     const text = await res.text();
     let data: any = null;

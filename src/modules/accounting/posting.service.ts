@@ -12,6 +12,9 @@ import {
   billVoidedLines,
   counterSheetSalesLines,
   creditRepaymentLines,
+  supplierPaymentLines,
+  salesReturnLines,
+  purchaseReturnLines,
   expenseLines,
   supplierInvoiceLines,
   supplierChallanPaymentLines,
@@ -25,7 +28,7 @@ import { Decimal } from 'decimal.js';
 
 export type VoucherType = 'SALES' | 'PURCHASE' | 'PAYMENT' | 'RECEIPT' | 'JOURNAL' | 'CONTRA';
 export type SourceType = 'BILL' | 'BILL_VOID' | 'SUPPLIER_INVOICE' | 'SUPPLIER_CHALLAN' | 'SUPPLIER_INVOICE_REVERSAL' | 'SUPPLIER_CHALLAN_REVERSAL'
-  | 'COUNTER_SHEET' | 'COUNTER_SHEET_SUPERSEDED' | 'COUNTER_SHEET_VOID' | 'EXPENSE' | 'CREDIT_REPAYMENT' | 'BANK_LINE' | 'MANUAL';
+  | 'COUNTER_SHEET' | 'COUNTER_SHEET_SUPERSEDED' | 'COUNTER_SHEET_VOID' | 'EXPENSE' | 'EXPENSE_VOID' | 'SUPPLIER_PAYMENT' | 'SUPPLIER_PAYMENT_VOID' | 'SALES_RETURN' | 'PURCHASE_RETURN' | 'CREDIT_REPAYMENT' | 'BANK_LINE' | 'MANUAL';
 
 export interface VoucherHeader {
   branchId: string;
@@ -42,13 +45,13 @@ export type JournalLineRow = typeof journalLines.$inferSelect;
 
 // ─── VOUCHER NUMBERING ───────────────────────────────────────────────────────
 
-/** JV-<branchCode>-<YYYYMMDD>-<8 hex>. Uniqueness is enforced by the DB. */
+/** JV-<branchCode>-<YYYYMMDD>-<12 hex> (48 bits: a same-branch same-day collision is negligible, and a retry inside a Postgres transaction is not possible once a statement has failed). Uniqueness is still enforced by the DB. */
 export function formatVoucherNumber(branchCode: string, voucherDate: string, shortId: string): string {
   return `JV-${branchCode}-${voucherDate.replace(/-/g, '')}-${shortId.toUpperCase()}`;
 }
 
 function shortId(): string {
-  return randomUUID().replace(/-/g, '').slice(0, 8);
+  return randomUUID().replace(/-/g, '').slice(0, 12);
 }
 
 // ─── LOW-LEVEL POSTING ───────────────────────────────────────────────────────
@@ -285,6 +288,71 @@ export async function postExpenseRecorded({ expense }: DomainEventMap['expense.r
   }, expenseLines(expense), new Map([[def.code, ledgerId]]));
 }
 
+/** Exact reversal of the voucher the expense posted (dated the day it was voided). */
+export async function postExpenseVoided({ expense }: DomainEventMap['expense.voided'], tx: Tx) {
+  const original = await findSourceVoucherLines(tx, 'EXPENSE', expense.id);
+  if (!original) return null;   // recorded before accounting existed: nothing was posted, so nothing to reverse
+  return postByCode(tx, {
+    branchId:    expense.branchId,
+    voucherDate: dateOf(expense.voidedAt),
+    voucherType: 'JOURNAL',
+    narration:   `Reversal of ${expense.category} expense${expense.voidReason ? `: ${expense.voidReason}` : ''}`,
+    sourceType:  'EXPENSE_VOID',
+    sourceId:    expense.id,
+    createdById: expense.voidedById ?? null,
+  }, billVoidedLines(original));   // swaps every debit/credit and checks the result still balances
+}
+
+export async function postSalesReturn({ ret, totals }: DomainEventMap['salesReturn.recorded'], tx: Tx) {
+  return postByCode(tx, {
+    branchId:    ret.branchId,
+    voucherDate: dateOf(ret.createdAt),
+    voucherType: 'JOURNAL',
+    narration:   `Customer return ${ret.returnNumber}: ${ret.reason}`,
+    sourceType:  'SALES_RETURN',
+    sourceId:    ret.id,
+    createdById: ret.createdById,
+  }, salesReturnLines({ ...totals, refundLedger: ret.refundMode === 'CREDIT' ? 'SUNDRY_DEBTORS' : ret.refundMode === 'CASH' ? 'CASH' : 'BANK' }));
+}
+
+export async function postPurchaseReturn({ ret }: DomainEventMap['purchaseReturn.recorded'], tx: Tx) {
+  return postByCode(tx, {
+    branchId:    ret.branchId,
+    voucherDate: dateOf(ret.createdAt),
+    voucherType: 'JOURNAL',
+    narration:   `Return to ${ret.supplierName} ${ret.returnNumber}: ${ret.reason}`,
+    sourceType:  'PURCHASE_RETURN',
+    sourceId:    ret.id,
+    createdById: ret.createdById,
+  }, purchaseReturnLines(ret.amount));
+}
+
+export async function postSupplierPaymentRecorded({ payment }: DomainEventMap['supplierPayment.recorded'], tx: Tx) {
+  return postByCode(tx, {
+    branchId:    payment.branchId,
+    voucherDate: dateOf(payment.paymentDate),
+    voucherType: 'PAYMENT',
+    narration:   `Payment to ${payment.supplierName}${payment.reference ? ` (${payment.reference})` : ''}`,
+    sourceType:  'SUPPLIER_PAYMENT',
+    sourceId:    payment.id,
+    createdById: payment.recordedById,
+  }, supplierPaymentLines(payment));
+}
+
+export async function postSupplierPaymentVoided({ payment }: DomainEventMap['supplierPayment.voided'], tx: Tx) {
+  const original = await findSourceVoucherLines(tx, 'SUPPLIER_PAYMENT', payment.id);
+  if (!original) return null;
+  return postByCode(tx, {
+    branchId:    payment.branchId,
+    voucherDate: dateOf(payment.voidedAt),
+    voucherType: 'JOURNAL',
+    narration:   `Reversal of payment to ${payment.supplierName}${payment.voidReason ? `: ${payment.voidReason}` : ''}`,
+    sourceType:  'SUPPLIER_PAYMENT_VOID',
+    sourceId:    payment.id,
+    createdById: payment.voidedById ?? null,
+  }, billVoidedLines(original));
+}
+
 // ─── REGISTRATION ────────────────────────────────────────────────────────────
 
 let unsubscribers: (() => void)[] | null = null;
@@ -303,6 +371,11 @@ export function registerAccountingHandlers(): void {
     onDomainEvent('supplierInvoice.reversed', async (p, tx) => { await postSupplierInvoiceReversed(p, tx); }),
     onDomainEvent('credit.repayment', async (p, tx) => { await postCreditRepayment(p, tx); }),
     onDomainEvent('expense.recorded', async (p, tx) => { await postExpenseRecorded(p, tx); }),
+    onDomainEvent('expense.voided', async (p, tx) => { await postExpenseVoided(p, tx); }),
+    onDomainEvent('supplierPayment.recorded', async (p, tx) => { await postSupplierPaymentRecorded(p, tx); }),
+    onDomainEvent('salesReturn.recorded', async (p, tx) => { await postSalesReturn(p, tx); }),
+    onDomainEvent('purchaseReturn.recorded', async (p, tx) => { await postPurchaseReturn(p, tx); }),
+    onDomainEvent('supplierPayment.voided', async (p, tx) => { await postSupplierPaymentVoided(p, tx); }),
   ];
 }
 

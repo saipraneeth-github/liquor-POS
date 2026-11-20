@@ -1,3 +1,5 @@
+import { branchPriceMap } from '../catalog/catalog.service.js';
+import { defaultPrice, resolveUnitPrice } from '../catalog/price.engine.js';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm';
@@ -18,6 +20,8 @@ import {
   supplierInvoiceItems,
   bills,
   billItems,
+  salesReturns,
+  salesReturnItems,
 } from '../../db/schema.js';
 import { postCounterSheetSales, reverseCounterSheetSales } from '../accounting/posting.service.js';
 import { resolveTaxRate } from '../billing/billing.engine.js';
@@ -25,6 +29,7 @@ import { counterQuantity, explicitTotal, rowTypeId } from '../saletypes/saletype
 import { explicitSums, resolveSaleType } from '../saletypes/saletype.service.js';
 import { onDomainEvent, type Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
+import { addStockDeltas } from '../../lib/stock-delta.js';
 import { logAudit } from '../../lib/audit.js';
 import { businessDateOf, businessDayBounds, isIsoDate } from '../../lib/business-day.js';
 import { roleRank, ROLE_RANK } from '../../middleware/auth.guard.js';
@@ -191,23 +196,51 @@ export async function salesByProduct(
     conditions.push(inArray(billItems.productId, productIds));
   }
 
-  const rows = await tx
-    .select({
-      productId: billItems.productId,
-      qty:       sql<string>`coalesce(sum(${billItems.quantity}), 0)`,
-      revenue:   sql<string>`coalesce(sum(${billItems.lineTotal}), 0)`,
-    })
-    .from(billItems)
-    .innerJoin(bills, eq(bills.id, billItems.billId))
-    .where(and(...conditions))
-    .groupBy(billItems.productId);
+  const retConditions = [
+    eq(salesReturns.branchId, branchId),
+    gte(salesReturns.createdAt, start),
+    typeIs(bills.saleTypeId, saleTypeId),
+  ];
+  if (end) retConditions.push(lt(salesReturns.createdAt, end));
+  if (productIds && productIds.length > 0) {
+    retConditions.push(inArray(salesReturnItems.productId, productIds));
+  }
 
-  return new Map(
-    rows.map((r) => [
-      r.productId,
-      { bottles: Math.max(0, Math.round(Number(r.qty))), revenue: r.revenue ?? '0.00' },
-    ]),
-  );
+  const [rows, retRows] = await Promise.all([
+    tx
+      .select({
+        productId: billItems.productId,
+        qty:       sql<string>`coalesce(sum(${billItems.quantity}), 0)`,
+        revenue:   sql<string>`coalesce(sum(${billItems.lineTotal}), 0)`,
+      })
+      .from(billItems)
+      .innerJoin(bills, eq(bills.id, billItems.billId))
+      .where(and(...conditions))
+      .groupBy(billItems.productId),
+    tx
+      .select({
+        productId: salesReturnItems.productId,
+        qty:       sql<string>`coalesce(sum(${salesReturnItems.quantity}), 0)`,
+        gross:     sql<string>`coalesce(sum(${salesReturnItems.grossAmount}), 0)`,
+      })
+      .from(salesReturnItems)
+      .innerJoin(salesReturns, eq(salesReturns.id, salesReturnItems.returnId))
+      .innerJoin(bills, eq(bills.id, salesReturns.billId))
+      .where(and(...retConditions))
+      .groupBy(salesReturnItems.productId),
+  ]);
+
+  const retMap = new Map(retRows.map((r) => [r.productId, { qty: Number(r.qty), gross: r.gross }]));
+
+  const res = new Map<string, { bottles: number; revenue: string }>();
+  for (const r of rows) {
+    const ret = retMap.get(r.productId);
+    const bottles = Math.max(0, Math.round(Number(r.qty)) - (ret?.qty ?? 0));
+    const revenue = Decimal.max(0, new Decimal(r.revenue ?? '0').minus(ret?.gross ?? '0')).toFixed(2);
+    res.set(r.productId, { bottles, revenue });
+  }
+
+  return res;
 }
 
 /** Σ approved supplier-invoice quantities and purchase audits per product for a branch, in [start, end). */
@@ -336,8 +369,9 @@ async function counterStocks(
     const explicit = await tx.select().from(stockByType).where(eq(stockByType.branchId, branchId));
     const byProduct = new Map<string, Map<string, number>>();
     for (const e of explicit) byProduct.set(e.productId, (byProduct.get(e.productId) ?? new Map()).set(e.saleTypeId, e.quantity));
+    const overrides = await branchPriceMap(tx, branchId, rows.map((r) => r.productId));
     return rows.map((r) => ({
-      productId: r.productId, rate: r.mrp,
+      productId: r.productId, rate: defaultPrice(r.mrp, overrides.get(r.productId)) ?? r.mrp,
       quantity: Math.max(0, r.quantity - explicitTotal(byProduct.get(r.productId) ?? new Map())),
     }));
   }
@@ -347,7 +381,11 @@ async function counterStocks(
     .innerJoin(products, eq(products.id, stockByType.productId))
     .leftJoin(productPrices, and(eq(productPrices.productId, stockByType.productId), eq(productPrices.saleTypeId, saleTypeId)))
     .where(and(eq(stockByType.branchId, branchId), eq(stockByType.saleTypeId, saleTypeId), eq(products.isActive, true)));
-  return rows.map((r) => ({ productId: r.productId, rate: r.price ?? r.mrp, quantity: r.quantity }));
+  const overrides = await branchPriceMap(tx, branchId, rows.map((r) => r.productId));
+  return rows.map((r) => ({
+    productId: r.productId, quantity: r.quantity,
+    rate: resolveUnitPrice({ id: saleTypeId, isDefault: false }, r.mrp, r.price, overrides.get(r.productId)) ?? r.mrp,
+  }));
 }
 
 /** Current bottles of ONE counter per product (default = total − other counters), for posting a sheet. */
@@ -538,6 +576,8 @@ export async function updateSheetLines(user: JwtPayload, sheetId: string, input:
         openingBottles:         opening,
         inwardBottles:          values.inward,
         closingBottles:         values.closing,
+        // a closing that differs from what the books worked out is a physical count: later bills must not overwrite it
+        closingManual:          line.closingManual || values.closing !== line.closingBottles,
         soldBottles:            result.sold,
         lineRevenue:            result.revenue,
         adjustmentApprovedById: surplus ? (isManager && input_.approveAdjustment ? user.sub : (alreadyApproved ? line.adjustmentApprovedById : user.sub)) : null,
@@ -644,17 +684,11 @@ export async function postSheet(user: JwtPayload, sheetId: string) {
 
       const stockUpserts = Array.from(stockUpsertsMap.values());
       if (stockUpserts.length > 0) {
-        // ⚡ Bolt Optimization: Batch upsert stock records to prevent N+1 queries and DB lock contention
-        await tx.insert(stock).values(stockUpserts)
-          .onConflictDoUpdate({ target: [stock.branchId, stock.productId], set: { quantity: sql`${stock.quantity} + EXCLUDED.quantity` } });
+        // Batched (no N+1), but as UPDATE + INSERT-if-missing: a negative delta must not be a "proposed row" (see stock-delta.ts)
+        await addStockDeltas(tx, stockUpserts);
         // A non-default counter keeps its own explicit count in step with the shop total
         if (sheet.saleTypeId) {
-          await tx.insert(stockByType)
-            .values(stockUpserts.map((u) => ({ ...u, saleTypeId: sheet.saleTypeId! })))
-            .onConflictDoUpdate({
-              target: [stockByType.branchId, stockByType.productId, stockByType.saleTypeId],
-              set: { quantity: sql`${stockByType.quantity} + EXCLUDED.quantity` },
-            });
+          await addStockDeltas(tx, stockUpserts.map((u) => ({ ...u, saleTypeId: sheet.saleTypeId! })));
         }
       }
 
@@ -900,7 +934,8 @@ export async function syncSheetWithSales(sheetId: string, txHandle?: Tx, targetP
       const transfer = transferMap.get(l.productId) ?? 0;
       const posSold = salesMap.get(l.productId)?.bottles ?? 0;
       const available = l.openingBottles + inward + transfer;
-      const closing = Math.max(0, available - posSold);
+      // a counted closing stays as counted; only the books-derived closing follows the bills
+      const closing = l.closingManual ? l.closingBottles : Math.max(0, available - posSold);
       const res = computeLine(
         { opening: l.openingBottles, inward, closing, rate: l.sellingRate, transfer },
         { allowAdjustment: true },
@@ -991,6 +1026,14 @@ export function registerCounterSheetHandlers(): void {
     }),
     onDomainEvent('supplierInvoice.reversed', async ({ invoice }, tx) => {
       await onBillPaidOrVoided(invoice.branchId, invoice.approvedAt ?? new Date(), tx, null);
+    }),
+    onDomainEvent('salesReturn.recorded', async ({ ret, bill }, tx) => {
+      const retItems = await tx
+        .select({ productId: salesReturnItems.productId })
+        .from(salesReturnItems)
+        .where(eq(salesReturnItems.returnId, ret.id));
+      const prodIds = retItems.map((i) => i.productId).filter(Boolean);
+      await onBillPaidOrVoided(ret.branchId, ret.createdAt ?? new Date(), tx, bill.saleTypeId ?? null, prodIds);
     }),
   ];
 }

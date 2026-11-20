@@ -6,6 +6,7 @@ import {
   branches, branchSaleTypes, priceAudit, productPrices, products, saleTypes, stock, stockAudit, stockByType,
 } from '../../db/schema.js';
 import type { Tx } from '../../lib/domain-events.js';
+import { branchCostMap, branchPriceMap } from '../catalog/catalog.service.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import {
@@ -132,7 +133,7 @@ export async function updateSaleType(branchId: string, id: string, input: z.infe
 
 // ─── PRICES ──────────────────────────────────────────────────────────────────
 
-const productScope = (tenant: string | null) => (tenant === null ? isNull(products.syndicateId) : or(isNull(products.syndicateId), eq(products.syndicateId, tenant)));
+const productScope = (tenant: string | null) => (tenant === null ? sql`false` : eq(products.syndicateId, tenant));   // a shop without a business has no catalog
 
 /** One table for everything price-related: each retail product with its default price (MRP) and a price per other type. */
 export async function getPriceMatrix(branchId: string) {
@@ -141,13 +142,38 @@ export async function getPriceMatrix(branchId: string) {
   const priced = types.filter((t) => !t.isDefault);
   const prods = await db.select({
     id: products.id, name: products.name, brand: products.brand, volumeMl: products.volumeMl, packQuantity: products.packQuantity,
-    exciseCode: products.exciseCode, barcode: products.barcode, mrp: products.mrp,
+    exciseCode: products.exciseCode, barcode: products.barcode, mrp: products.mrp, costPrice: products.costPrice,
   }).from(products).where(and(eq(products.isActive, true), eq(products.menuType, 'RETAIL'), productScope(tenant))).orderBy(asc(products.name));
   const prices = priced.length === 0 || prods.length === 0 ? [] : await db.select().from(productPrices)
     .where(and(inArray(productPrices.saleTypeId, priced.map((t) => t.id)), inArray(productPrices.productId, prods.map((p) => p.id))));
   const byProduct = new Map<string, Record<string, string>>();
   for (const p of prices) byProduct.set(p.productId, { ...(byProduct.get(p.productId) ?? {}), [p.saleTypeId]: p.price });
-  return { types, products: prods.map((p) => ({ ...p, prices: byProduct.get(p.id) ?? {} })) };
+  // This branch's own prices over the business's: typeId (or 'default' for the Walk-in price) → price
+  const [overrides, costs, stockRows] = await Promise.all([
+    prods.length === 0 ? new Map() : branchPriceMap(db, branchId, prods.map((p) => p.id)),
+    prods.length === 0 ? new Map() : branchCostMap(db, branchId, prods.map((p) => p.id)),
+    prods.length === 0 ? [] : db.select({ productId: stock.productId, quantity: stock.quantity })
+      .from(stock).where(and(eq(stock.branchId, branchId), inArray(stock.productId, prods.map((p) => p.id)))),
+  ]);
+  const stockMap = new Map(stockRows.map((s) => [s.productId, s.quantity]));
+  const branchOf = (id: string): Record<string, string> => {
+    const o = overrides.get(id);
+    return { ...(o?.base ? { default: o.base } : {}), ...(o?.byType ?? {}) };
+  };
+  return {
+    types,
+    products: prods.map((p) => {
+      const c = costs.get(p.id);
+      const effectiveCost = c?.costPrice ?? p.costPrice ?? null;
+      return {
+        ...p,
+        prices: byProduct.get(p.id) ?? {},
+        branchPrices: branchOf(p.id),
+        costPrice: effectiveCost ? Number(effectiveCost).toFixed(2) : null,
+        stockQuantity: stockMap.get(p.id) ?? 0,
+      };
+    }),
+  };
 }
 
 /** Sets / clears prices for non-default types in one transaction; every change is audited. The default price stays products.mrp. */

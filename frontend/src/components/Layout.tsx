@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import { errorMessage, showToast } from '../lib/print';
 import { Field, Modal } from './ui';
 import { ErrorBoundary } from './ErrorBoundary';
+import { LanguageSwitcher, useT } from '../i18n';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -37,9 +38,11 @@ import {
   PanelLeftClose,
   UserCog,
   ScrollText,
+  Bug,
   CreditCard,
   GitBranch,
   KeyRound,
+  Database,
 } from 'lucide-react';
 
 type NavItem = {
@@ -85,7 +88,9 @@ const navItems: NavItem[] = [
   { path: '/platform/branches', label: 'Branches', icon: GitBranch, id: 'nav-platform-branches', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
   { path: '/platform/plans', label: 'Plans & Billing', icon: CreditCard, id: 'nav-platform-plans', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
   { path: '/platform/users', label: 'Users', icon: UserCog, id: 'nav-platform-users', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
+  { path: '/platform/master', label: 'Master Catalog', icon: Database, id: 'nav-platform-master', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
   { path: '/platform/audit', label: 'Audit Log', icon: ScrollText, id: 'nav-platform-audit', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
+  { path: '/platform/errors', label: 'Errors', icon: Bug, id: 'nav-platform-errors', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
 ];
 
 // Office Admin runs the business for the owner: above a manager, below the owner (platform / business settings stay owner-only)
@@ -103,6 +108,7 @@ const ROLE_LABEL: Record<SaasRole, string> = {
 export function Layout() {
   const { user, logout, saasRole, branches, activeBranchId, setActiveBranch, disabledFeatures } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { t } = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [showSignoutWarning, setShowSignoutWarning] = useState(false);
@@ -116,6 +122,8 @@ export function Layout() {
   });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  // After an administrator reset the app is unusable until the person picks their own password (the server refuses every other call)
+  const pwForced = !!user?.mustChangePassword;
   const [pw, setPw] = useState({ current: '', next: '' });
   const [pwError, setPwError] = useState<string | null>(null);
 
@@ -145,23 +153,31 @@ export function Layout() {
   };
 
   // A Super Admin "support sign-in" keeps the original token so there is a way back
-  const supportLabel = localStorage.getItem('support_return_token') ? localStorage.getItem('support_label') : null;
-  const exitSupport = () => {
-    localStorage.setItem('token', localStorage.getItem('support_return_token') ?? '');
-    localStorage.removeItem('support_return_token');
+  const supportLabel = localStorage.getItem('support_label');
+  const exitSupport = async () => {
+    let next: string | null = null;
+    try {
+      next = (await api.post<{ token: string }>('/auth/support-return')).token;
+    } catch {
+      // the 30 minute support token ended, or that Super Admin can no longer sign back in: go to sign-in
+    }
+    localStorage.removeItem('support_return_token');   // older versions kept the Super Admin token here
     localStorage.removeItem('support_label');
     localStorage.removeItem('activeBranchId');
-    window.location.assign('/platform');
+    if (next) localStorage.setItem('token', next); else { localStorage.removeItem('token'); localStorage.removeItem('user'); }
+    window.location.assign(next ? '/platform' : '/login');
   };
 
   const changePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwError(null);
     try {
-      await api.post('/auth/change-password', { currentPassword: pw.current, newPassword: pw.next });
+      const res = await api.post<{ token?: string }>('/auth/change-password', { currentPassword: pw.current, newPassword: pw.next });
+      if (res?.token) localStorage.setItem('token', res.token);   // the old token ended with the change
       showToast('Password changed.');
       setPwOpen(false);
       setPw({ current: '', next: '' });
+      if (pwForced) window.location.reload();   // reload with the new token and a profile that no longer asks
     } catch (err) {
       setPwError(errorMessage(err));
     }
@@ -265,7 +281,7 @@ export function Layout() {
   const landing = items.find((i) => i.path !== location.pathname)?.path ?? '/';
   if (currentItem && !isItemVisible(currentItem)) return <Navigate to={landing} replace />;
   const groups = [...new Set(items.map((i) => i.group))];
-  const pageTitle = navItems.find((i) => i.path === location.pathname)?.label || '';
+  const pageTitle = t(navItems.find((i) => i.path === location.pathname)?.label || '');
 
   return (
     <div className="flex h-dvh bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" id="mainApp">
@@ -316,7 +332,7 @@ export function Layout() {
             {groups.map((group) => (
               <div key={group} className="space-y-1">
                 {groups.length > 1 && (
-                  <div className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7f9b8f]">{group}</div>
+                  <div className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7f9b8f]">{t(group)}</div>
                 )}
                 {items.filter((i) => i.group === group).map((item) => {
                   const Icon = item.icon;
@@ -334,7 +350,7 @@ export function Layout() {
                       }`}
                     >
                       <Icon size={18} />
-                      {item.label}
+                      {t(item.label)}
                     </Link>
                   );
                 })}
@@ -359,7 +375,7 @@ export function Layout() {
               className="flex items-center justify-center gap-2 w-full px-3 py-2 text-[#f5b1a8] border border-[#f2796b]/40 hover:bg-[#f2796b]/12 rounded-lg text-sm font-medium transition-colors cursor-pointer"
             >
               <LogOut size={16} />
-              Sign out
+              {t('Sign out')}
             </button>
           </div>
         </div>
@@ -409,6 +425,7 @@ export function Layout() {
               </label>
             )}
 
+            <LanguageSwitcher />
             {/* Dark / Light Theme Toggle */}
             <button
               id="themeToggle"
@@ -421,12 +438,12 @@ export function Layout() {
               {theme === 'dark' ? (
                 <>
                   <Sun size={16} className="text-amber-400" />
-                  <span className="hidden sm:inline">Light</span>
+                  <span className="hidden sm:inline">{t('Light')}</span>
                 </>
               ) : (
                 <>
                   <Moon size={16} className="text-purple-700" />
-                  <span className="hidden sm:inline">Dark</span>
+                  <span className="hidden sm:inline">{t('Dark')}</span>
                 </>
               )}
             </button>
@@ -440,8 +457,9 @@ export function Layout() {
         </main>
       </div>
 
-      {pwOpen && (
-        <Modal title="Change password" onClose={() => setPwOpen(false)}>
+      {(pwOpen || pwForced) && (
+        <Modal title={pwForced ? 'Choose a new password' : 'Change password'} onClose={() => { if (!pwForced) setPwOpen(false); }}>
+          {pwForced && <div className="p-3 mb-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-900 dark:text-amber-200 text-xs rounded-lg">Your password was set by an administrator. Enter it as the current password, then choose one only you know.</div>}
           <form onSubmit={changePassword} className="space-y-4">
             {pwError && <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-800 dark:text-red-200 text-xs rounded-lg">{pwError}</div>}
             <Field label="Current password">
@@ -451,7 +469,7 @@ export function Layout() {
               <input id="pwNew" className="input-base" type="password" autoComplete="new-password" minLength={8} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} required />
             </Field>
             <div className="flex justify-end gap-3">
-              <button type="button" className="px-4 py-2 text-sm border rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => setPwOpen(false)}>Cancel</button>
+              {!pwForced && <button type="button" className="px-4 py-2 text-sm border rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => setPwOpen(false)}>Cancel</button>}
               <button id="pwSave" type="submit" className="px-5 py-2 text-sm font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg cursor-pointer">Change password</button>
             </div>
           </form>

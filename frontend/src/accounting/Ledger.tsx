@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../api/client';
+import { api, authFetch } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { BankTransactions } from '../bank/BankTransactions';
+import { CashBook } from './CashBook';
+import { Expenses } from './Expenses';
+import { Suppliers } from './Suppliers';
+import { Margin } from './Margin';
 
 type TrialBalanceRow = {
   name: string;
@@ -46,7 +50,7 @@ function fmtMoney(amount: string | number | undefined): string {
 
 export function Ledger() {
   const { user, activeBranchId } = useAuth();
-  const [tab, setTab] = useState<'tb' | 'pl' | 'bs' | 'bank' | 'tally'>('tb');
+  const [tab, setTab] = useState<'tb' | 'pl' | 'bs' | 'cashbook' | 'expenses' | 'suppliers' | 'margin' | 'bank' | 'tally'>('tb');
   const [loading, setLoading] = useState(false);
 
   const [tbData, setTbData] = useState<TrialBalanceResponse | null>(null);
@@ -107,7 +111,7 @@ export function Ledger() {
     setTallyDownloading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`/api/v1/accounting/tally-export/${branchId}`, {
+      const res = await authFetch(`/api/v1/accounting/tally-export/${branchId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Download failed');
@@ -184,6 +188,58 @@ export function Ledger() {
           }`}
         >
           Bank Transactions
+        </button>
+        <button
+          id="acctab-cashbook"
+          type="button"
+          aria-selected={tab === 'cashbook'}
+          onClick={() => setTab('cashbook')}
+          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
+            tab === 'cashbook'
+              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Cash Book
+        </button>
+        <button
+          id="acctab-expenses"
+          type="button"
+          aria-selected={tab === 'expenses'}
+          onClick={() => setTab('expenses')}
+          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
+            tab === 'expenses'
+              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Expenses
+        </button>
+        <button
+          id="acctab-suppliers"
+          type="button"
+          aria-selected={tab === 'suppliers'}
+          onClick={() => setTab('suppliers')}
+          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
+            tab === 'suppliers'
+              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Suppliers
+        </button>
+        <button
+          id="acctab-margin"
+          type="button"
+          aria-selected={tab === 'margin'}
+          onClick={() => setTab('margin')}
+          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
+            tab === 'margin'
+              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Margin
         </button>
         <button
           id="acctab-tally"
@@ -363,6 +419,10 @@ export function Ledger() {
       )}
 
       {/* Tally Export Tab */}
+      {tab === 'cashbook' && <CashBook branchId={branchId} />}
+      {tab === 'expenses' && <Expenses branchId={branchId} />}
+      {tab === 'suppliers' && <Suppliers branchId={branchId} />}
+      {tab === 'margin' && <Margin branchId={branchId} />}
       {tab === 'bank' && <BankTransactions branchId={branchId} />}
 
       {tab === 'tally' && (

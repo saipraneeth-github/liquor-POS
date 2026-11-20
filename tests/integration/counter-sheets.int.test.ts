@@ -10,6 +10,7 @@ let ctx: IntegrationContext;
 let app: FastifyInstance;   // local instance with the counter-sheet routes (independent of buildApp wiring)
 let whiskyId: string;
 let beerId: string;
+let otherBeerId: string;   // the other branch's beer (a different business owns it)
 const today = businessDateOf();
 const yesterday = businessDateOf(new Date(Date.now() - 86_400_000));
 const tomorrow = businessDateOf(new Date(Date.now() + 86_400_000));
@@ -20,6 +21,7 @@ beforeAll(async () => {
   ctx = await setupIntegration();
   whiskyId = ctx.products[0].id;
   beerId = ctx.products[1].id;
+  otherBeerId = ctx.otherProducts[1].id;
   app = Fastify();
   app.register(fastifyJwt, { secret: process.env.JWT_SECRET! });
   app.register(counterSheetRoutes, { prefix: '/api/v1' });
@@ -230,8 +232,8 @@ describe('opening after days without a sheet', () => {
 
     const first = await app.inject({ method: 'POST', url: `/api/v1/counter-sheets/${ctx.otherBranchId}`, headers: h, payload: { sheetDate: d10 } });
     expect(first.statusCode).toBe(201);
-    expect(lineOf(first.json(), beerId)).toMatchObject({ openingBottles: 100 });
-    const put = await putLines(first.json().id, [{ productId: beerId, closingBottles: 90 }], h);
+    expect(lineOf(first.json(), otherBeerId)).toMatchObject({ openingBottles: 100 });
+    const put = await putLines(first.json().id, [{ productId: otherBeerId, closingBottles: 90 }], h);
     expect(put.statusCode).toBe(200);
     expect((await app.inject({ method: 'POST', url: `/api/v1/counter-sheets/sheet/${first.json().id}/post`, headers: h })).statusCode).toBe(200);
 
@@ -242,21 +244,21 @@ describe('opening after days without a sheet', () => {
       supplierName: 'Acme', invoiceNumber: 'INV-GAP', totalAmount: '3600.00', status: 'APPROVED', approvedAt,
     }).returning();
     await ctx.db.insert(ctx.schema.supplierInvoiceItems).values({
-      invoiceId: inv.id, productId: beerId, rawDescription: 'Beer 650', quantity: 24,
+      invoiceId: inv.id, productId: otherBeerId, rawDescription: 'Beer 650', quantity: 24,
       costPrice: '150.00', mrp: '200.00', lineCostTotal: '3600.00',
     });
     // what approval does to stock: +24 with a PURCHASE audit row
     await ctx.db.update(ctx.schema.stock).set({ quantity: 114 })
-      .where(and(eq(ctx.schema.stock.branchId, ctx.otherBranchId), eq(ctx.schema.stock.productId, beerId)));
+      .where(and(eq(ctx.schema.stock.branchId, ctx.otherBranchId), eq(ctx.schema.stock.productId, otherBeerId)));
     await ctx.db.insert(ctx.schema.stockAudit).values({
-      branchId: ctx.otherBranchId, productId: beerId, userId: ctx.otherBranchManager.id, changeQty: 24,
+      branchId: ctx.otherBranchId, productId: otherBeerId, userId: ctx.otherBranchManager.id, changeQty: 24,
       reason: 'PURCHASE', referenceId: inv.id, createdAt: approvedAt,
     });
 
     const next = await app.inject({ method: 'POST', url: `/api/v1/counter-sheets/${ctx.otherBranchId}`, headers: h, payload: { sheetDate: d8 } });
     expect(next.statusCode).toBe(201);
     // 90 counted on d10 + 24 received on d9 = 114 available at the start of d8
-    expect(lineOf(next.json(), beerId)).toMatchObject({ openingBottles: 114, inwardBottles: 0, closingBottles: 114 });
+    expect(lineOf(next.json(), otherBeerId)).toMatchObject({ openingBottles: 114, inwardBottles: 0, closingBottles: 114 });
   });
 });
 
@@ -431,7 +433,7 @@ describe('stock movements recorded outside the sheet day', () => {
     });
     expect(createRes.statusCode).toBe(201);
     const sheet = createRes.json();
-    const beer = lineOf(sheet, beerId);
+    const beer = lineOf(sheet, otherBeerId);
     const available = beer.openingBottles + beer.inwardBottles;
     const surplusClosing = available + 5; // 5 extra bottles!
 
@@ -440,10 +442,10 @@ describe('stock movements recorded outside the sheet day', () => {
       method: 'PUT',
       url: `/api/v1/counter-sheets/sheet/${sheet.id}/lines`,
       headers: h,
-      payload: { lines: [{ productId: beerId, closingBottles: surplusClosing, approveAdjustment: true }] },
+      payload: { lines: [{ productId: otherBeerId, closingBottles: surplusClosing, approveAdjustment: true }] },
     });
     expect(mgrOk.statusCode).toBe(200);
-    const updatedBeer = lineOf(mgrOk.json(), beerId);
+    const updatedBeer = lineOf(mgrOk.json(), otherBeerId);
     expect(updatedBeer.closingBottles).toBe(surplusClosing);
     expect(updatedBeer.soldBottles).toBe(0);
     expect(updatedBeer.lineRevenue).toBe('0.00');
@@ -454,12 +456,12 @@ describe('stock movements recorded outside the sheet day', () => {
       method: 'PUT',
       url: `/api/v1/counter-sheets/sheet/${sheet.id}/lines`,
       headers: h,
-      payload: { lines: [{ productId: beerId, closingBottles: surplusClosing }] },
+      payload: { lines: [{ productId: otherBeerId, closingBottles: surplusClosing }] },
     });
     expect(saveAgain.statusCode).toBe(200);
 
     // 5. Post sheet and verify inventory (stock) is updated
-    const stockBefore = await stockOf(beerId, ctx.otherBranchId);
+    const stockBefore = await stockOf(otherBeerId, ctx.otherBranchId);
     const postRes = await app.inject({
       method: 'POST',
       url: `/api/v1/counter-sheets/sheet/${sheet.id}/post`,
@@ -467,12 +469,12 @@ describe('stock movements recorded outside the sheet day', () => {
     });
     expect(postRes.statusCode).toBe(200);
 
-    const stockAfter = await stockOf(beerId, ctx.otherBranchId);
+    const stockAfter = await stockOf(otherBeerId, ctx.otherBranchId);
     expect(stockAfter).toBe(surplusClosing);
 
     // Verify stock_audit was written
     const audits = await ctx.db.select().from(ctx.schema.stockAudit)
-      .where(and(eq(ctx.schema.stockAudit.branchId, ctx.otherBranchId), eq(ctx.schema.stockAudit.productId, beerId), eq(ctx.schema.stockAudit.reason, 'COUNTER_SHEET')));
+      .where(and(eq(ctx.schema.stockAudit.branchId, ctx.otherBranchId), eq(ctx.schema.stockAudit.productId, otherBeerId), eq(ctx.schema.stockAudit.reason, 'COUNTER_SHEET'), eq(ctx.schema.stockAudit.referenceId, sheet.id)));
     expect(audits.length).toBeGreaterThan(0);
     const latest = audits[audits.length - 1];
     expect(latest.changeQty).toBe(stockAfter - stockBefore);
@@ -498,7 +500,7 @@ describe('stock movements recorded outside the sheet day', () => {
     expect(reverted.postedById).toBeNull();
 
     // Verify stock is restored to pre-post value
-    const stockReverted = await stockOf(beerId, ctx.otherBranchId);
+    const stockReverted = await stockOf(otherBeerId, ctx.otherBranchId);
     expect(stockReverted).toBe(stockBefore);
 
     // Verify COUNTER_SHEET audits for this sheet were removed

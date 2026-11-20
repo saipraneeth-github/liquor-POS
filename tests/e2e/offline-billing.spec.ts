@@ -1,9 +1,31 @@
 import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { addProduct, login } from './helpers';
+
+/**
+ * A counter tablet has been open for a while before the shop's internet drops, so its service worker has long since finished
+ * saving the app. Wait for the same thing here (the worker controls the page and every built screen is on the device) before
+ * pulling the network, otherwise the test would be racing the first install.
+ */
+async function waitUntilAvailableOffline(page: Page) {
+  // expect.poll really awaits the answer each time (page.waitForFunction does not reliably wait for an async callback, which
+  // let the first version of this helper pass before the worker had even finished installing)
+  await expect.poll(async () => page.evaluate(async () => {
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return false;
+    const name = (await caches.keys()).find((n) => n.startsWith('lc-files-'));
+    if (!name) return false;
+    // every built script and stylesheet the build listed, not just "some"
+    const listed: string[] = await (await fetch('/precache.json', { cache: 'no-store' })).json();
+    const store = await caches.open(name);
+    for (const f of listed) if (!(await store.match(f))) return false;
+    return listed.length > 0;
+  }), { timeout: 45000, intervals: [250, 500, 1000] }).toBe(true);
+}
 
 test('offline bill is queued, auto-synced on reconnect and recorded exactly once', async ({ page, context }) => {
   await login(page, 'cashier@liquor.com');
   await addProduct(page, 'Blenders Pride');
+  await waitUntilAvailableOffline(page);
 
   // Lose the network and ring the bill
   await context.setOffline(true);
@@ -51,6 +73,7 @@ test('offline bill is queued, auto-synced on reconnect and recorded exactly once
 test('offline bills stay with the cashier who rang them: the next user to sign in does not submit them', async ({ page, context }) => {
   await login(page, 'cashier@liquor.com');
   await addProduct(page, 'Blenders Pride');
+  await waitUntilAvailableOffline(page);
   await context.setOffline(true);
   await page.click('#checkoutBtn');
   await expect(page.locator('#checkoutTitle')).toHaveText('Saved offline');

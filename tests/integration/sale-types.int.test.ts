@@ -283,7 +283,7 @@ describe('dividing the stock (inventory is the source of truth)', () => {
     expect((await counters(whisky.id)).JANATA).toBe(15);             // all or nothing
     // a product that has stock but no Janata price cannot be handed to Janata
     const [fresh] = await ctx.db.insert(ctx.schema.products).values({
-      name: 'Unpriced Gin 750ml', brand: 'UG', sku: 'UG750', mrp: '500.00', categoryId: ctx.products[0].categoryId, volumeMl: 750, packQuantity: 12,
+      name: 'Unpriced Gin 750ml', brand: 'UG', sku: 'UG750', mrp: '500.00', categoryId: ctx.products[0].categoryId, volumeMl: 750, packQuantity: 12, syndicateId: ctx.syndicateId,
     }).returning();
     await ctx.db.insert(ctx.schema.stock).values({ branchId: ctx.branchId, productId: fresh.id, quantity: 10 });
     const nopr = await put([{ productId: fresh.id, saleTypeId: janata, quantity: 1 }]);

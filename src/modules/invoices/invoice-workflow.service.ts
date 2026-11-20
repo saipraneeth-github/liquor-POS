@@ -34,8 +34,8 @@ async function statusError(exec: Tx | typeof db, id: string, action: string): Pr
   return new ConflictError(`Invoice is ${row.status} and cannot be ${action}`);
 }
 
-function sameNumbers(prev: ItemRow, next: { quantity: number; costPrice: string; mrp: string }): boolean {
-  return prev.quantity === next.quantity && new Decimal(prev.costPrice).equals(next.costPrice) && new Decimal(prev.mrp).equals(next.mrp);
+function sameNumbers(prev: ItemRow, next: { quantity: number; costPrice: string }): boolean {
+  return prev.quantity === next.quantity && new Decimal(prev.costPrice).equals(next.costPrice);
 }
 
 export async function updateDraft(id: string, user: JwtPayload, input: InvoiceInput) {
@@ -50,7 +50,7 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
       const catalog = await loadCatalog(tx, current.branchId, id);
       const refIds = [...new Set(input.items.map((i) => i.productId).filter((p): p is string => !!p))];
       const refRows = refIds.length ? await tx.select({
-        id: products.id, name: products.name, mrp: products.mrp, sku: products.sku, costPrice: products.costPrice, volumeMl: products.volumeMl,
+        id: products.id, name: products.name, sku: products.sku, costPrice: products.costPrice, volumeMl: products.volumeMl,
         packQuantity: products.packQuantity,
       }).from(products).where(inArray(products.id, refIds)) : [];
       const refMap = new Map(refRows.map((p) => [p.id, p]));
@@ -87,6 +87,7 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
         }
         const cpDec = new Decimal(item.costPrice);
         const costPrice = cpDec.decimalPlaces() <= 2 ? cpDec.toFixed(2) : cpDec.toFixed(6);
+        const product = productId ? refMap.get(productId) ?? catalog.find((c) => c.id === productId) ?? null : null;
         const next = {
           casesDelivered: (item.casesDelivered !== undefined && item.casesDelivered !== null) ? item.casesDelivered : (prev?.casesDelivered ?? 0),
           bottlesDelivered: (item.bottlesDelivered !== undefined && item.bottlesDelivered !== null) ? item.bottlesDelivered : (prev?.bottlesDelivered ?? 0),
@@ -94,18 +95,16 @@ export async function updateDraft(id: string, user: JwtPayload, input: InvoiceIn
           quantity: item.quantity,
           caseRate: item.caseRate !== undefined ? item.caseRate : (prev?.caseRate ?? null),
           costPrice,
-          mrp: new Decimal(item.mrp).toFixed(2),
         };
         if (prev && sameNumbers(prev, next)) {
           const keep = (prev.flags ?? []).filter((f) => (EXTRACTION_FLAGS as readonly string[]).includes(f)
             && (f !== 'VOLUME_DIFFERS' || prev.productId === productId));
           carried = [...carried, ...keep];
         }
-        const product = productId ? refMap.get(productId) ?? catalog.find((c) => c.id === productId) ?? null : null;
         const lineVol = (item.volumeMl !== undefined && item.volumeMl !== null) ? item.volumeMl : (prev?.volumeMl ?? product?.volumeMl ?? null);
         const v = validateLine({
           ...next, extractedAmount: item.extractedAmount ?? prev?.extractedAmount ?? null,
-          catalogMrp: product?.mrp ?? null, productId, matchStatus: status, flags: carried,
+          productId, matchStatus: status, flags: carried,
           volumeMl: lineVol, catalogVolumeMl: product ? (product.volumeMl ?? extractVolumeMl(product.name)) : null,
           packQuantity: next.packQuantity, catalogPackQuantity: product?.packQuantity ?? null,
         });
@@ -239,7 +238,6 @@ function lineProblems(items: ItemRow[], requireConfirmedMatch: boolean): string[
     else if (requireConfirmedMatch && !['MATCHED', 'MANUAL'].includes(i.matchStatus ?? 'MANUAL')) problems.push(`line ${n}: suggested product must be confirmed`);
     if (i.quantity <= 0) problems.push(`line ${n}: quantity must be positive`);
     if (!new Decimal(i.costPrice).gt(0)) problems.push(`line ${n}: cost must be positive`);
-    if (!new Decimal(i.mrp).gt(0)) problems.push(`line ${n}: MRP must be positive`);
     if ((i.flags ?? []).some((f) => (BLOCKING_LINE_FLAGS as readonly string[]).includes(f))) {
       problems.push(`line ${n}: the selected product is a different bottle size (ml) than the invoice line`);
     }
@@ -265,6 +263,8 @@ export async function reviewInvoice(id: string, user: JwtPayload) {
     assertTotalsReconcile(row.extractionWarnings);
     const items = await tx.select().from(supplierInvoiceItems).where(eq(supplierInvoiceItems.invoiceId, id));
     if (items.length === 0) throw new BusinessRuleError('Invoice has no lines');
+    const matchedProductIds = items.map((i) => i.productId).filter(Boolean) as string[];
+    const productMap = matchedProductIds.length > 0 ? await loadInvoiceProducts(tx, matchedProductIds, id) : new Map();
     const problems = lineProblems(items, false);
     if (problems.length) throw new BusinessRuleError(`Cannot mark as reviewed: ${problems.join('; ')}`);
   });
@@ -284,9 +284,10 @@ export async function approveInvoice(id: string, user: JwtPayload) {
     assertTotalsReconcile(invoice.extractionWarnings);
     const items = await tx.select().from(supplierInvoiceItems).where(eq(supplierInvoiceItems.invoiceId, id));
     if (items.length === 0) throw new BusinessRuleError('Invoice has no lines');
+    const matchedProductIds = items.map((i) => i.productId).filter(Boolean) as string[];
+    const productMap = matchedProductIds.length > 0 ? await loadInvoiceProducts(tx, matchedProductIds, id) : new Map();
     const problems = lineProblems(items, true);
     if (problems.length) throw new BusinessRuleError(`Cannot approve: ${problems.join('; ')}`);
-    const productMap = await loadInvoiceProducts(tx, items.map((i) => i.productId!));
     // Authoritative re-check against the live catalog: stock must go to the same bottle size the invoice delivered
     const wrongSize = items
       .filter((i) => !!i.volumeMl && !!productMap.get(i.productId!)?.volumeMl && i.volumeMl !== productMap.get(i.productId!)!.volumeMl)

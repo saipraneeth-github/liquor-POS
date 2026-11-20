@@ -1,8 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { requireRole, getUser } from '../../middleware/auth.guard.js';
+import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
 import { tenantOf } from '../menu/menu-access.js';
+import { eq } from 'drizzle-orm';
+import { db } from '../../db/client.js';
+import { branches } from '../../db/schema.js';
 import { requirePermission, stripCost, userCan } from '../permissions/permission.service.js';
 import {
   createProduct,
@@ -24,10 +27,12 @@ export async function productRoutes(fastify: FastifyInstance) {
   // Steward+ so floor staff can raise KOTs; cost price is commercial data and withheld from stewards.
   fastify.get('/products', {
     preHandler: requireRole('steward'),
-  }, async (request) => {
+  }, async (request, reply) => {
     const user = getUser(request);
     const query = request.query as { branchId?: string };
     const branchId = query?.branchId ?? user.branchId ?? undefined;
+    // Stock levels and menu overrides are branch data: check access whenever a different branch is asked for
+    if (branchId && branchId !== user.branchId && !(await assertBranchAccess(user, branchId, reply))) return;
     const list = await listProducts(true, await tenantOf(user), branchId);
     // Cost prices are for people who may see them (cost.view); everyone else only sees selling prices
     return (await userCan(user, 'cost.view')) ? list : stripCost(list);
@@ -45,7 +50,7 @@ export async function productRoutes(fastify: FastifyInstance) {
   });
 
   // GET /categories — list all active categories (steward+)
-  fastify.get('/categories', { preHandler: requireRole('steward') }, async () => listCategories());
+  fastify.get('/categories', { preHandler: requireRole('steward') }, async (request) => listCategories(await tenantOf(getUser(request))));
 
   // GET /master-products/lookup?exciseCode=5028&volumeMl=650 — master catalog lookup (cashier+)
   // Used by the "Add Missing Product" modal to auto-fill fields from the Telangana TSBCL ICDC catalog.
@@ -58,7 +63,14 @@ export async function productRoutes(fastify: FastifyInstance) {
     if (!exciseCode || isNaN(volumeMl) || volumeMl <= 0) {
       return reply.code(400).send({ error: 'exciseCode and volumeMl (integer > 0) are required' });
     }
-    const result = await lookupMasterProduct(exciseCode, volumeMl, q.state ?? 'TS');
+    // The state comes from the caller's own branch (never trust a client-chosen one beyond a platform owner)
+    const user = getUser(request);
+    let state = 'TS';
+    if (user.branchId) {
+      const [b] = await db.select({ stateCode: branches.stateCode }).from(branches).where(eq(branches.id, user.branchId)).limit(1);
+      state = b?.stateCode ?? state;
+    } else if (q.state) state = q.state;
+    const result = await lookupMasterProduct(exciseCode, volumeMl, state);
     if (!result) return reply.code(404).send({ error: 'Not found in master catalog' });
     return result;
   });
@@ -73,8 +85,10 @@ export async function productRoutes(fastify: FastifyInstance) {
     }
     try {
       const user = getUser(request);
-      const product = await createProduct(parsed.data, await tenantOf(user));
-      return reply.code(201).send((await userCan(user, 'cost.view')) ? product : stripCost(product));
+      // Cost is a permission: writing it needs cost.view, otherwise the field is ignored
+      const canCost = await userCan(user, 'cost.view');
+      const product = await createProduct(canCost ? parsed.data : { ...parsed.data, costPrice: undefined }, await tenantOf(user));
+      return reply.code(201).send(canCost ? product : stripCost(product));
     } catch (err: unknown) {
       return sendError(reply, err, 'Product creation failed');
     }

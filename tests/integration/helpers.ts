@@ -23,6 +23,9 @@ export interface IntegrationContext {
   branchId: string;
   otherBranchId: string;           // a second branch, used for cross-branch denial tests
   syndicateId: string;
+  otherSyndicateId: string;        // the business the second branch belongs to (every branch has a business)
+  /** The same two bottles as `products`, owned by the other business and stocked in the other branch. */
+  otherProducts: { id: string; mrp: string; categoryId: string }[];
   users: Record<Role, { id: string; email: string }>;
   otherBranchManager: { id: string; email: string };
   products: { id: string; mrp: string; categoryId: string }[];
@@ -42,7 +45,8 @@ export async function setupIntegration(): Promise<IntegrationContext> {
 
   const [syndicate] = await db.insert(schema.syndicates).values({ name: 'Test Syndicate', maxBranches: 50 }).returning();
   const [branch] = await db.insert(schema.branches).values({ name: 'Main', code: 'MAIN', syndicateId: syndicate.id }).returning();
-  const [other] = await db.insert(schema.branches).values({ name: 'Other', code: 'OTH' }).returning();
+  const [otherSyndicate] = await db.insert(schema.syndicates).values({ name: 'Other Syndicate', maxBranches: 50 }).returning();
+  const [other] = await db.insert(schema.branches).values({ name: 'Other', code: 'OTH', syndicateId: otherSyndicate.id }).returning();
 
   const passwordHash = await bcrypt.hash('Password@123', 4);
   const roles: Role[] = ['owner', 'manager', 'office_admin', 'cashier', 'steward'];
@@ -64,16 +68,14 @@ export async function setupIntegration(): Promise<IntegrationContext> {
 
   const [cat] = await db.insert(schema.categories).values({ name: 'Whisky', taxRate: '18.00' }).returning();
   const [beerCat] = await db.insert(schema.categories).values({ name: 'Beer', taxRate: '12.00' }).returning();
-  const prods = await db.insert(schema.products).values([
-    { name: 'Test Whisky 750ml', brand: 'TW', barcode: '1000000000001', sku: 'TW750', mrp: '1000.00', costPrice: '800.00', categoryId: cat.id, volumeMl: 750, packQuantity: 12 },
-    { name: 'Test Beer 650ml', brand: 'TB', barcode: '1000000000002', sku: 'TB650', mrp: '200.00', costPrice: '150.00', categoryId: beerCat.id, volumeMl: 650, packQuantity: 12 },
+  const mkProducts = (syndicateId: string) => db.insert(schema.products).values([
+    { name: 'Test Whisky 750ml', brand: 'TW', barcode: '1000000000001', sku: 'TW750', mrp: '1000.00', costPrice: '800.00', categoryId: cat.id, volumeMl: 750, packQuantity: 12, syndicateId },
+    { name: 'Test Beer 650ml', brand: 'TB', barcode: '1000000000002', sku: 'TB650', mrp: '200.00', costPrice: '150.00', categoryId: beerCat.id, volumeMl: 650, packQuantity: 12, syndicateId },
   ]).returning();
-  for (const p of prods) {
-    await db.insert(schema.stock).values([
-      { branchId: branch.id, productId: p.id, quantity: 100 },
-      { branchId: other.id, productId: p.id, quantity: 100 },
-    ]);
-  }
+  const prods = await mkProducts(syndicate.id);
+  const otherProds = await mkProducts(otherSyndicate.id);
+  for (const p of prods) await db.insert(schema.stock).values({ branchId: branch.id, productId: p.id, quantity: 100 });
+  for (const p of otherProds) await db.insert(schema.stock).values({ branchId: other.id, productId: p.id, quantity: 100 });
 
   const app = buildApp();
   await app.ready();
@@ -94,6 +96,8 @@ export async function setupIntegration(): Promise<IntegrationContext> {
     branchId: branch.id,
     otherBranchId: other.id,
     syndicateId: syndicate.id,
+    otherSyndicateId: otherSyndicate.id,
+    otherProducts: otherProds.map((p) => ({ id: p.id, mrp: p.mrp, categoryId: p.categoryId! })),
     users,
     otherBranchManager: { id: om.id, email: om.email },
     products: prods.map((p) => ({ id: p.id, mrp: p.mrp, categoryId: p.categoryId! })),

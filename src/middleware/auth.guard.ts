@@ -4,21 +4,31 @@ import { db } from '../db/client.js';
 import { branches, syndicates, users } from '../db/schema.js';
 import type { JwtPayload, UserRole } from '../modules/auth/auth.service.js';
 import { ACCESS_MESSAGE, accessState } from '../modules/platform/access.engine.js';
+import { isBlockedForImpersonation } from '../modules/platform/impersonation.engine.js';
+import { requestContext } from '../lib/request-context.js';
 
 // ─── RBAC ROLE HIERARCHY ─────────────────────────────────────────────────────
 
 export const ROLE_RANK: Record<UserRole, number> = {
-  steward:      1,
-  cashier:      2,
-  manager:      3,
-  office_admin: 3.5,   // runs the business on the owner's behalf: above a manager, below the owner (platform / outlets / billing stay owner-only)
-  owner:        4,
+  steward:      10,
+  cashier:      20,
+  manager:      30,
+  office_admin: 35,   // runs the business on the owner's behalf: above a manager, below the owner (platform / outlets / billing stay owner-only)
+  owner:        40,
 };
+
+/** The only routes open to someone who still has to replace an administrator-set password. */
+export function isAllowedWhilePasswordChangeRequired(url: string): boolean {
+  const path = url.split('?')[0].replace(/\/+$/, '');
+  return path === '/api/v1/me' || path === '/api/v1/auth/change-password';
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function roleRank(role: string): number {
-  return ROLE_RANK[role as UserRole] ?? 0;
+  const rank = ROLE_RANK[role as UserRole];
+  if (rank === undefined) throw new Error(`Unknown role: ${role}`);   // never silently rank an unknown role as 0
+  return rank;
 }
 
 /**
@@ -45,6 +55,8 @@ export function requireRole(minRole: UserRole, opts: { allowLocked?: boolean } =
       ? await db
           .select({
             role: users.role, branchId: users.branchId, syndicateId: users.syndicateId, isActive: users.isActive,
+            passwordChangedAt: users.passwordChangedAt,
+            mustChangePassword: users.mustChangePassword,
             tenantActive: syndicates.isActive,   // NULL when the account has no tenant (platform owner)
             tenantPlan: syndicates.plan,
             tenantTrialEndsAt: syndicates.trialEndsAt,
@@ -58,6 +70,18 @@ export function requireRole(minRole: UserRole, opts: { allowLocked?: boolean } =
       : [];
     if (!account || !account.isActive) {
       reply.code(401).send({ error: 'Unauthorized: account is inactive or no longer exists' });
+      return;
+    }
+    // A password change / reset ends every session signed in before it (a stolen token must not outlive the reset).
+    // JWT `iat` has one-second resolution, so compare in whole seconds: a token minted after the change always passes.
+    if (account.passwordChangedAt && (claims.iat ?? 0) < Math.floor(account.passwordChangedAt.getTime() / 1000)) {
+      reply.code(401).send({ error: 'Unauthorized: your password was changed, please sign in again' });
+      return;
+    }
+    // After an administrator reset, the person may do only two things: see who they are and choose their own password
+    // (A support sign-in is exempt: the Super Admin acting as that person cannot change their password, see impersonation.engine.)
+    if (account.mustChangePassword && !claims.impersonatedBy && !isAllowedWhilePasswordChangeRequired(request.url)) {
+      reply.code(403).send({ error: 'You must choose a new password before continuing', code: 'PASSWORD_CHANGE_REQUIRED' });
       return;
     }
     // A suspended tenant (unpaid / offboarded) loses access for every one of its users at once
@@ -82,6 +106,15 @@ export function requireRole(minRole: UserRole, opts: { allowLocked?: boolean } =
       syndicateId: account.syndicateId ?? null,
     };
     request.user = payload;
+
+    if (claims.impersonatedBy) {
+      const store = requestContext.getStore();
+      if (store) store.impersonatedBy = claims.impersonatedBy;
+      if (isBlockedForImpersonation(request.method, request.url)) {
+        reply.code(403).send({ error: 'Forbidden: a support sign-in cannot change passwords, users or roles' });
+        return;
+      }
+    }
 
     if (roleRank(payload.role) < ROLE_RANK[minRole]) {
       reply.code(403).send({ error: `Forbidden: requires role ${minRole} or higher` });

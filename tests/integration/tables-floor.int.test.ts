@@ -151,6 +151,7 @@ describe('serving KOT items deducts stock immediately and rejects if insufficien
     const [cat] = await ctx.db.select().from(ctx.schema.categories).limit(1);
     const [product] = await ctx.db.insert(ctx.schema.products).values({
       name: 'Limited Rum 750ml',
+      syndicateId: ctx.syndicateId,
       brand: 'LR',
       barcode: `LR-${Date.now()}`,
       sku: `LR-${Date.now()}`,

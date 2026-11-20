@@ -210,7 +210,8 @@ export function Platform() {
   const supportSignIn = async (tenant: Tenant) => {
     try {
       const res = await api.post<{ token: string; as: { name: string; email: string } }>(`/platform/tenants/${tenant.id}/impersonate`);
-      localStorage.setItem('support_return_token', localStorage.getItem('token') ?? '');
+      // The Super Admin's own token is NOT kept in the browser: ending support asks the server for a fresh one (/auth/support-return)
+      localStorage.removeItem('support_return_token');
       localStorage.setItem('support_label', `${tenant.name} (${res.as.email})`);
       localStorage.setItem('token', res.token);
       localStorage.removeItem('activeBranchId');
@@ -303,31 +304,36 @@ export function Platform() {
   };
 
   /** The actions for one business: the table's last column on a screen, a folded list on a phone. */
+  const AB = 'px-2.5 py-1 text-xs font-medium rounded-md border cursor-pointer transition-colors';
+  const AB_N = 'border-gray-200 text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700';
+  const AB_P = 'border-purple-200 text-purple-700 hover:bg-purple-50 dark:border-purple-800 dark:text-purple-300 dark:hover:bg-purple-900/30';
+  const AB_G = 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300';
+  const AB_R = 'border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-900/30';
   const renderActions = (t: Tenant) => (
-    <>
+    <div className="flex flex-wrap justify-end gap-1.5 max-w-[17rem] ml-auto">
             {t.archivedAt ? (
               <>
-                <button type="button" className="tenant-billing text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => openBilling(t)}>Billing</button>
-                <button type="button" className="tenant-restore text-xs text-emerald-600 hover:underline mr-3 cursor-pointer" onClick={() => restore(t)}>Restore</button>
-                <button type="button" className="tenant-export text-xs text-gray-600 dark:text-gray-300 hover:underline mr-3 cursor-pointer" onClick={() => exportData(t)}>Export data</button>
-                <button type="button" className="tenant-delete text-xs text-red-600 hover:underline cursor-pointer" onClick={() => setDeleting(t)}>Delete…</button>
+                <button type="button" className={`tenant-billing ${AB} ${AB_P}`} onClick={() => openBilling(t)}>Billing</button>
+                <button type="button" className={`tenant-restore ${AB} ${AB_G}`} onClick={() => restore(t)}>Restore</button>
+                <button type="button" className={`tenant-export ${AB} ${AB_N}`} onClick={() => exportData(t)}>Export data</button>
+                <button type="button" className={`tenant-delete ${AB} ${AB_R}`} title="Permanently removes this business and ALL its data (products, bills, books). Cannot be undone." onClick={() => setDeleting(t)}>Hard delete…</button>
               </>
             ) : (
               <>
-                <button type="button" className="tenant-change-plan text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => setChanging(t)}>Change plan</button>
-                <button type="button" className="text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => setEditing({ tenant: t, plan: t.plan, maxBranches: String(t.maxBranches), accessUntil: '' })}>Plan &amp; limits</button>
-                <button type="button" className="tenant-billing text-xs text-purple-600 hover:underline mr-3 cursor-pointer" onClick={() => openBilling(t)}>Billing</button>
-                <button type="button" className="text-xs text-gray-600 dark:text-gray-300 hover:underline mr-3 cursor-pointer" onClick={() => resetAdminPassword(t)}>Reset password</button>
-                <button type="button" className="tenant-support text-xs text-gray-600 dark:text-gray-300 hover:underline mr-3 cursor-pointer" onClick={() => supportSignIn(t)}>Support sign-in</button>
+                <button type="button" className={`tenant-change-plan ${AB} ${AB_P}`} onClick={() => setChanging(t)}>Change plan</button>
+                <button type="button" className={` ${AB} ${AB_P}`} onClick={() => setEditing({ tenant: t, plan: t.plan, maxBranches: String(t.maxBranches), accessUntil: '' })}>Plan &amp; limits</button>
+                <button type="button" className={`tenant-billing ${AB} ${AB_P}`} onClick={() => openBilling(t)}>Billing</button>
+                <button type="button" className={` ${AB} ${AB_N}`} onClick={() => resetAdminPassword(t)}>Reset password</button>
+                <button type="button" className={`tenant-support ${AB} ${AB_N}`} onClick={() => supportSignIn(t)}>Support sign-in</button>
                 {t.isActive ? (
-                  <button type="button" className="text-xs text-red-600 hover:underline mr-3 cursor-pointer" onClick={() => setSuspending(t)}>Suspend</button>
+                  <button type="button" className={` ${AB} ${AB_R}`} onClick={() => setSuspending(t)}>Suspend</button>
                 ) : (
-                  <button type="button" className="text-xs text-emerald-600 hover:underline cursor-pointer" onClick={() => setActive(t, true)}>Reactivate</button>
+                  <button type="button" className={` ${AB} ${AB_G}`} onClick={() => setActive(t, true)}>Reactivate</button>
                 )}
-                <button type="button" className="tenant-archive text-xs text-gray-600 dark:text-gray-300 hover:underline cursor-pointer" onClick={() => setArchiving(t)}>Archive…</button>
+                <button type="button" className={`tenant-archive ${AB} ${AB_N}`} title="Soft delete: the business disappears from every screen and nobody can sign in, but ALL its data is kept and it can be restored. Hard delete is available from the archive." onClick={() => setArchiving(t)}>Archive…</button>
               </>
             )}
-    </>
+    </div>
   );
 
   return (
@@ -380,7 +386,7 @@ export function Platform() {
             <ul className="divide-y divide-gray-100 dark:divide-gray-700 text-xs" id="outboxList">
               {outbox.slice(0, 6).map((m) => (
                 <li key={m.id} className="py-1.5 flex justify-between gap-3 outbox-row">
-                  <button type="button" className="text-left hover:underline cursor-pointer" onClick={() => setMailOpen(m)}>{m.subject} <span className="text-gray-500">→ {m.toEmail}</span></button>
+                  <button type="button" className={` ${AB} ${AB_N}`} onClick={() => setMailOpen(m)}>{m.subject} <span className="text-gray-500">→ {m.toEmail}</span></button>
                   <Badge tone={m.status === 'SENT' ? 'good' : m.status === 'FAILED' ? 'bad' : 'muted'}>{m.status}</Badge>
                 </li>
               ))}
@@ -472,7 +478,7 @@ export function Platform() {
                       {t.archivedAt ? `Archived ${fmtDate(t.archivedAt)}${t.archiveReason ? ` — ${t.archiveReason}` : ''}` : t.lastBillAt ? `Last bill ${fmtDate(t.lastBillAt)}` : 'Never billed'}
                     </div>
                   </td>
-                  <td className="py-3 px-4 text-right whitespace-nowrap">
+                  <td className="py-3 px-4 text-right align-top">
                     {renderActions(t)}
                   </td>
                 </tr>

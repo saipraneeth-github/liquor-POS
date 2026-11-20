@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { X, RefreshCw, CheckCircle, DollarSign, Smartphone, CreditCard, BookOpen } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
@@ -19,6 +19,8 @@ interface ClosingRow {
   totalTax?: string;
   openingCash: string;
   cashWithdrawals: string;
+  cashRepayments?: string;
+  cashExpenses?: string;
   expectedCashInDrawer: string;
   actualCashCounted: string;
   cashDiscrepancy: string;
@@ -38,10 +40,18 @@ interface ClosingPreviewResponse {
     upiSales: string;
     creditSales: string;
     grossSales: string;
+    grossBilled?: string;
+    totalRefunds?: string;
+    cashRefunds?: string;
+    cardRefunds?: string;
+    upiRefunds?: string;
+    creditRefunds?: string;
     totalTax: string;
     paidBillsCount: number;
     voidedBillsCount: number;
     totalBillsCount: number;
+    cashRepayments?: string;
+    cashExpenses?: string;
   };
 }
 
@@ -77,10 +87,18 @@ export function Closing() {
     upiSales: string;
     creditSales: string;
     grossSales: string;
+    grossBilled?: string;
+    totalRefunds?: string;
+    cashRefunds?: string;
+    cardRefunds?: string;
+    upiRefunds?: string;
+    creditRefunds?: string;
     totalTax: string;
     paidBillsCount: number;
     voidedBillsCount: number;
     totalBillsCount: number;
+    cashRepayments?: string;
+    cashExpenses?: string;
   } | null>(null);
 
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -127,12 +145,19 @@ export function Closing() {
     }
   }, [branchId]);
 
+  // Only the LATEST preview request may fill the form. The page asks for today's figures when it opens and again when the date
+  // is changed; if the older answer arrives last it would put today's sales under another date, and those figures would be
+  // submitted. Each request takes a number and an answer that is no longer the newest is dropped.
+  const previewSeq = useRef(0);
+
   const loadPreview = useCallback(async (date?: string) => {
     if (!branchId) return;
     const d = date || closingDate || todayStr;
+    const seq = ++previewSeq.current;
     setLoadingPreview(true);
     try {
       const res = await api.get<ClosingPreviewResponse>(`/closing/preview?branchId=${branchId}&date=${d}`);
+      if (seq !== previewSeq.current) return;   // a newer request has been made since: this answer is stale
       setIsAlreadyClosed(res.isAlreadyClosed);
       setExistingClosing(res.existingClosing);
       setAutoSales(res.sales);
@@ -175,7 +200,7 @@ export function Closing() {
     } catch (err: any) {
       console.error('Failed to load closing preview:', err);
     } finally {
-      setLoadingPreview(false);
+      if (seq === previewSeq.current) setLoadingPreview(false);   // the newest request decides when loading is over
     }
   }, [branchId, closingDate, todayStr]);
 
@@ -203,8 +228,11 @@ export function Closing() {
   const numCardSales = parseFloat(cardSales) || 0;
   const numCreditSales = parseFloat(creditSales) || 0;
 
-  // Expected Cash in Drawer = Opening + Cash Sales - Withdrawals
-  const expectedCashInDrawer = numOpening + numCashSales - numWithdrawals;
+  // Cash that moved without a bill (khata repayments taken in cash, expenses paid in cash); the server computes both
+  const numCashRepayments = parseFloat((isAlreadyClosed ? existingClosing?.cashRepayments : autoSales?.cashRepayments) ?? '0') || 0;
+  const numCashExpenses = parseFloat((isAlreadyClosed ? existingClosing?.cashExpenses : autoSales?.cashExpenses) ?? '0') || 0;
+  // Expected Cash in Drawer = Opening + Cash Sales + Cash Repayments - Cash Expenses - Withdrawals
+  const expectedCashInDrawer = numOpening + numCashSales + numCashRepayments - numCashExpenses - numWithdrawals;
   const cashDiscrepancy = numActualCash - expectedCashInDrawer;
   const isBalanced = Math.abs(cashDiscrepancy) < 0.005;
 
@@ -234,7 +262,7 @@ export function Closing() {
     setUpiSales(autoSales.upiSales);
     setCardSales(autoSales.cardSales);
     setCreditSales(autoSales.creditSales);
-    const expected = Math.max(0, numOpening + (parseFloat(autoSales.cashSales) || 0) - numWithdrawals);
+    const expected = Math.max(0, numOpening + (parseFloat(autoSales.cashSales) || 0) + (parseFloat(autoSales.cashRepayments ?? '0') || 0) - (parseFloat(autoSales.cashExpenses ?? '0') || 0) - numWithdrawals);
     setActualCash(expected.toFixed(2));
     showToast('Reset all channels to system live sales', 'success');
   };
@@ -268,6 +296,22 @@ export function Closing() {
       return;
     }
     setConfirmOpen(true);
+  };
+
+  // Closed too early or a figure was wrong: an office admin / owner reopens the day (audited, record kept in the audit log)
+  const canReopen = user?.role === 'owner' || user?.role === 'office_admin';
+  const reopenDay = async () => {
+    if (!existingClosing) return;
+    const reason = window.prompt('Why is this day being reopened? (at least 10 characters)');
+    if (!reason) return;
+    try {
+      await api.post(`/closing/${existingClosing.id}/reopen`, { reason });
+      showToast('Day reopened - bills can be made again and the day can be closed afresh', 'success');
+      loadPreview();
+      loadHistory();
+    } catch (err: any) {
+      showToast(err?.message ?? 'Could not reopen day', 'error');
+    }
   };
 
   const executeClosing = async () => {
@@ -371,6 +415,9 @@ export function Closing() {
                 ₹{parseFloat(existingClosing.cashDiscrepancy).toFixed(2)}
               </span>
             </div>
+            {canReopen && (
+              <button type="button" onClick={reopenDay} className="text-[11px] underline text-emerald-900 dark:text-emerald-200">Reopen this day</button>
+            )}
             <div className="text-emerald-700 dark:text-emerald-400 text-[11px]">
               Cash ₹{parseFloat(existingClosing.cashSales || '0').toFixed(2)} · UPI ₹{parseFloat(existingClosing.upiSales || '0').toFixed(2)} · Card ₹{parseFloat(existingClosing.cardSales || '0').toFixed(2)} · Credit ₹{parseFloat(existingClosing.creditSales || '0').toFixed(2)}
             </div>
@@ -391,7 +438,13 @@ export function Closing() {
               </span>
               {autoSales && (
                 <span className="text-[11px] font-mono text-gray-500">
-                  System billed: <b>₹{parseFloat(autoSales.cashSales).toFixed(2)}</b>
+                  {autoSales.cashRefunds && parseFloat(autoSales.cashRefunds) > 0 ? (
+                    <span title="Deducted customer returns">
+                      Net: <b>₹{parseFloat(autoSales.cashSales).toFixed(2)}</b> (Ret: -₹{parseFloat(autoSales.cashRefunds).toFixed(2)})
+                    </span>
+                  ) : (
+                    <span>System billed: <b>₹{parseFloat(autoSales.cashSales).toFixed(2)}</b></span>
+                  )}
                 </span>
               )}
             </div>
@@ -489,7 +542,10 @@ export function Closing() {
             {/* Expected vs Counted Formula Bar */}
             <div className="p-2.5 bg-gray-50 dark:bg-gray-750 rounded border dark:border-gray-700 text-xs flex justify-between items-center flex-wrap gap-2">
               <div className="text-gray-600 dark:text-gray-300">
-                Opening (₹{numOpening.toFixed(2)}) + Cash Sales (₹{numCashSales.toFixed(2)}) - Withdrawals (₹{numWithdrawals.toFixed(2)}) =
+                Opening (₹{numOpening.toFixed(2)}) + Cash Sales (₹{numCashSales.toFixed(2)})
+                {numCashRepayments > 0 && <> + Khata repayments in cash (₹{numCashRepayments.toFixed(2)})</>}
+                {numCashExpenses > 0 && <> - Cash paid out: expenses and suppliers (₹{numCashExpenses.toFixed(2)})</>}
+                {' '}- Withdrawals (₹{numWithdrawals.toFixed(2)}) =
                 <span className="font-mono font-bold text-gray-800 dark:text-gray-100 ml-1">
                   Expected ₹{expectedCashInDrawer.toFixed(2)}
                 </span>
@@ -522,7 +578,13 @@ export function Closing() {
                 </span>
                 {autoSales && (
                   <span className="text-[10px] font-mono text-gray-400">
-                    Billed: ₹{parseFloat(autoSales.upiSales).toFixed(2)}
+                    {autoSales.upiRefunds && parseFloat(autoSales.upiRefunds) > 0 ? (
+                      <span title="Deducted customer returns">
+                        Net: <b>₹{parseFloat(autoSales.upiSales).toFixed(2)}</b> (Ret: -₹{parseFloat(autoSales.upiRefunds).toFixed(2)})
+                      </span>
+                    ) : (
+                      <span>Billed: ₹{parseFloat(autoSales.upiSales).toFixed(2)}</span>
+                    )}
                   </span>
                 )}
               </div>
@@ -556,7 +618,13 @@ export function Closing() {
                 </span>
                 {autoSales && (
                   <span className="text-[10px] font-mono text-gray-400">
-                    Billed: ₹{parseFloat(autoSales.cardSales).toFixed(2)}
+                    {autoSales.cardRefunds && parseFloat(autoSales.cardRefunds) > 0 ? (
+                      <span title="Deducted customer returns">
+                        Net: <b>₹{parseFloat(autoSales.cardSales).toFixed(2)}</b> (Ret: -₹{parseFloat(autoSales.cardRefunds).toFixed(2)})
+                      </span>
+                    ) : (
+                      <span>Billed: ₹{parseFloat(autoSales.cardSales).toFixed(2)}</span>
+                    )}
                   </span>
                 )}
               </div>
@@ -591,7 +659,13 @@ export function Closing() {
               </span>
               {autoSales && (
                 <span className="text-[10px] font-mono text-gray-400">
-                  Billed: ₹{parseFloat(autoSales.creditSales).toFixed(2)}
+                  {autoSales.creditRefunds && parseFloat(autoSales.creditRefunds) > 0 ? (
+                    <span title="Deducted customer returns">
+                      Net: <b>₹{parseFloat(autoSales.creditSales).toFixed(2)}</b> (Ret: -₹{parseFloat(autoSales.creditRefunds).toFixed(2)})
+                    </span>
+                  ) : (
+                    <span>Billed: ₹{parseFloat(autoSales.creditSales).toFixed(2)}</span>
+                  )}
                 </span>
               )}
             </div>
@@ -636,7 +710,8 @@ export function Closing() {
 
             <button
               id="btnSubmitClosing"
-              disabled={submitting || isAlreadyClosed}
+              // not while the figures for the chosen date are still loading: they would be last date's numbers
+              disabled={submitting || isAlreadyClosed || loadingPreview}
               onClick={handleSubmitClick}
               className="w-full py-3 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-sm shadow cursor-pointer disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
             >
@@ -719,13 +794,20 @@ export function Closing() {
 
             {/* Huge Gross Sales Display */}
             <div className="space-y-1">
-              <span className="text-xs text-purple-200">Total Day Gross Sales:</span>
+              <span className="text-xs text-purple-200">Total Day Net Sales:</span>
               <div id="closingGrossTotal" className="text-3xl font-mono font-black text-white tracking-tight">
                 ₹{finalDayGrossSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
-              <div className="text-[11px] text-purple-300 flex items-center gap-1">
-                <span>Cash + UPI + Card + Credit Revenue</span>
-              </div>
+              {autoSales?.totalRefunds && parseFloat(autoSales.totalRefunds) > 0 ? (
+                <div className="text-[11px] text-purple-200/90 flex items-center justify-between pt-1 border-t border-purple-800/60 font-mono">
+                  <span>Gross: ₹{parseFloat(autoSales.grossBilled || '0').toFixed(2)}</span>
+                  <span className="text-rose-300 font-semibold">Returns: -₹{parseFloat(autoSales.totalRefunds).toFixed(2)}</span>
+                </div>
+              ) : (
+                <div className="text-[11px] text-purple-300 flex items-center gap-1">
+                  <span>Cash + UPI + Card + Credit Revenue</span>
+                </div>
+              )}
             </div>
 
             {/* Detailed Sales Channels Grid */}

@@ -34,7 +34,7 @@ const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.
 
 if (existing) {
   await db.update(users)
-    .set({ name: nameArg.trim(), passwordHash, role: 'owner', branchId: null, syndicateId: null, isActive: true })
+    .set({ name: nameArg.trim(), passwordHash, passwordChangedAt: new Date(), role: 'owner', branchId: null, syndicateId: null, isActive: true })
     .where(eq(users.id, existing.id));
   console.log(`Updated ${email}: now an active Super Admin with the new password.`);
 } else {

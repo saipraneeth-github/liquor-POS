@@ -12,11 +12,19 @@ const DAY_MS = 86_400_000;
 // ─── SALES ──────────────────────────────────────────────────────────────────
 
 /** Totals per business hour: 24 buckets starting at `dayStart` (the start of the store's day, not midnight UTC). */
-export function hourlyBuckets(rows: Array<{ at: Date; total: string }>, dayStart: Date): number[] {
+export function hourlyBuckets(
+  rows: Array<{ at: Date; total: string }>,
+  dayStart: Date,
+  returns: Array<{ at: Date; amount: string }> = [],
+): number[] {
   const out = Array.from({ length: 24 }, () => D(0));
   for (const r of rows) {
     const h = Math.floor((r.at.getTime() - dayStart.getTime()) / HOUR_MS);
     if (h >= 0 && h < 24) out[h] = out[h].plus(r.total);
+  }
+  for (const ret of returns) {
+    const h = Math.floor((ret.at.getTime() - dayStart.getTime()) / HOUR_MS);
+    if (h >= 0 && h < 24) out[h] = Decimal.max(0, out[h].minus(ret.amount));
   }
   return out.map((d) => Number(money2(d)));
 }
@@ -29,12 +37,20 @@ export const PAY_MODES = ['CASH', 'UPI', 'CARD', 'CREDIT'] as const;
 export type PayMode = (typeof PAY_MODES)[number];
 
 /** A bill with no mode recorded was taken as cash (the books treat it the same way). Order is fixed so charts stay stable. */
-export function paymentMix(rows: Array<{ mode: string | null; total: string }>): Array<{ mode: PayMode; total: string; share: number }> {
+export function paymentMix(
+  rows: Array<{ mode: string | null; total: string }>,
+  returns: Array<{ mode: string | null; amount: string }> = [],
+): Array<{ mode: PayMode; total: string; share: number }> {
   const sums: Record<PayMode, Decimal> = { CASH: D(0), UPI: D(0), CARD: D(0), CREDIT: D(0) };
   for (const r of rows) {
     const m = (r.mode ?? 'CASH').toUpperCase();
     const key: PayMode = (PAY_MODES as readonly string[]).includes(m) ? (m as PayMode) : 'CASH';
     sums[key] = sums[key].plus(r.total);
+  }
+  for (const ret of returns) {
+    const m = (ret.mode ?? 'CASH').toUpperCase();
+    const key: PayMode = (PAY_MODES as readonly string[]).includes(m) ? (m as PayMode) : 'CASH';
+    sums[key] = Decimal.max(0, sums[key].minus(ret.amount));
   }
   const all = PAY_MODES.reduce((a, m) => a.plus(sums[m]), D(0));
   return PAY_MODES.map((mode) => ({

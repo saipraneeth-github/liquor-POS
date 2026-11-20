@@ -103,7 +103,7 @@ export function DeleteTenantModal({ tenant, onClose, onDone }: { tenant: TenantL
     catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   };
 
-  const nameMatches = !!p && typed.trim() === p.name.trim();
+  const nameMatches = typed.trim() === tenant.name.trim();
   const blockers: string[] = [];
   if (p && !p.eligible) blockers.push(p.daysLeft ? `Too soon: it can be deleted from ${fmtDay(p.eligibleFrom)} (${p.daysLeft} more day${p.daysLeft === 1 ? '' : 's'}).` : 'It must be archived first.');
   if (p && p.unpaidInvoices.count > 0) blockers.push(`It has ${p.unpaidInvoices.count} unpaid invoice${p.unpaidInvoices.count === 1 ? '' : 's'} (${inr(p.unpaidInvoices.amount)}). Open Billing and void or settle them first.`);
@@ -118,17 +118,24 @@ export function DeleteTenantModal({ tenant, onClose, onDone }: { tenant: TenantL
     } catch (e) { setError(errorMessage(e)); setBusy(false); }
   };
 
-  const top = p?.tables.filter((t) => LABEL[t.table]).slice(0, 6) ?? [];
+  const nice = (t: string) => LABEL[t] ?? t.replace(/_/g, ' ');
+  const all = p?.tables ?? [];
 
   return (
-    <Modal title={`Delete ${tenant.name} permanently`} onClose={onClose}>
+    <Modal title={`Hard delete ${tenant.name} permanently`} onClose={onClose}>
       <div className="space-y-3" id="deleteForm">
-        {!p && !error && <div id="deleteLoading" aria-busy="true" className="h-28 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse" />}
+        {!p && !error && <div id="deleteLoading" aria-busy="true" className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800 animate-pulse text-sm text-gray-600 dark:text-gray-300">Working out what will be removed…</div>}
         {p && (
           <>
             <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 text-sm">
-              <b>This cannot be undone.</b> {p.totalRows.toLocaleString('en-IN')} records are removed for good
-              {top.length > 0 && <>: {top.map((t) => `${t.rows.toLocaleString('en-IN')} ${LABEL[t.table]}`).join(', ')}…</>}
+              <b>This cannot be undone.</b> {p.totalRows.toLocaleString('en-IN')} records in {all.length} tables are removed for good.
+              {all.length > 0 && (
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-md bg-white/70 dark:bg-black/20 border border-red-100 dark:border-red-900/40 divide-y divide-red-100 dark:divide-red-900/40" id="deleteBreakdown">
+                  {all.map((t) => (
+                    <div key={t.table} className="flex justify-between px-2.5 py-1 text-xs"><span className="capitalize">{nice(t.table)}</span><span className="font-semibold tabular-nums">{t.rows.toLocaleString('en-IN')}</span></div>
+                  ))}
+                </div>
+              )}
               <div className="text-xs text-gray-600 mt-1">Archived {fmtDay(p.archivedAt)}{p.archiveReason ? ` — ${p.archiveReason}` : ''}. The audit log keeps a record that it happened.</div>
             </div>
 
@@ -138,20 +145,21 @@ export function DeleteTenantModal({ tenant, onClose, onDone }: { tenant: TenantL
             </div>
 
             {blockers.map((b) => <div key={b} className="deleteBlocker p-2.5 rounded-lg bg-gray-100 dark:bg-gray-800 border text-sm text-gray-700 dark:text-gray-200">{b}</div>)}
-
-            <Field label={`Type the business name to confirm: ${p.name}`}>
-              <input id="deleteConfirmName" className="input-base" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" placeholder={p.name} />
-            </Field>
-            <label className="flex items-start gap-2 text-sm cursor-pointer">
-              <input id="deleteAck" type="checkbox" className="mt-1" checked={ack} onChange={(e) => setAck(e.target.checked)} />
-              <span>I understand all of this business's data will be deleted permanently and cannot be recovered.</span>
-            </label>
           </>
         )}
+
+        {/* Always shown, even while the preview is still loading */}
+        <Field label={`Type the business name to confirm: ${tenant.name}`}>
+          <input id="deleteConfirmName" className="input-base" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" placeholder={tenant.name} />
+        </Field>
+        <label className="flex items-start gap-2 text-sm cursor-pointer">
+          <input id="deleteAck" type="checkbox" className="mt-1" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+          <span>I understand all of this business's data will be deleted permanently and cannot be recovered.</span>
+        </label>
         {error && <div id="deleteError" className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm">{error}</div>}
         <div className="flex justify-end gap-3 pt-1">
           <button type="button" className="px-4 py-2 text-sm border rounded-lg cursor-pointer" onClick={onClose}>Cancel</button>
-          <button type="button" id="deleteOk" disabled={!canDelete} onClick={() => void remove()} className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-lg cursor-pointer">Delete permanently</button>
+          <button type="button" id="deleteOk" disabled={!canDelete} onClick={() => void remove()} className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white rounded-lg cursor-pointer">Hard delete permanently</button>
         </div>
       </div>
     </Modal>

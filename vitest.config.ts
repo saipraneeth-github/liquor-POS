@@ -19,7 +19,7 @@ export default defineConfig({
     },
     // Give integration hooks plenty of time to boot Fastify + migrate PGlite.
     hookTimeout: 120_000,
-    testTimeout: 30_000,
+    testTimeout: 60_000,   // PGlite on a loaded Windows machine: a heavy test can take 30+ s when files run in parallel
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

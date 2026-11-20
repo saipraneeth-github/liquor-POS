@@ -326,11 +326,18 @@ test('Staff: a manager resets a cashier password; a user changes their own passw
 
   await page.evaluate(() => localStorage.clear());
   await reactLogin(page, email, temp);
-  await page.click('#changePasswordBtn');
+  // a password an administrator chose must be replaced before anything else: the dialog opens by itself and cannot be dismissed
+  await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
+  await expect(page.locator('#nav-pos')).toBeVisible();   // the menu is there, but behind the dialog
   await page.fill('#pwCurrent', temp);
   await page.fill('#pwNew', 'Fresh#Pass99');
   await page.click('#pwSave');
-  await expect(page.locator('#toastHost')).toContainText('Password changed');
+  // the app reloads with the new token and no longer asks
+  await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeHidden({ timeout: 15000 });
+  // ...and a person who simply wants to change their own password later still can
+  await page.click('#changePasswordBtn');
+  await expect(page.getByRole('heading', { name: 'Change password' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
   expect((await request.post('/api/v1/auth/login', { data: { email, password: 'Fresh#Pass99' } })).status()).toBe(200);
   expect((await request.post('/api/v1/auth/login', { data: { email, password: temp } })).status()).toBe(401);
 });

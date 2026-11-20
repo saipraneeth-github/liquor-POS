@@ -350,6 +350,20 @@ describe('PDF / OCR text lines', () => {
     expect(verifyBalanceChain(r.lines, t.hints).status).toBe('PASS');
   });
 
+  it('says which lines it left out: page furniture and dated lines with no amount', () => {
+    const t = textLinesToTable([
+      'ACME CO-OPERATIVE BANK  Statement of account  Page 1 of 3 and a very long line that does not look like narration at all and just keeps going on and on and on and on to be over the limit',
+      '01/04/2026  CHEQUE DEPOSIT  1,000.00 Cr  11,000.00 Cr',
+      '02/04/2026  SOMETHING WITHOUT ANY AMOUNT',
+      'Total debits 500.00',
+    ]);
+    expect(t.rows).toHaveLength(2);                       // header + the one real transaction
+    expect(t.skippedLines).toBe(3);
+    expect(t.skippedSamples).toHaveLength(3);
+    expect(t.skippedSamples).toContain('02/04/2026  SOMETHING WITHOUT ANY AMOUNT');
+    expect(t.skippedSamples[0].length).toBeLessThanOrEqual(140);   // long lines are shortened when quoted back
+  });
+
   it('honours Dr/Cr suffixes when the statement prints them', () => {
     const t = textLinesToTable([
       '01/04/2026  CHEQUE DEPOSIT  1,000.00 Cr  11,000.00 Cr',

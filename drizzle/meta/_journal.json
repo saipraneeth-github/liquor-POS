@@ -197,6 +197,146 @@
       "when": 1794930000000,
       "tag": "0027_sanitize_product_names",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794971422028,
+      "tag": "0028_quality_tracker_and_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0029_quality_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795065932613,
+      "tag": "0030_agent_token_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795066416356,
+      "tag": "0031_login_throttle",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1795071899028,
+      "tag": "0032_master_catalog_tenant_mapping",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795076649965,
+      "tag": "0033_syndicate_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795076761565,
+      "tag": "0034_branch_product_costs",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1795076867613,
+      "tag": "0035_master_revision",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795078464075,
+      "tag": "0036_drop_invoice_item_mrp",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795079064075,
+      "tag": "0037_voucher_balance_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795079664075,
+      "tag": "0038_counter_closing_manual",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795080264075,
+      "tag": "0039_password_changed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795080864075,
+      "tag": "0040_db_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795081464075,
+      "tag": "0041_closing_cash_movements",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795082064075,
+      "tag": "0042_must_change_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795082664075,
+      "tag": "0043_expense_void",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795083264075,
+      "tag": "0044_stock_transfers",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795083864075,
+      "tag": "0045_supplier_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795084464075,
+      "tag": "0046_returns",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795085064075,
+      "tag": "0047_error_events",
+      "breakpoints": true
     }
   ]
 }

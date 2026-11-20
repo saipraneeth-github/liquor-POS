@@ -13,7 +13,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { requireRole, getUser, roleRank, assertBranchAccess } from '../../middleware/auth.guard.js';
+import { requireRole, getUser, roleRank, ROLE_RANK, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
 import {
   MENU_TYPES,
@@ -48,7 +48,7 @@ export async function menuRoutes(app: FastifyInstance) {
     const user = getUser(req);
     const branchId = (query.success && query.data.branchId) ? query.data.branchId : (user.branchId ?? undefined);
     if (branchId && !(await assertBranchAccess(user, branchId, reply))) return;
-    const items = await listMenuItems(params.data.type, await tenantOf(user), wantsInactive && roleRank(user.role) >= 3, branchId);
+    const items = await listMenuItems(params.data.type, await tenantOf(user), wantsInactive && roleRank(user.role) >= ROLE_RANK.manager, branchId);
     return { items };
   });
 

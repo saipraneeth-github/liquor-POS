@@ -8,6 +8,7 @@ import { BusinessRuleError, ConflictError, NotFoundError } from '../../lib/error
 import type { JwtPayload } from '../auth/auth.service.js';
 import { ensureSystemLedgers, isReservedLedgerCode, normalizeLedgerCode, type LedgerGroup } from './chart.js';
 import { buildVoucher } from './ledger.engine.js';
+import { buildCashBook } from './cashbook.engine.js';
 import { insertVoucher } from './posting.service.js';
 import {
   computeBalanceSheet,
@@ -32,6 +33,12 @@ export const VOUCHER_TYPES = ['SALES', 'PURCHASE', 'PAYMENT', 'RECEIPT', 'JOURNA
 export const DateRangeQuerySchema = z.object({
   from: ISO_DATE.optional(),
   to:   ISO_DATE.optional(),
+}).refine((q) => !q.from || !q.to || q.from <= q.to, { message: 'from must be on or before to', path: ['from'] });
+
+export const CashBookQuerySchema = z.object({
+  ledger: z.enum(['CASH', 'BANK']).default('CASH'),
+  from:   ISO_DATE.optional(),
+  to:     ISO_DATE.optional(),
 }).refine((q) => !q.from || !q.to || q.from <= q.to, { message: 'from must be on or before to', path: ['from'] });
 
 export const VoucherQuerySchema = z.object({
@@ -62,6 +69,7 @@ export const ManualJournalSchema = z.object({
 
 export type DateRangeQuery = z.infer<typeof DateRangeQuerySchema>;
 export type VoucherQuery = z.infer<typeof VoucherQuerySchema>;
+export type CashBookQuery = z.infer<typeof CashBookQuerySchema>;
 export type CreateLedgerInput = z.infer<typeof CreateLedgerSchema>;
 export type ManualJournalInput = z.infer<typeof ManualJournalSchema>;
 
@@ -226,6 +234,21 @@ export async function getLedgerStatement(branchId: string, ledgerId: string, ran
     from: range.from ?? null,
     to: range.to ?? null,
     ...computeRunningBalance(opening, entries),
+  };
+}
+
+/** Cash book (or bank book): the CASH / BANK ledger day by day: opening, receipts, payments, closing, with the day's entries. */
+export async function getCashBook(branchId: string, q: CashBookQuery) {
+  const [ledger] = await db.select().from(accountLedgers)
+    .where(and(eq(accountLedgers.branchId, branchId), eq(accountLedgers.code, q.ledger))).limit(1);
+  // A branch that has posted nothing yet has no such ledger: an empty book, not an error
+  if (!ledger) return { ledger: { code: q.ledger, name: q.ledger === 'CASH' ? 'Cash' : 'Bank' }, from: q.from ?? null, to: q.to ?? null, ...buildCashBook('0.00', []) };
+  const st = await getLedgerStatement(branchId, ledger.id, { from: q.from, to: q.to });
+  return {
+    ledger: st.ledger,
+    from: q.from ?? null,
+    to: q.to ?? null,
+    ...buildCashBook(st.openingBalance, st.entries.map((e) => ({ ...e, voucherDate: String(e.voucherDate) }))),
   };
 }
 

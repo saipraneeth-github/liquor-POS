@@ -8,10 +8,11 @@ import { Decimal } from 'decimal.js';
 import { db } from '../../db/client.js';
 import {
   bankAccounts, bankStatementLines, bankStatements, billItems, bills, branches, creditTransactions, customers, dailyClosings,
-  dailyCounterSheets, dailyCounterSheetLines, pourCounts, products, shiftSessions, stock, tableSessions, tables, terminals, users,
+  dailyCounterSheets, dailyCounterSheetLines, pourCounts, products, salesReturns, salesReturnItems, shiftSessions, stock, tableSessions, tables, terminals, users,
 } from '../../db/schema.js';
 import { businessDateOf, businessDayBounds } from '../../lib/business-day.js';
 import { BusinessRuleError } from '../../lib/errors.js';
+import { cashExpensesRecordedBetween, cashRepaymentsBetween } from '../../lib/cash-movements.js';
 import { getAccessibleBranchIds } from '../../middleware/auth.guard.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import {
@@ -69,18 +70,29 @@ export async function branchDashboard(user: JwtPayload, branchId: string, now: D
   let myShift: null | { id: string; terminalName: string; openedAt: string; openingFloat: string; sales: string; bills: number; expectedCash: string; mix: ReturnType<typeof paymentMix> } = null;
   if (myShiftRow[0]) {
     const s = myShiftRow[0];
-    const sold = await db.select({ mode: bills.paymentMode, total: bills.total }).from(bills)
+    const sold = await db.select({ id: bills.id, mode: bills.paymentMode, total: bills.total }).from(bills)
       .where(and(eq(bills.shiftSessionId, s.id), eq(bills.status, 'PAID')));
-    const mix = paymentMix(sold.map((b) => ({ mode: b.mode, total: b.total })));
+    const billIds = sold.map((b) => b.id);
+    const shiftReturns = billIds.length > 0
+      ? await db.select({ mode: salesReturns.refundMode, amount: salesReturns.refundAmount }).from(salesReturns).where(inArray(salesReturns.billId, billIds))
+      : [];
+    const mix = paymentMix(sold.map((b) => ({ mode: b.mode, total: b.total })), shiftReturns);
     const cash = D(mix.find((m) => m.mode === 'CASH')?.total ?? 0);
+    const shiftRefundTotal = shiftReturns.reduce((acc, r) => acc.plus(r.amount), D(0));
+    const netShiftSales = money2(Decimal.max(0, D(sumTotals(sold)).minus(shiftRefundTotal)));
+    const until = new Date(now.getTime() + 1000);
+    const [repaid, spent] = await Promise.all([
+      cashRepaymentsBetween(db, branchId, s.openedAt ?? now, until, s.cashierId),
+      cashExpensesRecordedBetween(db, branchId, s.openedAt ?? now, until, s.cashierId),
+    ]);
     myShift = {
       id: s.id,
       terminalName: openShiftRows.find((o) => o.id === s.id)?.terminalName ?? '',
       openedAt: (s.openedAt ?? now).toISOString(),
       openingFloat: money2(D(s.openingFloat)),
-      sales: sumTotals(sold),
+      sales: netShiftSales,
       bills: sold.length,
-      expectedCash: money2(D(s.openingFloat).plus(cash)),
+      expectedCash: money2(D(s.openingFloat).plus(cash).plus(repaid).minus(spent)),
       mix,
     };
   }
@@ -108,8 +120,10 @@ export async function branchDashboard(user: JwtPayload, branchId: string, now: D
   }
 
   // ── managers and owners ──
-  const [todayBills, tableRows, oldestSession, bankLines, accounts, sheets, pour, top, closedToday] = await Promise.all([
+  const [todayBills, todayReturns, tableRows, oldestSession, bankLines, accounts, sheets, pour, top, todayItemReturns, closedToday, yesterdayReturns] = await Promise.all([
     db.select({ at: bills.createdAt, total: bills.total, mode: bills.paymentMode, tax: bills.taxAmount }).from(bills).where(paidIn(eq(bills.branchId, branchId), dayStart, dayEnd)),
+    db.select({ at: salesReturns.createdAt, amount: salesReturns.refundAmount, mode: salesReturns.refundMode, tax: salesReturns.taxAmount }).from(salesReturns)
+      .where(and(eq(salesReturns.branchId, branchId), gte(salesReturns.createdAt, dayStart), lt(salesReturns.createdAt, dayEnd))),
     db.select({ status: tables.status, n: sql<number>`count(*)::int` }).from(tables).where(eq(tables.branchId, branchId)).groupBy(tables.status),
     db.select({ openedAt: sql<Date | null>`min(${tableSessions.openedAt})` }).from(tableSessions).where(and(eq(tableSessions.branchId, branchId), sql`${tableSessions.closedAt} is null`)),
     db.select({ n: sql<number>`count(*)::int` }).from(bankStatementLines)
@@ -119,18 +133,35 @@ export async function branchDashboard(user: JwtPayload, branchId: string, now: D
     db.select({ date: dailyCounterSheets.sheetDate, status: dailyCounterSheets.status }).from(dailyCounterSheets)
       .where(and(eq(dailyCounterSheets.branchId, branchId), gte(dailyCounterSheets.sheetDate, addDaysIso(today, -7)))),
     db.select({ at: pourCounts.createdAt }).from(pourCounts).where(and(eq(pourCounts.branchId, branchId), gte(pourCounts.createdAt, new Date(dayStart.getTime() - 7 * 86_400_000)))),
-    db.select({ name: products.name, units: sql<number>`sum(${billItems.quantity})::int`, sales: sql<string>`sum(${billItems.lineTotal})` })
+    db.select({ id: products.id, name: products.name, units: sql<number>`sum(${billItems.quantity})::int`, sales: sql<string>`sum(${billItems.lineTotal})` })
       .from(billItems).innerJoin(bills, eq(billItems.billId, bills.id)).innerJoin(products, eq(billItems.productId, products.id))
       .where(paidIn(eq(bills.branchId, branchId), dayStart, dayEnd))
-      .groupBy(products.id, products.name).orderBy(desc(sql`sum(${billItems.lineTotal})`)).limit(5),
+      .groupBy(products.id, products.name),
+    db.select({
+      productId: salesReturnItems.productId,
+      units: sql<number>`coalesce(sum(${salesReturnItems.quantity}), 0)::int`,
+      gross: sql<string>`coalesce(sum(${salesReturnItems.grossAmount}), 0)`,
+    })
+      .from(salesReturnItems)
+      .innerJoin(salesReturns, eq(salesReturnItems.returnId, salesReturns.id))
+      .where(and(eq(salesReturns.branchId, branchId), gte(salesReturns.createdAt, dayStart), lt(salesReturns.createdAt, dayEnd)))
+      .groupBy(salesReturnItems.productId),
     db.select({ id: dailyClosings.id }).from(dailyClosings)
       .where(and(eq(dailyClosings.branchId, branchId), gte(dailyClosings.closingDate, dayStart), lt(dailyClosings.closingDate, dayEnd))).limit(1),
+    db.select({ at: salesReturns.createdAt, amount: salesReturns.refundAmount }).from(salesReturns)
+      .where(and(eq(salesReturns.branchId, branchId), gte(salesReturns.createdAt, yStart), lt(salesReturns.createdAt, yEnd))),
   ]);
 
   const todayRows = todayBills.map((b) => ({ at: b.at ?? now, total: b.total }));
-  const salesToday = sumTotals(todayRows);
-  const sameTimeSales = sumTotals(yesterdayBills.filter((b) => (b.at ?? now) < yCutoff));
-  const gst = money2(todayBills.reduce((a, b) => a.plus(b.tax), D(0)));
+  const totalReturnsToday = todayReturns.reduce((a, r) => a.plus(r.amount), D(0));
+  const totalTaxReturnsToday = todayReturns.reduce((a, r) => a.plus(r.tax ?? '0'), D(0));
+  const salesToday = money2(Decimal.max(0, D(sumTotals(todayRows)).minus(totalReturnsToday)));
+
+  const totalReturnsYesterday = yesterdayReturns.reduce((a, r) => a.plus(r.amount), D(0));
+  const yesterdayCutoffReturns = yesterdayReturns.filter((r) => (r.at ?? now) < yCutoff).reduce((a, r) => a.plus(r.amount), D(0));
+  const sameTimeSales = money2(Decimal.max(0, D(sumTotals(yesterdayBills.filter((b) => (b.at ?? now) < yCutoff))).minus(yesterdayCutoffReturns)));
+  const yesterdayTotalSales = money2(Decimal.max(0, D(sumTotals(yesterdayBills)).minus(totalReturnsYesterday)));
+  const gst = money2(Decimal.max(0, todayBills.reduce((a, b) => a.plus(b.tax), D(0)).minus(totalTaxReturnsToday)));
   const bankToReview = bankLines[0]?.n ?? 0;
 
   const sheetToday = sheets.find((s) => s.date === today);
@@ -145,11 +176,14 @@ export async function branchDashboard(user: JwtPayload, branchId: string, now: D
       bills: todayBills.length,
       averageBill: todayBills.length ? money2(D(salesToday).div(todayBills.length)) : '0.00',
       gst,
-      hourly: hourlyBuckets(todayRows, dayStart),
-      mix: paymentMix(todayBills.map((b) => ({ mode: b.mode, total: b.total }))),
+      hourly: hourlyBuckets(todayRows, dayStart, todayReturns.map((r) => ({ at: r.at ?? now, amount: r.amount }))),
+      mix: paymentMix(todayBills.map((b) => ({ mode: b.mode, total: b.total })), todayReturns),
       vsYesterday: { sameTimeSales: sameTimeSales, percent: percentChange(salesToday, sameTimeSales) },
     },
-    yesterday: { sales: sumTotals(yesterdayBills), hourly: hourlyBuckets(yesterdayBills.map((b) => ({ at: b.at ?? now, total: b.total })), yStart) },
+    yesterday: {
+      sales: yesterdayTotalSales,
+      hourly: hourlyBuckets(yesterdayBills.map((b) => ({ at: b.at ?? now, total: b.total })), yStart, yesterdayReturns.map((r) => ({ at: r.at ?? now, amount: r.amount }))),
+    },
     tables: { occupied, total: tableTotal, oldestOpenMinutes: oldestSession[0]?.openedAt ? minutesBetween(new Date(oldestSession[0].openedAt), now) : null },
     myShift,
     attention: attentionItems({
@@ -166,7 +200,19 @@ export async function branchDashboard(user: JwtPayload, branchId: string, now: D
         pourInUse: pour.length > 0, pourRecordedToday: pour.some((p) => (p.at ?? now) >= dayStart),
       }),
     },
-    topSellers: top.map((t) => ({ name: t.name, units: t.units, sales: money2(D(t.sales)) })),
+    topSellers: (() => {
+      const retByProd = new Map(todayItemReturns.map((r) => [r.productId, { units: r.units, gross: r.gross }]));
+      return top
+        .map((t) => {
+          const ret = retByProd.get(t.id);
+          const units = Math.max(0, t.units - (ret?.units ?? 0));
+          const sales = Decimal.max(0, D(t.sales).minus(ret?.gross ?? 0));
+          return { name: t.name, units, sales: money2(sales) };
+        })
+        .filter((t) => t.units > 0)
+        .sort((a, b) => Number(b.sales) - Number(a.sales))
+        .slice(0, 5);
+    })(),
     lowStock: lowRows.slice(0, 6), lowStockCount,
   };
 }
@@ -189,12 +235,31 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
   const prevSameEnd = new Date(Math.min(prevStart.getTime() + elapsed, monthStart.getTime()));   // a shorter last month cannot overrun
 
   const inBranches = inArray(bills.branchId, accessible);
-  const grouped = (from: Date, to: Date) => db.select({
-    branchId: bills.branchId, total: sql<string>`coalesce(sum(${bills.total}), 0)`, n: sql<number>`count(*)::int`,
-  }).from(bills).where(paidIn(inBranches, from, to)).groupBy(bills.branchId);
+  const inRetBranches = inArray(salesReturns.branchId, accessible);
+
+  const grouped = async (from: Date, to: Date) => {
+    const [bRows, rRows] = await Promise.all([
+      db.select({
+        branchId: bills.branchId, total: sql<string>`coalesce(sum(${bills.total}), 0)`, n: sql<number>`count(*)::int`,
+      }).from(bills).where(paidIn(inBranches, from, to)).groupBy(bills.branchId),
+      db.select({
+        branchId: salesReturns.branchId, total: sql<string>`coalesce(sum(${salesReturns.refundAmount}), 0)`,
+      }).from(salesReturns).where(and(inRetBranches, gte(salesReturns.createdAt, from), lt(salesReturns.createdAt, to))).groupBy(salesReturns.branchId),
+    ]);
+    const rMap = new Map(rRows.map((r) => [r.branchId, D(r.total)]));
+    return bRows.map((b) => ({
+      branchId: b.branchId,
+      total: money2(Decimal.max(0, D(b.total).minus(rMap.get(b.branchId) ?? 0))),
+      n: b.n,
+    }));
+  };
+
   const oneTotal = async (from: Date, to: Date) => {
-    const [r] = await db.select({ total: sql<string>`coalesce(sum(${bills.total}), 0)` }).from(bills).where(paidIn(inBranches, from, to));
-    return D(r?.total ?? 0);
+    const [r, ret] = await Promise.all([
+      db.select({ total: sql<string>`coalesce(sum(${bills.total}), 0)` }).from(bills).where(paidIn(inBranches, from, to)),
+      db.select({ total: sql<string>`coalesce(sum(${salesReturns.refundAmount}), 0)` }).from(salesReturns).where(and(inRetBranches, gte(salesReturns.createdAt, from), lt(salesReturns.createdAt, to))),
+    ]);
+    return Decimal.max(0, D(r[0]?.total ?? 0).minus(ret[0]?.total ?? 0));
   };
 
   const pastMonths = pastMonthsList(today, 6);
@@ -207,7 +272,7 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
     })
   );
 
-  const [branchRows, todayBy, ySameBy, yBy, mtd, prevSame, prevFull, owing, lowBy, closings, bankLinesBy, accountRows, sheetsToday, billBottlesToday, stockTotals, monthlyHistory] = await Promise.all([
+  const [branchRows, todayBy, ySameBy, yBy, mtd, prevSame, prevFull, owing, lowBy, closings, bankLinesBy, accountRows, sheetsToday, billBottlesToday, billReturnBottlesToday, stockTotals, monthlyHistory] = await Promise.all([
     db.select({ id: branches.id, name: branches.name, code: branches.code }).from(branches).where(inArray(branches.id, accessible)).orderBy(asc(branches.name)),
     grouped(dayStart, dayEnd), grouped(yStart, yCutoff), grouped(yStart, yEnd),
     oneTotal(monthStart, new Date(now.getTime() + 1)), oneTotal(prevStart, prevSameEnd), oneTotal(prevStart, monthStart),
@@ -235,6 +300,10 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
       .from(billItems)
       .innerJoin(bills, eq(billItems.billId, bills.id))
       .where(paidIn(inBranches, dayStart, dayEnd)),
+    db.select({ n: sql<number>`coalesce(sum(${salesReturnItems.quantity}), 0)::int` })
+      .from(salesReturnItems)
+      .innerJoin(salesReturns, eq(salesReturnItems.returnId, salesReturns.id))
+      .where(and(inArray(salesReturns.branchId, accessible), gte(salesReturns.createdAt, dayStart), lt(salesReturns.createdAt, dayEnd))),
     db.select({ n: sql<number>`coalesce(sum(${stock.quantity}), 0)::int` })
       .from(stock)
       .where(inArray(stock.branchId, accessible)),
@@ -289,8 +358,9 @@ export async function ownerDashboard(user: JwtPayload, now: Date = new Date()) {
   const totalToday = rows.reduce((a, r) => a.plus(r.sales), D(0));
   const totalSame = rows.reduce((a, r) => a.plus(r.salesSameTimeYesterday), D(0));
 
+  const netBillBottles = Math.max(0, (billBottlesToday[0]?.n ?? 0) - (billReturnBottlesToday[0]?.n ?? 0));
   const finalSheetRevenue = sheetRevTotal.gt(0) ? money2(sheetRevTotal) : money2(totalToday);
-  const finalBottlesSold = sheetSoldTotal > 0 ? sheetSoldTotal : (billBottlesToday[0]?.n ?? 0);
+  const finalBottlesSold = sheetSoldTotal > 0 ? sheetSoldTotal : netBillBottles;
   const finalPhysicalStock = sheetClosingTotal > 0 ? sheetClosingTotal : (stockTotals[0]?.n ?? 0);
 
   // What needs the owner's eye, per outlet, most urgent first

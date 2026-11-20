@@ -214,17 +214,20 @@ describe('invoice validation & draft building (validate.engine + draft.engine)',
     const vLine = validateLine({
       quantity: 12,
       costPrice: '620.00',
-      mrp: '860.00',
       extractedAmount: '7000.00', // 12 * 620 = 7440 != 7000
-      catalogMrp: '850.00',       // 860 != 850
       confidence: 65,             // < 80
       productId: 'p-rc-750',
       matchStatus: 'SUGGESTED',
     });
     expect(vLine.lineCostTotal).toBe('7440.00');
     expect(vLine.flags).toEqual(expect.arrayContaining([
-      'AMOUNT_MISMATCH', 'MRP_CHANGED', 'LOW_CONFIDENCE', 'NEEDS_CONFIRMATION',
+      'AMOUNT_MISMATCH', 'LOW_CONFIDENCE', 'NEEDS_CONFIRMATION',
     ]));
+    // an invoice has no selling price: no MRP flag can exist, and a line needs only quantity and cost
+    expect(vLine.flags).not.toEqual(expect.arrayContaining(['MRP_CHANGED']));
+    expect(vLine.flags).not.toContain('COST_ABOVE_MRP');
+    expect(vLine.flags).not.toContain('INCOMPLETE');
+    expect(validateLine({ quantity: 12, costPrice: null, extractedAmount: null, productId: 'p-rc-750' }).flags).toContain('INCOMPLETE');
 
     const vInv = validateInvoice({
       invoiceNumber: 'DRAFT-1234ABCD',
@@ -267,10 +270,10 @@ describe('invoice validation & draft building (validate.engine + draft.engine)',
       matchStatus: 'MATCHED',
       quantity: 12,
       costPrice: '780.00',
-      mrp: '1050.00',
       taxRate: '18.00',
       lineCostTotal: '9360.00',
       flags: [],
     });
+    expect(draft[0]).not.toHaveProperty('mrp');   // the draft never carries a selling price, not even the catalog's
   });
 });

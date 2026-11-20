@@ -28,6 +28,10 @@ export interface ShiftSummary {
   creditCollected: string;
   grossCollected:  string;
   paidBillsCount:  number;
+  /** Cash khata repayments taken during the shift (into the drawer, no bill). */
+  cashRepayments:  string;
+  /** Cash expenses paid out during the shift (out of the drawer, no bill). */
+  cashExpenses:    string;
   expectedCash:    string;
 }
 
@@ -69,8 +73,15 @@ export function countDenominations(denoms: Record<string, unknown>): string {
 // ─── SUMMARY ─────────────────────────────────────────────────────────────────
 
 /** Collections per payment mode from PAID bills (VOIDED/OPEN ignored) and the expected drawer cash. */
-export function computeShiftSummary(openingFloat: string, bills: ShiftBill[]): ShiftSummary {
+export function computeShiftSummary(
+  openingFloat: string,
+  bills: ShiftBill[],
+  cashMovements: { cashRepayments?: string; cashExpenses?: string } = {},
+  returns: Array<{ mode: string | null; amount: string }> = [],
+): ShiftSummary {
   const float = toMoney(openingFloat, 'openingFloat');
+  const repayments = new Decimal(cashMovements.cashRepayments ?? '0');
+  const cashExpenses = new Decimal(cashMovements.cashExpenses ?? '0');
   const sums: Record<'CASH' | 'CARD' | 'UPI' | 'CREDIT', Decimal> = {
     CASH: new Decimal(0), CARD: new Decimal(0), UPI: new Decimal(0), CREDIT: new Decimal(0),
   };
@@ -85,6 +96,13 @@ export function computeShiftSummary(openingFloat: string, bills: ShiftBill[]): S
     if (mode in sums) sums[mode] = sums[mode].plus(amount);
     else sums.CASH = sums.CASH.plus(amount);   // unknown legacy modes are treated as cash
   }
+  for (const ret of returns) {
+    const amt = new Decimal(ret.amount || '0');
+    gross = Decimal.max(0, gross.minus(amt));
+    const mode = (ret.mode ?? 'CASH').toUpperCase() as keyof typeof sums;
+    if (mode in sums) sums[mode] = Decimal.max(0, sums[mode].minus(amt));
+    else sums.CASH = Decimal.max(0, sums.CASH.minus(amt));
+  }
   return {
     cashCollected:   sums.CASH.toFixed(2),
     cardCollected:   sums.CARD.toFixed(2),
@@ -92,7 +110,9 @@ export function computeShiftSummary(openingFloat: string, bills: ShiftBill[]): S
     creditCollected: sums.CREDIT.toFixed(2),
     grossCollected:  gross.toFixed(2),
     paidBillsCount:  paid,
-    expectedCash:    float.plus(sums.CASH).toFixed(2),
+    cashRepayments:  repayments.toFixed(2),
+    cashExpenses:    cashExpenses.toFixed(2),
+    expectedCash:    float.plus(sums.CASH).plus(repayments).minus(cashExpenses).toFixed(2),
   };
 }
 

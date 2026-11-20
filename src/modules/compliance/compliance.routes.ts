@@ -14,6 +14,8 @@ import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { sendError } from '../../lib/errors.js';
 import { stripCost, userCan } from '../permissions/permission.service.js';
+import { RegisterQuerySchema, getProductRegister, getStockRegister } from './register.service.js';
+import { registerToCsv } from './register.engine.js';
 import {
   CreateQuotaSchema,
   DateRangeQuerySchema,
@@ -93,6 +95,42 @@ export async function complianceRoutes(app: FastifyInstance) {
     if (!(await assertBranchAccess(user, params.data.branchId, reply))) return;
     const log = await listBreakage(params.data.branchId, query.data.from, query.data.to);
     return reply.send((await userCan(user, 'cost.view')) ? log : stripLogCost(log));
+  });
+
+  // ─── STOCK REGISTER (opening / received / sold / breakage / closing per product) ─────────────────
+  // GET /compliance/stock-audit/:branchId/register?from=&to=&format=json|csv
+  app.get('/compliance/stock-audit/:branchId/register', { preHandler: [requireRole('manager')] }, async (req, reply) => {
+    const params = BranchParams.safeParse(req.params);
+    if (!params.success) return reply.status(400).send({ error: 'Invalid branchId' });
+    const query = RegisterQuerySchema.safeParse(req.query ?? {});
+    if (!query.success) return reply.status(400).send({ error: query.error.issues[0]?.message ?? 'Validation failed', details: query.error.flatten() });
+    if (!(await assertBranchAccess(getUser(req), params.data.branchId, reply))) return;
+    try {
+      const reg = await getStockRegister(params.data.branchId, query.data);
+      if (query.data.format === 'csv') {
+        return reply
+          .header('Content-Type', 'text/csv; charset=utf-8')
+          .header('Content-Disposition', `attachment; filename="stock-register-${reg.from}-to-${reg.to}.csv"`)
+          .send(registerToCsv(reg));
+      }
+      return reg;
+    } catch (err) {
+      return sendError(reply, err, 'Failed to build the stock register');
+    }
+  });
+
+  // GET /compliance/stock-audit/:branchId/register/:productId?from=&to= — one product, day by day
+  app.get('/compliance/stock-audit/:branchId/register/:productId', { preHandler: [requireRole('manager')] }, async (req, reply) => {
+    const params = z.object({ branchId: z.string().uuid(), productId: z.string().uuid() }).safeParse(req.params);
+    if (!params.success) return reply.status(400).send({ error: 'Invalid id' });
+    const query = RegisterQuerySchema.safeParse(req.query ?? {});
+    if (!query.success) return reply.status(400).send({ error: query.error.issues[0]?.message ?? 'Validation failed' });
+    if (!(await assertBranchAccess(getUser(req), params.data.branchId, reply))) return;
+    try {
+      return await getProductRegister(params.data.branchId, params.data.productId, query.data);
+    } catch (err) {
+      return sendError(reply, err, 'Failed to build the stock register');
+    }
   });
 
   // ─── STOCK RECONCILIATION ───────────────────────────────────────────────────

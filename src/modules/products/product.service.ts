@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { Decimal } from 'decimal.js';
 import { db } from '../../db/client.js';
 import { products, categories, masterProducts, priceAudit, productServings, stock } from '../../db/schema.js';
-import { and, eq, getTableColumns, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray } from 'drizzle-orm';
 import { branchAvailability, type Tenant } from '../menu/menu-access.js';
+import { branchCostMap, branchPriceMap, categoryScope, productTenantScope, requireTenantId } from '../catalog/catalog.service.js';
+import { defaultPrice, positivePrice } from '../catalog/price.engine.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import { cleanProductName } from '../../lib/product-name.js';
@@ -22,8 +24,8 @@ export const CreateProductSchema = z.object({
   volumeMl:     z.coerce.number().int().positive().optional(),
   exciseCode:   OPT_SAFE_TEXT(10),
   packQuantity: z.coerce.number().int().positive().max(1000).optional(),
-  // MRP is optional at product creation time — set/updated later on the Products page or via PATCH /mrp.
-  // The DB column defaults to '0.00'; POS billing will block sales of products with 0.00 MRP.
+  // MRP is optional at product creation time — the tenant types it later (Products → Pricing, or PATCH /mrp).
+  // The column defaults to '0.00' ("needs a price"); POS billing refuses to sell an unpriced product.
   mrp:          z.string().trim().optional().transform((v) => v || undefined)
                   .refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), 'MRP must be a decimal string')
                   .refine((v) => !v || Number(v) >= 0, 'MRP must be non-negative'),
@@ -41,24 +43,24 @@ export const UpdateProductSchema = z.object({
   volumeMl: z.coerce.number().int().positive().nullable().optional(),
   packQuantity: z.coerce.number().int().positive().max(1000).optional(),
   categoryId: z.string().uuid().optional(),
-  mrp: z.string().trim().optional().transform((v) => v || undefined)
-    .refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), 'MRP must be a decimal string'),
-  costPrice: z.string().trim().optional().transform((v) => v || undefined)
-    .refine((v) => !v || /^\d+(\.\d{1,2})?$/.test(v), 'Cost price must be a decimal string'),
+  // mrp / costPrice are deliberately NOT editable here: MRP changes go through PATCH /products/:id/mrp
+  // (prices.edit permission + price_audit row). .strict() turns an attempt into a 400, not a silent no-op.
   barcode: OPT_SAFE_TEXT(64).nullable(),
   sku: OPT_SAFE_TEXT(64).nullable(),
   exciseCode: OPT_SAFE_TEXT(10).nullable(),
-});
+}).strict();
 
 export type CreateProductInput = z.infer<typeof CreateProductSchema>;
 export type UpdateProductInput = z.infer<typeof UpdateProductSchema>;
 
 // ─── PRODUCT SERVICE ─────────────────────────────────────────────────────────
 
-export async function listCategories() {
+/** The platform's categories plus the caller's own business's (a tenant never sees another tenant's). */
+export async function listCategories(tenant: Tenant = 'ALL') {
   return await db
-    .select({ id: categories.id, name: categories.name, taxRate: categories.taxRate, taxType: categories.taxType })
+    .select({ id: categories.id, name: categories.name, taxRate: categories.taxRate, taxType: categories.taxType, custom: categories.syndicateId })
     .from(categories)
+    .where(categoryScope(tenant))
     .orderBy(categories.name);
 }
 
@@ -83,15 +85,26 @@ export async function lookupMasterProduct(exciseCode: string, volumeMl: number, 
 }
 
 export async function createProduct(input: CreateProductInput, tenant: Tenant = 'ALL') {
+  const tenantId = requireTenantId(tenant);
   const [category] = await db
     .select({ id: categories.id, name: categories.name, taxRate: categories.taxRate })
     .from(categories)
-    .where(eq(categories.id, input.categoryId))
+    .where(and(eq(categories.id, input.categoryId), categoryScope(tenantId)))
     .limit(1);
   if (!category) throw new BusinessRuleError('Category not found');
-  const cleanName = cleanProductName(input.name);
-  const brand = input.brand || cleanName.split(' ')[0] || cleanName;
-  // MRP defaults to '0.00' when not supplied; POS billing will block sales of unpriced products
+
+  // An item taken from the master catalog gets its identity from the master (the client's copy of it is ignored)
+  let identity: { name: string; brand: string; volumeMl?: number; exciseCode?: string; packQuantity?: number; sku?: string; revision: number } | null = null;
+  if (input.masterProductId) {
+    const [m] = await db.select().from(masterProducts).where(and(eq(masterProducts.id, input.masterProductId), eq(masterProducts.isActive, true))).limit(1);
+    if (!m) throw new BusinessRuleError('That product is not in the master catalog');
+    const [dup] = await db.select({ id: products.id }).from(products).where(and(eq(products.syndicateId, tenantId), eq(products.masterProductId, m.id))).limit(1);
+    if (dup) throw new ConflictError('This master product is already in your catalog');
+    identity = { name: cleanProductName(m.name), brand: m.brand, volumeMl: m.volumeMl, exciseCode: m.exciseCode, packQuantity: m.packQuantity, sku: m.sku, revision: m.revision };
+  }
+  const cleanName = identity?.name ?? cleanProductName(input.name);
+  const brand = identity?.brand ?? (input.brand || cleanName.split(' ')[0] || cleanName);
+  // No price is invented: left empty it stays 0.00 ("needs a price") until the tenant types one
   const mrp = input.mrp ? new Decimal(input.mrp).toFixed(2) : '0.00';
 
   try {
@@ -99,15 +112,16 @@ export async function createProduct(input: CreateProductInput, tenant: Tenant = 
       categoryId:      input.categoryId,
       masterProductId: input.masterProductId,
       barcode:         input.barcode,
-      sku:             input.sku,
+      sku:             identity?.sku ?? input.sku,
       name:            cleanName,
       brand,
-      volumeMl:        input.volumeMl,
-      exciseCode:      input.exciseCode,
-      packQuantity:    input.packQuantity,
+      volumeMl:        identity?.volumeMl ?? input.volumeMl,
+      exciseCode:      identity?.exciseCode ?? input.exciseCode,
+      packQuantity:    identity?.packQuantity ?? input.packQuantity,
+      masterRevision:  identity ? identity.revision : undefined,
       mrp,
       costPrice:       input.costPrice ? new Decimal(input.costPrice).toFixed(2) : undefined,
-      syndicateId:     tenant === 'ALL' ? null : tenant,
+      syndicateId:     tenantId,
     }).returning();
     return { ...product, categoryName: category.name, taxRate: category.taxRate };
   } catch (err) {
@@ -121,9 +135,14 @@ export async function updateProduct(
   input: UpdateProductInput,
   tenant: Tenant = 'ALL'
 ) {
-  const scope = tenant === 'ALL' ? undefined : tenant === null ? isNull(products.syndicateId) : or(isNull(products.syndicateId), eq(products.syndicateId, tenant));
-  const [existing] = await db.select().from(products).where(and(eq(products.id, id), scope)).limit(1);
+  const [existing] = await db.select().from(products).where(and(eq(products.id, id), productTenantScope(tenant))).limit(1);
   if (!existing) throw new NotFoundError('Product not found');
+
+  // What a bottle IS comes from the master catalog; the business can only rename it (display name), change its barcode, etc.
+  if (existing.masterProductId) {
+    const locked = (['brand', 'volumeMl', 'packQuantity', 'categoryId', 'sku', 'exciseCode'] as const).filter((k) => input[k] !== undefined && input[k] !== existing[k]);
+    if (locked.length > 0) throw new BusinessRuleError(`${locked.join(', ')} come from the master catalog and cannot be changed on this product`);
+  }
 
   const updates: Record<string, any> = {};
   if (input.name !== undefined) updates.name = cleanProductName(input.name);
@@ -131,8 +150,6 @@ export async function updateProduct(
   if (input.volumeMl !== undefined) updates.volumeMl = input.volumeMl;
   if (input.packQuantity !== undefined) updates.packQuantity = input.packQuantity;
   if (input.categoryId !== undefined) updates.categoryId = input.categoryId;
-  if (input.mrp !== undefined) updates.mrp = input.mrp ? new Decimal(input.mrp).toFixed(2) : '0.00';
-  if (input.costPrice !== undefined) updates.costPrice = input.costPrice ? new Decimal(input.costPrice).toFixed(2) : undefined;
   if (input.barcode !== undefined) updates.barcode = input.barcode;
   if (input.sku !== undefined) updates.sku = input.sku;
   if (input.exciseCode !== undefined) updates.exciseCode = input.exciseCode;
@@ -150,9 +167,8 @@ export async function updateProduct(
 
 /** Barcodes are unique per business, so the lookup is limited to the caller's tenant (their own item wins over a shared one). */
 export async function getProductByBarcode(barcode: string, tenant: Tenant = 'ALL') {
-  const scope = tenant === 'ALL' ? undefined : tenant === null ? isNull(products.syndicateId) : or(isNull(products.syndicateId), eq(products.syndicateId, tenant));
-  const rows = await db.select().from(products).where(and(eq(products.barcode, barcode), scope)).limit(2);
-  return rows.find((r) => r.syndicateId !== null) ?? rows[0] ?? null;
+  const [row] = await db.select().from(products).where(and(eq(products.barcode, barcode), productTenantScope(tenant))).limit(1);
+  return row ?? null;
 }
 
 export async function getProductById(id: string) {
@@ -182,7 +198,7 @@ export async function updateMrp(
       .where(eq(products.id, productId))
       .for('update');
     // A product of another business is reported as missing (no existence leak) — the MRP belongs to its own business
-    const foreign = existing && existing.syndicateId !== null && tenant !== 'ALL' && existing.syndicateId !== tenant;
+    const foreign = existing && tenant !== 'ALL' && existing.syndicateId !== tenant;
     if (!existing || foreign) throw new NotFoundError(`Product ${productId} not found`);
     if (new Decimal(existing.mrp).equals(mrp)) return;   // no-op, nothing to audit
 
@@ -202,15 +218,35 @@ export async function updateMrp(
 
 /** Products with their category name and GST rate (for catalog filters and display). */
 export async function listProducts(activeOnly = true, tenant: Tenant = 'ALL', branchId?: string) {
-  const scope = tenant === 'ALL' ? undefined : tenant === null ? isNull(products.syndicateId) : or(isNull(products.syndicateId), eq(products.syndicateId, tenant));
   const query = db
     .select({ ...getTableColumns(products), categoryName: categories.name, taxRate: categories.taxRate })
     .from(products)
     .leftJoin(categories, eq(products.categoryId, categories.id));
-  const found = await (query.where(and(activeOnly ? eq(products.isActive, true) : undefined, scope)).orderBy(products.name));
+  const found = await (query.where(and(activeOnly ? eq(products.isActive, true) : undefined, productTenantScope(tenant))).orderBy(products.name));
   // A branch's own on/off switch overrides the shared availability flag
-  const overrides = branchId ? await branchAvailability(db, branchId, found.map((r) => r.id)) : new Map<string, boolean>();
-  const rows = found.map((r) => ({ ...r, isAvailable: overrides.get(r.id) ?? r.isAvailable }));
+  const foundIds = found.map((r) => r.id);
+  const [overrides, prices, costs] = await Promise.all([
+    branchId ? branchAvailability(db, branchId, foundIds) : Promise.resolve(new Map<string, boolean>()),
+    branchPriceMap(db, branchId, foundIds),
+    branchCostMap(db, branchId, foundIds),
+  ]);
+  // `mrp` is the price this branch charges (its override, else the business-wide price) so the POS shows what it will bill;
+  // `tenantMrp` is the business-wide price and `branchPrice` the override. `needsPrice` = cannot be sold here yet.
+  const rows = found.map((r) => {
+    const o = prices.get(r.id);
+    const effective = defaultPrice(r.mrp, o);
+    const c = costs.get(r.id);
+    // With a branch chosen, cost figures are that branch's own purchases (a branch that never bought it shows none)
+    const cost = branchId ? {
+      costPrice: c?.costPrice ?? null, previousCostPrice: c?.previousCostPrice ?? null, costPerCase: c?.costPerCase ?? null,
+      lastInvoiceId: c?.lastInvoiceId ?? null, lastInvoiceNumber: c?.lastInvoiceNumber ?? null,
+      lastInvoiceDate: c?.lastInvoiceDate ?? null, costUpdatedAt: c?.costUpdatedAt ?? null,
+    } : {};
+    return {
+      ...r, ...cost, isAvailable: overrides.get(r.id) ?? r.isAvailable,
+      mrp: effective ?? r.mrp, tenantMrp: r.mrp, branchPrice: positivePrice(o?.base), needsPrice: effective === null,
+    };
+  });
 
   // Peg / glass servings ride along so POS and KOT can offer them without a second call
   const servings = rows.length === 0 ? [] : await db

@@ -58,6 +58,7 @@ export type Preview = {
   periodStart: string | null;
   periodEnd: string | null;
   warnings: string[];
+  skippedSamples?: string[];
   sampleRows: string[][];
   totalRows: number;
 };

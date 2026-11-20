@@ -3,6 +3,8 @@
  * Delegates status validation to kot.engine.ts.
  */
 
+import { branchPriceMap } from '../catalog/catalog.service.js';
+import { defaultPrice } from '../catalog/price.engine.js';
 import { db } from '../../db/client.js';
 import { kotOrders, kotItems, tableSessions, products, productServings, categories, stock, stockAudit } from '../../db/schema.js';
 import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
@@ -61,6 +63,7 @@ export async function createKotOrder(input: CreateKotInput) {
     const missing = productIds.filter((id) => !productMap.get(id)?.isActive);
     if (missing.length > 0) throw new BusinessRuleError(`Unknown or inactive products: ${missing.join(', ')}`);
     await assertBranchCanSell(tx, input.branchId, productRows);
+    const branchPrices = await branchPriceMap(tx, input.branchId, productIds);
 
     const servingIds = [...new Set(input.items.flatMap((i) => (i.servingId ? [i.servingId] : [])))];
     const servingRows = servingIds.length
@@ -109,11 +112,14 @@ export async function createKotOrder(input: CreateKotInput) {
       if (i.servingId && (!serving || serving.productId !== i.productId || !serving.isActive)) {
         throw new BusinessRuleError(`Serving not available for ${product.name}`);
       }
+      if (!serving && defaultPrice(product.mrp, branchPrices.get(i.productId)) === null) {
+        throw new BusinessRuleError(`${product.name} has no selling price set yet. Set it on the Products page (Pricing) first`);
+      }
       return {
         kotOrderId: order.id,
         productId:  i.productId,
         quantity:   i.quantity,
-        unitPrice:  serving?.price ?? product.mrp,
+        unitPrice:  serving?.price ?? defaultPrice(product.mrp, branchPrices.get(i.productId)) ?? product.mrp,
         taxRate:    resolveTaxRate(product.taxRate, product.gstRate),
         servingId:    serving?.id ?? null,
         servingLabel: serving?.label ?? null,

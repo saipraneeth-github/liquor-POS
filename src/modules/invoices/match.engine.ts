@@ -21,9 +21,10 @@ export interface CatalogProduct {
   exciseCode?: string | null;
   volumeMl: number | null;
   packQuantity: number | null;
-  mrp: string;
   costPrice?: string | null;
   isActive: boolean;
+  /** Brand codes this business has taught the system for this product (brand_code_mappings). */
+  aliasCodes?: string[];
 }
 
 export interface MatchInput {
@@ -190,7 +191,8 @@ export function matchLine(line: MatchInput, catalog: CatalogProduct[]): MatchRes
     const skuMatches = active.filter(
       (c) =>
         (c.sku && isBrandCodeEqual(c.sku, sku)) ||
-        (c.exciseCode && isBrandCodeEqual(c.exciseCode, sku)),
+        (c.exciseCode && isBrandCodeEqual(c.exciseCode, sku)) ||
+        (c.aliasCodes && c.aliasCodes.some((a) => isBrandCodeEqual(a, sku))),
     );
     if (skuMatches.length > 0) {
       const all = skuMatches.map((p) => candidateOf(p, 0.5));

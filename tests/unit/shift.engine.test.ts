@@ -43,6 +43,8 @@ describe('computeShiftSummary', () => {
       creditCollected: '800.00',
       grossCollected: '2750.50',
       paidBillsCount: 5,
+      cashRepayments: '0.00',
+      cashExpenses: '0.00',
       expectedCash: '1700.00',
     });
   });
@@ -57,5 +59,18 @@ describe('computeDiscrepancy', () => {
     expect(computeDiscrepancy('1650.00', '1700.00')).toBe('-50.00');
     expect(computeDiscrepancy('1710.50', '1700.00')).toBe('10.50');
     expect(computeDiscrepancy('1700', '1700.00')).toBe('0.00');
+  });
+});
+
+describe('shift expected cash with cash that moved without a bill', () => {
+  const bills = [{ status: 'PAID' as const, paymentMode: 'CASH', total: '300.00' }, { status: 'PAID' as const, paymentMode: 'UPI', total: '200.00' }];
+  it('adds cash repayments and subtracts cash expenses', () => {
+    const s = computeShiftSummary('500.00', bills, { cashRepayments: '120.00', cashExpenses: '20.00' });
+    expect(s.expectedCash).toBe('900.00');
+    expect(s.cashRepayments).toBe('120.00');
+    expect(s.cashExpenses).toBe('20.00');
+  });
+  it('is the old float + cash sales when there are none', () => {
+    expect(computeShiftSummary('500.00', bills).expectedCash).toBe('800.00');
   });
 });

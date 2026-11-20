@@ -3,8 +3,8 @@ import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { db } from '../../db/client.js';
 import { createHash, randomBytes } from 'node:crypto';
-import { branches, passwordResets, syndicates, users } from '../../db/schema.js';
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { branches, loginThrottle, passwordResets, syndicates, users } from '../../db/schema.js';
+import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { appUrl } from '../../config/integrations.js';
 import { sendMail } from '../notifications/mailer.js';
 import { ACCESS_MESSAGE, accessState } from '../platform/access.engine.js';
@@ -25,40 +25,64 @@ export class InvalidCredentialsError extends Error {
 //     address wrong repeatedly only locks themselves out; the real user (different IP) is unaffected.
 //   • e-mail alone      — 100 failures from anywhere in the window. Only a distributed attack reaches this,
 //     and it is the backstop against brute-forcing one account from many addresses.
-// A successful sign-in clears both. In-memory: per process, resets on restart. Use a shared store (Redis) if
-// the API ever runs as several instances. Behind a reverse proxy set TRUST_PROXY so request.ip is the client.
+// A successful sign-in clears both. Counters live in the `login_throttle` table, so every API instance shares
+// them and a restart does not reset them. Behind a reverse proxy set TRUST_PROXY so request.ip is the client.
 const MAX_FAILED_PER_CLIENT = 10;
 const MAX_FAILED_PER_ACCOUNT = 100;
+// The e-mail-alone backstop is itself a way to lock a real user out: an attacker who spreads 100 wrong guesses over many
+// addresses locks the account for everyone. So a client (e-mail + IP) that has signed in successfully in the last 30 days is
+// remembered ('known:' rows, kept outside the 15-minute housekeeping) and is NOT blocked by the account-wide counter, only by
+// its own. A brute-forcer still faces the account-wide limit from every new address, and the real user keeps working from theirs.
+const KNOWN_CLIENT_TTL_INTERVAL = sql`interval '30 days'`;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
-const failedLogins = new Map<string, { count: number; first: number }>();
+const LOGIN_LOCK_INTERVAL = sql`interval '15 minutes'`;   // keep equal to LOGIN_LOCK_MS
 
-function loginLocked(key: string, max: number, now = Date.now()): boolean {
-  const entry = failedLogins.get(key);
-  if (!entry) return false;
-  if (now - entry.first > LOGIN_LOCK_MS) { failedLogins.delete(key); return false; }
-  return entry.count >= max;
-}
+type ThrottleState = { count: number; secondsLeft: number };
 
-function secondsUntilUnlocked(key: string, now = Date.now()): number {
-  const entry = failedLogins.get(key);
-  return entry ? Math.max(1, Math.ceil((entry.first + LOGIN_LOCK_MS - now) / 1000)) : 0;
-}
-
-function failuresSoFar(key: string, now = Date.now()): number {
-  const entry = failedLogins.get(key);
-  return entry && now - entry.first <= LOGIN_LOCK_MS ? entry.count : 0;
-}
-
-function recordFailedLogin(key: string, now = Date.now()): void {
-  const entry = failedLogins.get(key);
-  if (!entry || now - entry.first > LOGIN_LOCK_MS) failedLogins.set(key, { count: 1, first: now });
-  else entry.count += 1;
-  if (failedLogins.size > 10_000) {   // bound memory: drop expired entries
-    for (const [k, v] of failedLogins) if (now - v.first > LOGIN_LOCK_MS) failedLogins.delete(k);
+/** Live (not expired) failure counters for these keys, read in one query. */
+async function readThrottle(keys: string[]): Promise<Map<string, ThrottleState>> {
+  const rows = await db.select({ key: loginThrottle.key, count: loginThrottle.count, firstAt: loginThrottle.firstAt })
+    .from(loginThrottle).where(inArray(loginThrottle.key, keys));
+  const now = Date.now();
+  const out = new Map<string, ThrottleState>();
+  for (const r of rows) {
+    const age = now - r.firstAt.getTime();
+    if (age <= LOGIN_LOCK_MS) out.set(r.key, { count: r.count, secondsLeft: Math.max(1, Math.ceil((LOGIN_LOCK_MS - age) / 1000)) });
   }
+  return out;
 }
 
-export function resetLoginThrottle(): void { failedLogins.clear(); }
+/** Counts one failure for a key; the window restarts when the previous one has expired. Atomic per key. */
+async function recordFailedLogin(key: string): Promise<number> {
+  const [row] = await db.insert(loginThrottle).values({ key, count: 1 })
+    .onConflictDoUpdate({
+      target: loginThrottle.key,
+      set: {
+        count: sql`case when ${loginThrottle.firstAt} < now() - ${LOGIN_LOCK_INTERVAL} then 1 else ${loginThrottle.count} + 1 end`,
+        firstAt: sql`case when ${loginThrottle.firstAt} < now() - ${LOGIN_LOCK_INTERVAL} then now() else ${loginThrottle.firstAt} end`,
+      },
+    })
+    .returning({ count: loginThrottle.count });
+  if (Math.random() < 0.02) {   // housekeeping: drop expired counters now and then
+    await db.delete(loginThrottle).where(sql`(${loginThrottle.key} not like 'known:%' and ${loginThrottle.firstAt} < now() - ${LOGIN_LOCK_INTERVAL}) or (${loginThrottle.key} like 'known:%' and ${loginThrottle.firstAt} < now() - ${KNOWN_CLIENT_TTL_INTERVAL})`).catch(() => undefined);
+  }
+  return row.count;
+}
+
+export async function resetLoginThrottle(): Promise<void> { await db.delete(loginThrottle); }
+
+/** Has this client (e-mail + IP) signed in successfully within the last 30 days? */
+async function isKnownClient(key: string): Promise<boolean> {
+  const [row] = await db.select({ key: loginThrottle.key }).from(loginThrottle)
+    .where(and(eq(loginThrottle.key, key), sql`${loginThrottle.firstAt} > now() - ${KNOWN_CLIENT_TTL_INTERVAL}`)).limit(1);
+  return !!row;
+}
+
+/** Remembers a successful sign-in from this client (refreshes the 30 days). */
+async function rememberClient(key: string): Promise<void> {
+  await db.insert(loginThrottle).values({ key, count: 1 })
+    .onConflictDoUpdate({ target: loginThrottle.key, set: { firstAt: sql`now()` } }).catch(() => undefined);
+}
 
 const SALT_ROUNDS = 12;
 
@@ -93,6 +117,13 @@ export async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, SALT_ROUNDS);
 }
 
+let dummyHash: Promise<string> | null = null;
+/** A valid hash nobody knows the password of, made once, at the real cost factor. */
+function dummyPasswordHash(): Promise<string> {
+  dummyHash ??= hashPassword(randomBytes(16).toString('hex'));
+  return dummyHash;
+}
+
 export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
   return bcrypt.compare(plain, hash);
 }
@@ -105,7 +136,7 @@ export const ChangePasswordSchema = z.object({
 export async function changeOwnPassword(userId: string, currentPassword: string, newPassword: string): Promise<boolean> {
   const [user] = await db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, userId)).limit(1);
   if (!user || !(await verifyPassword(currentPassword, user.hash))) return false;
-  await db.update(users).set({ passwordHash: await hashPassword(newPassword) }).where(eq(users.id, userId));
+  await db.update(users).set({ passwordHash: await hashPassword(newPassword), passwordChangedAt: new Date(), mustChangePassword: false }).where(eq(users.id, userId));
   return true;
 }
 
@@ -119,17 +150,23 @@ export async function loginUser(
 ): Promise<string> {
   const accountKey = `acct:${email.toLowerCase()}`;
   const clientKey = `client:${email.toLowerCase()}|${clientIp}`;
-  const clientLocked = loginLocked(clientKey, MAX_FAILED_PER_CLIENT);
-  if (clientLocked || loginLocked(accountKey, MAX_FAILED_PER_ACCOUNT)) {
+  const throttle = await readThrottle([clientKey, accountKey]);
+  const clientState = throttle.get(clientKey);
+  const accountState = throttle.get(accountKey);
+  const clientLocked = (clientState?.count ?? 0) >= MAX_FAILED_PER_CLIENT;
+  const knownKey = `known:${email.toLowerCase()}|${clientIp}`;
+  const accountLocked = (accountState?.count ?? 0) >= MAX_FAILED_PER_ACCOUNT;
+  // the account-wide lock does not apply to a device the real user has signed in from before (see above)
+  const lockedOut = clientLocked || (accountLocked && !(await isKnownClient(knownKey)));
+  if (lockedOut) {
     throw new TooManyAttemptsError(
       'Too many failed sign-in attempts. Try again in a few minutes or reset your password.',
-      secondsUntilUnlocked(clientLocked ? clientKey : accountKey),
+      (clientLocked ? clientState : accountState)?.secondsLeft ?? 1,
     );
   }
-  const recordFailure = (): never => {
-    recordFailedLogin(clientKey);
-    recordFailedLogin(accountKey);
-    throw new InvalidCredentialsError(Math.max(0, MAX_FAILED_PER_CLIENT - failuresSoFar(clientKey)));
+  const recordFailure = async (): Promise<never> => {
+    const [clientCount] = await Promise.all([recordFailedLogin(clientKey), recordFailedLogin(accountKey)]);
+    throw new InvalidCredentialsError(Math.max(0, MAX_FAILED_PER_CLIENT - clientCount));
   };
   const [row] = await db
     .select({ user: users, tenant: { isActive: syndicates.isActive, plan: syndicates.plan, trialEndsAt: syndicates.trialEndsAt, paidUntil: syndicates.paidUntil } })
@@ -140,12 +177,16 @@ export async function loginUser(
     .limit(1);
   const user = row?.user;
 
-  if (!user || !user.isActive) recordFailure();
+  if (!user || !user.isActive) {
+    // Spend the same bcrypt time as a real check, so response time does not reveal which e-mails have an account
+    await verifyPassword(password, await dummyPasswordHash());
+    return recordFailure();
+  }
 
   const valid = await verifyPassword(password, user.passwordHash);
-  if (!valid) recordFailure();
-  failedLogins.delete(clientKey);
-  failedLogins.delete(accountKey);
+  if (!valid) return recordFailure();
+  await db.delete(loginThrottle).where(inArray(loginThrottle.key, [clientKey, accountKey])).catch(() => undefined);
+  await rememberClient(knownKey);
   if (row.tenant && row.tenant.isActive !== null) {
     // Only a suspension blocks sign-in. An ended trial / overdue payment lets the user in so the Admin can pay.
     const state = accessState(row.tenant);
@@ -208,7 +249,7 @@ export async function resetPasswordWithToken(token: string, newPassword: string)
       .where(and(eq(passwordResets.tokenHash, sha256(token)), isNull(passwordResets.usedAt), gt(passwordResets.expiresAt, new Date())))
       .returning({ userId: passwordResets.userId });
     if (!row) return false;
-    await tx.update(users).set({ passwordHash: hash }).where(eq(users.id, row.userId));
+    await tx.update(users).set({ passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: false }).where(eq(users.id, row.userId));
     // Any other outstanding link for this account is now void
     await tx.update(passwordResets).set({ usedAt: new Date() }).where(and(eq(passwordResets.userId, row.userId), isNull(passwordResets.usedAt)));
     return true;

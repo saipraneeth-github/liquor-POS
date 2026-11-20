@@ -6,6 +6,7 @@ import { printInBrowser, sendToNetworkPrinter } from '../lib/print';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { ProtectedButton } from '../components/ui';
 import { businessDate } from '../lib/business-day';
+import { ReturnDialog } from './ReturnDialog';
 
 type BillItem = {
   id: string;
@@ -29,11 +30,25 @@ type Bill = {
   discount: string;
   roundOff?: string | null;
   total: string;
+  refundedAmount?: string | null;
+  returnCount?: number | null;
+  netTotal?: string | null;
   customerId?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   saleTypeId?: string | null;   // null = the default sale type (Walk-in)
   items: BillItem[];
+  returns?: Array<{
+    id: string;
+    returnNumber: string;
+    refundMode: string;
+    refundAmount: string;
+    grossAmount: string;
+    taxAmount: string;
+    discountAmount: string;
+    reason: string;
+    createdAt: string;
+  }>;
   voidedAt?: string | null;
   voidReason?: string | null;
 };
@@ -57,6 +72,7 @@ export function Bills() {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [voidSubmitting, setVoidSubmitting] = useState(false);
+  const [returning, setReturning] = useState<Bill | null>(null);
 
   const sub = (user as any)?.sub ?? user?.id ?? '';
   const branchId = (user as any)?.branchId ?? '';
@@ -132,6 +148,16 @@ export function Bills() {
     }
   };
 
+  const handleOpenReturn = async (b: Bill) => {
+    setReturning(b);
+    try {
+      const full = await api.get<Bill>(`/bills/${b.id}`);
+      setReturning(full);
+    } catch {
+      // ReturnDialog handles fallback loading
+    }
+  };
+
   const handleConfirmVoid = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBill) return;
@@ -183,6 +209,7 @@ export function Bills() {
             >
               <option value="">All</option>
               <option value="PAID">PAID</option>
+              <option value="RETURNED">RETURNED</option>
               <option value="VOIDED">VOIDED</option>
             </select>
           </div>
@@ -245,7 +272,13 @@ export function Bills() {
                 </tr>
               </thead>
               <tbody className="divide-y dark:divide-gray-700">
-                {filteredBills.map((b) => (
+                {filteredBills.map((b) => {
+                  const totalNum = parseFloat(b.total || '0');
+                  const refundedNum = parseFloat(b.refundedAmount || '0');
+                  const isReturned = refundedNum >= totalNum && totalNum > 0;
+                  const isPartial = refundedNum > 0 && !isReturned;
+
+                  return (
                   <tr key={b.id} className="bill-row hover:bg-gray-50 dark:hover:bg-gray-700/30" data-bill-number={b.billNumber}>
                     <td className="p-3 font-semibold">{b.billNumber}</td>
                     <td className="p-3 text-gray-500">
@@ -271,15 +304,25 @@ export function Bills() {
                       )}
                     </td>
                     <td className="p-3">
-                      <span
-                        className={`px-2 py-0.5 text-xs rounded font-medium ${
-                          b.status === 'PAID'
-                            ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300'
-                            : 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300'
-                        }`}
-                      >
-                        {b.status}
-                      </span>
+                      {isReturned ? (
+                        <span className="px-2 py-0.5 text-xs rounded font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300">
+                          RETURNED
+                        </span>
+                      ) : isPartial ? (
+                        <span className="px-2 py-0.5 text-xs rounded font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
+                          PARTIAL RETURN
+                        </span>
+                      ) : (
+                        <span
+                          className={`px-2 py-0.5 text-xs rounded font-medium ${
+                            b.status === 'PAID'
+                              ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300'
+                              : 'bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300'
+                          }`}
+                        >
+                          {b.status}
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-right font-mono text-gray-500">
                       ₹{parseFloat(b.subtotal || b.total || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -296,8 +339,24 @@ export function Bills() {
                     <td className="p-3 text-right font-mono text-gray-500">
                       ₹{parseFloat(b.taxAmount || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="p-3 text-right font-mono font-bold">
-                      ₹{parseFloat(b.total || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    <td className="p-3 text-right font-mono">
+                      {refundedNum > 0 ? (
+                        <div>
+                          <div className="font-bold text-gray-900 dark:text-gray-100">
+                            ₹{parseFloat(b.netTotal || '0').toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                            Refunded: -₹{refundedNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-gray-400 line-through">
+                            Orig: ₹{totalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="font-bold">
+                          ₹{totalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-center space-x-2">
                       <button
@@ -308,19 +367,52 @@ export function Bills() {
                         View
                       </button>
                       {b.status === 'PAID' && (
-                        <ProtectedButton
-                          type="button"
-                          variant="danger"
-                          permission="bills.void"
-                          onClick={() => handleOpenVoid(b)}
-                          className="px-2 py-1 text-xs"
-                        >
-                          Void
-                        </ProtectedButton>
+                        isReturned ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="px-2 py-1 text-xs border rounded opacity-40 cursor-not-allowed bg-gray-100 dark:bg-gray-700 text-gray-400"
+                            title="All items on this bill have been returned"
+                          >
+                            Returned
+                          </button>
+                        ) : (
+                          <ProtectedButton
+                            type="button"
+                            permission="bills.void"
+                            onClick={() => handleOpenReturn(b)}
+                            className="px-2 py-1 text-xs border rounded"
+                          >
+                            Return
+                          </ProtectedButton>
+                        )
+                      )}
+                      {b.status === 'PAID' && (
+                        refundedNum > 0 ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="px-2 py-1 text-xs border rounded opacity-40 cursor-not-allowed bg-gray-100 dark:bg-gray-700 text-gray-400"
+                            title="Cannot void a bill with sales returns"
+                          >
+                            Void
+                          </button>
+                        ) : (
+                          <ProtectedButton
+                            type="button"
+                            variant="danger"
+                            permission="bills.void"
+                            onClick={() => handleOpenVoid(b)}
+                            className="px-2 py-1 text-xs"
+                          >
+                            Void
+                          </ProtectedButton>
+                        )
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             <div className="p-3 text-xs text-gray-500 border-t dark:border-gray-700">
@@ -329,6 +421,8 @@ export function Bills() {
           </div>
         )}
       </div>
+
+      {returning && <ReturnDialog bill={returning} onClose={() => setReturning(null)} onDone={() => { void loadBills(); }} />}
 
       {/* Modal Dialog */}
       {modalType && (
@@ -402,9 +496,19 @@ export function Bills() {
               {modalType === 'view' && selectedBill && (
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 text-xs rounded font-bold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
-                      {selectedBill.status}
-                    </span>
+                    {parseFloat(selectedBill.refundedAmount || '0') >= parseFloat(selectedBill.total || '0') && parseFloat(selectedBill.total || '0') > 0 ? (
+                      <span className="px-2 py-0.5 text-xs rounded font-bold bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300">
+                        RETURNED
+                      </span>
+                    ) : parseFloat(selectedBill.refundedAmount || '0') > 0 ? (
+                      <span className="px-2 py-0.5 text-xs rounded font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                        PARTIAL RETURN
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 text-xs rounded font-bold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                        {selectedBill.status}
+                      </span>
+                    )}
                     <span className="px-2 py-0.5 text-xs rounded font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
                       {selectedBill.paymentMode}
                     </span>
@@ -480,14 +584,62 @@ export function Bills() {
                           </tr>
                         )}
                         <tr className="border-t text-sm font-bold dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40">
-                          <td colSpan={3} className="p-2">Final Total</td>
-                          <td className="p-2 text-right font-mono text-purple-600 dark:text-purple-400 font-bold">
+                          <td colSpan={3} className="p-2">{parseFloat(selectedBill.refundedAmount || '0') > 0 ? 'Original Bill Total' : 'Final Total'}</td>
+                          <td className="p-2 text-right font-mono text-gray-900 dark:text-gray-100 font-bold">
                             ₹{parseFloat(selectedBill.total || '0').toFixed(2)}
                           </td>
                         </tr>
+                        {parseFloat(selectedBill.refundedAmount || '0') > 0 && (
+                          <>
+                            <tr className="text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-950/20 font-medium">
+                              <td colSpan={3} className="p-2">Less: Returned / Refunded</td>
+                              <td className="p-2 text-right font-mono font-bold">
+                                -₹{parseFloat(selectedBill.refundedAmount || '0').toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className="border-t text-sm font-bold dark:border-gray-700 bg-purple-50 dark:bg-purple-950/30">
+                              <td colSpan={3} className="p-2 text-purple-900 dark:text-purple-200">Net Paid / Retained</td>
+                              <td className="p-2 text-right font-mono text-purple-700 dark:text-purple-300 font-bold">
+                                ₹{parseFloat(selectedBill.netTotal || '0').toFixed(2)}
+                              </td>
+                            </tr>
+                          </>
+                        )}
                       </tfoot>
                     </table>
                   </div>
+
+                  {/* Sales Returns details */}
+                  {selectedBill.returns && selectedBill.returns.length > 0 && (
+                    <div className="border border-purple-200 dark:border-purple-800/60 bg-purple-50/50 dark:bg-purple-950/20 rounded-lg p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold text-purple-900 dark:text-purple-200 uppercase tracking-wide">
+                          Returns Recorded ({selectedBill.returns.length})
+                        </h4>
+                        <span className="text-xs font-bold text-rose-600 dark:text-rose-400 font-mono">
+                          Total Refunded: -₹{parseFloat(selectedBill.refundedAmount || '0').toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {selectedBill.returns.map((ret) => (
+                          <div key={ret.id} className="text-xs bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700 flex justify-between items-center">
+                            <div>
+                              <span className="font-semibold text-purple-700 dark:text-purple-300">{ret.returnNumber}</span>
+                              <span className="text-gray-400 ml-2">({new Date(ret.createdAt).toLocaleDateString()} {new Date(ret.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})</span>
+                              <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                Reason: <span className="italic">{ret.reason}</span> · Mode: <span className="font-medium">{ret.refundMode}</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-rose-600 dark:text-rose-400 font-mono">
+                                -₹{parseFloat(ret.refundAmount).toFixed(2)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {selectedBill.status === 'VOIDED' && (
                     <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded text-xs text-red-700 dark:text-red-300">

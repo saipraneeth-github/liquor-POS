@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import { branchMenuAvailability, categories, priceAudit, productServings, products, servingPriceAudit, users, stock } from '../../db/schema.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
@@ -13,6 +13,7 @@ import type { Tx } from '../../lib/domain-events.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import { normalizeLabel, validateServings } from './serving.engine.js';
 import { branchAvailability, type Tenant } from './menu-access.js';
+import { categoryScope, productTenantScope, requireTenantId } from '../catalog/catalog.service.js';
 
 // ─── SCHEMAS ────────────────────────────────────────────────────────────────
 
@@ -69,12 +70,18 @@ export type ServingInputRow = z.infer<typeof ServingSchema>;
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
-async function findOrCreateCategory(tx: Tx, name: string, gstRate: string): Promise<string> {
+/** A category the business can use: its own, else a platform one of that name; otherwise it creates its OWN (never a platform one). */
+async function findOrCreateCategory(tx: Tx, name: string, gstRate: string, tenantId: string): Promise<string> {
   const clean = normalizeLabel(name);
-  const [existing] = await tx.select({ id: categories.id }).from(categories).where(eq(categories.name, clean)).limit(1);
+  const matches = await tx.select({ id: categories.id, owner: categories.syndicateId }).from(categories)
+    .where(and(sql`lower(${categories.name}) = lower(${clean})`, categoryScope(tenantId)));
+  const existing = matches.find((m) => m.owner === tenantId) ?? matches[0];
   if (existing) return existing.id;
-  const [created] = await tx.insert(categories).values({ name: clean, taxRate: new Decimal(gstRate).toFixed(2) }).returning({ id: categories.id });
-  return created.id;
+  const [created] = await tx.insert(categories).values({ name: clean, taxRate: new Decimal(gstRate).toFixed(2), syndicateId: tenantId })
+    .onConflictDoNothing().returning({ id: categories.id });
+  if (created) return created.id;
+  const [again] = await tx.select({ id: categories.id }).from(categories).where(and(sql`lower(${categories.name}) = lower(${clean})`, eq(categories.syndicateId, tenantId))).limit(1);
+  return again.id;
 }
 
 async function loadItem(tx: Tx | typeof db, id: string) {
@@ -115,10 +122,10 @@ function withEffectiveGst<T extends { gstRate: string | null; categoryTaxRate: s
   return { ...row, effectiveGstRate: row.gstRate ?? row.categoryTaxRate ?? '18.00' };
 }
 
-/** Platform owner reaches everything; a tenant reaches its own items; unowned items belong to standalone branches. */
+/** Platform owner reaches everything; a tenant reaches only its own items. */
 export function tenantOwns(owner: string | null, tenant: Tenant): boolean {
   if (tenant === 'ALL') return true;
-  return owner === null ? tenant === null : owner === tenant;
+  return owner !== null && owner === tenant;
 }
 
 async function assertMenuItem(tx: Tx | typeof db, id: string, tenant: Tenant, type?: MenuTypeParam) {
@@ -131,7 +138,7 @@ async function assertMenuItem(tx: Tx | typeof db, id: string, tenant: Tenant, ty
 // ─── QUERIES ────────────────────────────────────────────────────────────────
 
 export async function listMenuItems(type: MenuTypeParam, tenant: Tenant, includeInactive = false, branchId?: string) {
-  const scope = tenant === 'ALL' ? undefined : tenant === null ? isNull(products.syndicateId) : or(isNull(products.syndicateId), eq(products.syndicateId, tenant));
+  const scope = productTenantScope(tenant);
   const where = and(
     eq(products.menuType, toDbType(type)),
     includeInactive ? undefined : eq(products.isActive, true),
@@ -283,8 +290,9 @@ export async function createMenuItem(type: MenuTypeParam, input: CreateMenuItemI
   if (type === 'kitchen' && (input.servings?.length || input.volumeMl)) {
     throw new BusinessRuleError('Kitchen items do not have bottle sizes or servings');
   }
+  const tenantId = requireTenantId(tenant);
   const id = await db.transaction(async (tx) => {
-    const categoryId = await findOrCreateCategory(tx, input.categoryName, input.gstRate);
+    const categoryId = await findOrCreateCategory(tx, input.categoryName, input.gstRate, tenantId);
     const price = new Decimal(input.price).toFixed(2);
     const [created] = await tx.insert(products).values({
       categoryId,
@@ -298,7 +306,7 @@ export async function createMenuItem(type: MenuTypeParam, input: CreateMenuItemI
       volumeMl:    input.volumeMl,
       trackStock:  type === 'bar',
       hsnCode:     input.hsnCode || null,
-      syndicateId: tenant === 'ALL' ? null : tenant,
+      syndicateId: tenantId,
     }).returning({ id: products.id });
     await tx.insert(priceAudit).values({ productId: created.id, userId: user.sub, oldMrp: null, newMrp: price });
     if (input.servings?.length) await writeServings(tx, created.id, input.servings, user);
@@ -314,8 +322,8 @@ export async function updateMenuItem(id: string, input: UpdateMenuItemInput, use
     const adopting = current.menuType === 'RETAIL' && input.menuType === 'BAR';
     if (current.menuType === 'RETAIL' && !adopting) throw new NotFoundError('Menu item not found');
     if (!adopting && !tenantOwns(current.syndicateId, tenant)) throw new NotFoundError('Menu item not found');
-    // A bottle owned by another business cannot be adopted; an unowned (legacy) one becomes this tenant's
-    if (adopting && current.syndicateId && !tenantOwns(current.syndicateId, tenant)) throw new NotFoundError('Menu item not found');
+    // A bottle owned by another business cannot be adopted
+    if (adopting && !tenantOwns(current.syndicateId, tenant)) throw new NotFoundError('Menu item not found');
 
     const set: Partial<typeof products.$inferInsert> = {};
     if (input.name !== undefined) set.name = input.name;
@@ -325,14 +333,13 @@ export async function updateMenuItem(id: string, input: UpdateMenuItemInput, use
     if (input.volumeMl !== undefined) set.volumeMl = input.volumeMl;
     if (input.gstRate !== undefined) set.gstRate = new Decimal(input.gstRate).toFixed(2);
     if (adopting) {
-      // The bottle becomes this tenant's bar item
+      // The bottle becomes the business's bar item
       set.menuType = 'BAR';
       set.trackStock = true;
-      if (tenant !== 'ALL') set.syndicateId = tenant;
     }
     if (input.hsnCode !== undefined) set.hsnCode = input.hsnCode || null;
     if (input.categoryName !== undefined) {
-      set.categoryId = await findOrCreateCategory(tx, input.categoryName, input.gstRate ?? current.gstRate ?? '18.00');
+      set.categoryId = await findOrCreateCategory(tx, input.categoryName, input.gstRate ?? current.gstRate ?? '18.00', current.syndicateId);
     }
     if (input.price !== undefined) {
       const price = new Decimal(input.price).toFixed(2);

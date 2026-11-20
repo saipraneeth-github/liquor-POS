@@ -8,8 +8,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { assertPaymentsSafeForProduction } from './config/integrations.js';
+import { sql } from 'drizzle-orm';
+import { db } from './db/client.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { productRoutes } from './modules/products/product.routes.js';
+import { catalogRoutes } from './modules/catalog/catalog.routes.js';
+import { masterRoutes } from './modules/platform/master.routes.js';
 import { menuRoutes } from './modules/menu/menu.routes.js';
 import { printRoutes } from './modules/printing/print.routes.js';
 import { pourRoutes } from './modules/compliance/pour.routes.js';
@@ -18,6 +22,12 @@ import { platformRoutes } from './modules/platform/platform.routes.js';
 import { paymentRoutes, webhookRoutes } from './modules/payments/payment.routes.js';
 import { billingRoutes } from './modules/billing/billing.routes.js';
 import { closingRoutes } from './modules/closing/closing.routes.js';
+import { transferRoutes } from './modules/transfers/transfer.routes.js';
+import { returnRoutes } from './modules/billing/return.routes.js';
+import { errorRoutes } from './modules/errors/error.routes.js';
+import { captureServerError } from './modules/errors/error-tracker.js';
+import { setErrorCaptureHook } from './lib/errors.js';
+import { marginRoutes } from './modules/reports/margin.routes.js';
 import { inventoryRoutes } from './modules/inventory/inventory.routes.js';
 import { invoiceRoutes } from './modules/invoices/invoice.routes.js';
 import { tableRoutes } from './modules/tables/table.routes.js';
@@ -36,16 +46,23 @@ import { accountingRoutes } from './modules/accounting/accounting.routes.js';
 import { expenseRoutes } from './modules/expenses/expense.routes.js';
 import { bankRoutes } from './modules/bank/bank.routes.js';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes.js';
+import { qualityRoutes } from './modules/quality/quality.routes.js';
 import { featureForPath } from './modules/platform/features.engine.js';
 import { isFeatureOff } from './modules/platform/branch-admin.service.js';
 import { registerAccountingHandlers } from './modules/accounting/posting.service.js';
 import { registerCounterSheetHandlers } from './modules/counters/counter.service.js';
+
+import { requestContext } from './lib/request-context.js';
 
 export function buildApp() {
   const isProd = process.env.NODE_ENV === 'production';
   const isTest = process.env.NODE_ENV === 'test';
   if (isProd && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) {
     throw new Error('JWT_SECRET must be set (32+ chars) in production');
+  }
+  // The placeholder in .env.example is public and long enough to pass the length check: tokens could be forged with it
+  if (isProd && /^change_?me/i.test(process.env.JWT_SECRET ?? '')) {
+    throw new Error('JWT_SECRET is still the .env.example placeholder: generate a random one (e.g. `openssl rand -hex 32`)');
   }
   if (isProd && (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*')) {
     throw new Error('CORS_ORIGIN must be set to the web app origin(s) in production (not "*")');
@@ -60,6 +77,11 @@ export function buildApp() {
   // per-IP rate limits and the login lockout treat all users as one client. TRUST_PROXY: "true", a hop count
   // (e.g. "1"), or a comma-separated list of proxy IPs/CIDRs. Leave unset when clients connect directly.
   const trustProxyEnv = process.env.TRUST_PROXY?.trim();
+  // `true` trusts X-Forwarded-For from any hop, so a client can invent its own address and dodge the per-IP rate limits and
+  // the login lockout. In production name the real proxy: a hop count ("1") or its IP / CIDR.
+  if (isProd && trustProxyEnv === 'true') {
+    throw new Error('TRUST_PROXY=true is not allowed in production: use a hop count such as 1, or the proxy IP/CIDR list');
+  }
   const trustProxy: boolean | string[] | ((address: string, hop: number) => boolean) =
     !trustProxyEnv ? false
     : trustProxyEnv === 'true' ? true
@@ -68,8 +90,23 @@ export function buildApp() {
     : trustProxyEnv.split(',').map((s) => s.trim());
 
   const fastify = Fastify({
-    logger: process.env.NODE_ENV !== 'test',
+    // Never write a bearer token or cookie to the logs (a log reader must not be able to sign in as someone)
+    logger: process.env.NODE_ENV === 'test' ? false : {
+      redact: { paths: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-agent-token"]'], censor: '[redacted]' },
+    },
     trustProxy,
+  });
+
+  // One request context per request (see lib/request-context.ts): the audit log reads who is behind a support sign-in.
+  fastify.addHook('onRequest', (_req, _reply, done) => { requestContext.run({}, done); });
+
+  setErrorCaptureHook(captureServerError);
+
+  // Anything a route throws that nobody handled (a bug, not a business rule): count it in the built-in error tracker
+  fastify.addHook('onError', (request, _reply, error, done) => {
+    const status = (error as { statusCode?: number }).statusCode ?? 500;
+    if (status >= 500) captureServerError(error, request, status);
+    done();
   });
 
   // ─── PLUGINS ──────────────────────────────────────────────────────────────
@@ -85,9 +122,9 @@ export function buildApp() {
         upgradeInsecureRequests: null,
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", 'https://checkout.razorpay.com'],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+        styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'blob:'],
-        fontSrc: ["'self'", 'data:', 'https:'],
+        fontSrc: ["'self'", 'data:'],
         connectSrc: ["'self'", 'https://*.razorpay.com'],
         frameSrc: ["'self'", 'https://api.razorpay.com', 'https://checkout.razorpay.com'],
         objectSrc: ["'none'"],
@@ -96,6 +133,7 @@ export function buildApp() {
     },
   });
   fastify.register(fastifyCors, {
+    // Unset CORS_ORIGIN means "any origin" (browser-driven dev / staging only): production refuses to start without it (above).
     origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()) : '*',
   });
   fastify.register(fastifyRateLimit, {
@@ -171,6 +209,8 @@ export function buildApp() {
 
   fastify.register(authRoutes,      { prefix: '/api/v1' });
   fastify.register(productRoutes,   { prefix: '/api/v1' });
+  fastify.register(catalogRoutes,   { prefix: '/api/v1' });
+  fastify.register(masterRoutes,    { prefix: '/api/v1' });
   fastify.register(menuRoutes,      { prefix: '/api/v1' });
   fastify.register(printRoutes,     { prefix: '/api/v1' });
   fastify.register(pourRoutes,      { prefix: '/api/v1' });
@@ -180,6 +220,10 @@ export function buildApp() {
   fastify.register(webhookRoutes,   { prefix: '/api/v1' });   // own scope: raw body for signature checks
   fastify.register(billingRoutes,   { prefix: '/api/v1' });
   fastify.register(closingRoutes,   { prefix: '/api/v1' });
+  fastify.register(transferRoutes,  { prefix: '/api/v1' });
+  fastify.register(returnRoutes,    { prefix: '/api/v1' });
+  fastify.register(errorRoutes,     { prefix: '/api/v1' });
+  fastify.register(marginRoutes,    { prefix: '/api/v1' });
   fastify.register(inventoryRoutes, { prefix: '/api/v1' });
   fastify.register(invoiceRoutes,   { prefix: '/api/v1' });
   fastify.register(tableRoutes,     { prefix: '/api/v1' });
@@ -198,6 +242,7 @@ export function buildApp() {
   fastify.register(expenseRoutes,      { prefix: '/api/v1' });
   fastify.register(bankRoutes,         { prefix: '/api/v1' });
   fastify.register(dashboardRoutes,    { prefix: '/api/v1' });
+  fastify.register(qualityRoutes,      { prefix: '/api/v1/quality' });
 
   // Accounting listens to domain events (bill.paid, bill.voided, …) and posts vouchers in the same transaction.
   registerAccountingHandlers();
@@ -205,9 +250,19 @@ export function buildApp() {
 
   // ─── HEALTH ───────────────────────────────────────────────────────────────
 
-  fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+  // Touches the database so an orchestrator stops routing to a process whose connection is dead
+  const healthCheck = async (reply: import('fastify').FastifyReply) => {
+    try {
+      await db.execute(sql`select 1`);
+      return { status: 'ok', timestamp: new Date().toISOString() };
+    } catch (err) {
+      reply.log.error({ err }, 'health check: database unreachable');
+      return reply.code(503).send({ status: 'degraded', timestamp: new Date().toISOString() });
+    }
+  };
+  fastify.get('/health', async (_req, reply) => healthCheck(reply));
   // Same check under the API prefix, so the sign-in screen can show "server reachable" through the dev proxy too
-  fastify.get('/api/v1/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+  fastify.get('/api/v1/health', async (_req, reply) => healthCheck(reply));
 
   return fastify;
 }

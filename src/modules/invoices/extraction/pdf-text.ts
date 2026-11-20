@@ -10,6 +10,18 @@ import { NothingExtractableError, type PagePositionedItem } from './types.js';
 const MAX_PDF_PAGES = 20;
 const MIN_TEXT_CHARS_PER_PAGE = 20;
 const RENDER_SCALE = 2;
+const MAX_RENDER_PIXELS = 24_000_000;   // an A4 page at 2x is about 2 million: anything near this is not an invoice
+const MAX_ITEMS_PER_PAGE = 50_000;      // text pieces kept per page: a page of millions of tiny strings is an attack, not an invoice
+
+/**
+ * PURE: the scale to render a page at. The page size is declared by the file itself, so a page "20 000 x 20 000 points"
+ * would otherwise ask for a canvas of gigabytes. The scale is reduced until the canvas stays within `maxPixels`.
+ */
+export function renderScaleFor(pageWidth: number, pageHeight: number, baseScale = RENDER_SCALE, maxPixels = MAX_RENDER_PIXELS): number {
+  const px = pageWidth * pageHeight * baseScale * baseScale;
+  if (!Number.isFinite(px) || px <= maxPixels) return baseScale;
+  return Math.max(0.1, baseScale * Math.sqrt(maxPixels / px));
+}
 
 export interface PositionedItem { str: string; x: number; y: number; width: number; size: number }
 
@@ -92,6 +104,7 @@ export async function extractPdfText(buf: Buffer): Promise<PdfTextResult> {
       const tc = await page.getTextContent();
       const items: PositionedItem[] = [];
       for (const it of tc.items) {
+        if (items.length >= MAX_ITEMS_PER_PAGE) break;
         if (!('str' in it)) continue;
         const size = Math.hypot(it.transform[0], it.transform[1]) || it.height || 10;
         const item = { str: it.str, x: it.transform[4], y: it.transform[5], width: it.width, size };
@@ -108,7 +121,8 @@ export async function extractPdfText(buf: Buffer): Promise<PdfTextResult> {
       // Scanned page → render and OCR (bounded)
       if (ocrPages >= OCR_MAX_PAGES) continue;
       const { createCanvas } = await import('@napi-rs/canvas');
-      const viewport = page.getViewport({ scale: RENDER_SCALE });
+      const natural = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: renderScaleFor(natural.width, natural.height) });
       const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#ffffff';

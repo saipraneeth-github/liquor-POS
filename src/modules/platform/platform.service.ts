@@ -372,7 +372,7 @@ export async function resetTenantAdminPassword(syndicateId: string, userId: stri
     .where(and(eq(users.id, userId), eq(users.syndicateId, syndicateId), eq(users.role, 'owner'))).limit(1);
   if (!admin) throw new NotFoundError('Admin not found for this tenant');
   const password = temporaryPassword();
-  await db.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, admin.id));
+  await db.update(users).set({ passwordHash: await hashPassword(password), passwordChangedAt: new Date(), mustChangePassword: true }).where(eq(users.id, admin.id));
   await logAudit(actorId, 'admin.password_reset', { type: 'user', id: admin.id });
   return { email: admin.email, temporaryPassword: password };
 }
@@ -445,7 +445,7 @@ export async function setPlatformUserActive(actorId: string, userId: string, isA
 export async function resetPlatformUserPassword(actorId: string, userId: string) {
   const u = await loadManageableUser(actorId, userId);
   const password = temporaryPassword();
-  await db.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, u.id));
+  await db.update(users).set({ passwordHash: await hashPassword(password), passwordChangedAt: new Date(), mustChangePassword: true }).where(eq(users.id, u.id));
   await logAudit(actorId, 'user.password_reset', { type: 'user', id: u.id }, { email: u.email });
   return { email: u.email, temporaryPassword: password };
 }

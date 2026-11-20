@@ -21,6 +21,8 @@ export const PERMISSIONS = [
   { key: 'sale_types.manage', label: 'Add, rename or switch off sale types', description: 'Business-wide: affects every outlet.' },
   { key: 'counter.opening', label: 'Change the opening stock on the counter sheet', description: 'For shops that do not bill every sale on the POS: correct the opening count of a bottle on a draft counter sheet. Every change is recorded with who made it.' },
   { key: 'stock.move', label: 'Split and move stock between sale types', description: 'Divide inventory between Walk-in, Janata and the other counters.' },
+  { key: 'stock.transfer', label: 'Send and receive stock between outlets', description: 'Dispatch bottles to another outlet of the business, confirm what arrives, or cancel a transfer still on the way.' },
+  { key: 'stock.adjust', label: 'Correct stock after a physical count', description: 'Set the shop total of a bottle to what was counted (stock-take). Every correction is recorded with who made it and why.' },
   { key: 'invoices.approve', label: 'Review, approve, reject or reverse supplier invoices', description: 'Also needs "See cost prices".' },
   { key: 'bills.void', label: 'Void bills', description: 'Reverses stock, credit and the books for a bill.' },
   { key: 'accounting.view', label: 'See accounting and reports', description: 'Ledgers, vouchers, trial balance, profit and loss, balance sheet, Tally export and the expense list.' },

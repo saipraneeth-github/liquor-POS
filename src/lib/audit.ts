@@ -1,5 +1,6 @@
 ﻿import { db } from '../db/client.js';
 import { auditLog } from '../db/schema.js';
+import { requestContext } from './request-context.js';
 
 /** Append-only platform audit trail. Never throws: a logging failure must not break the action. */
 export async function logAudit(
@@ -14,7 +15,8 @@ export async function logAudit(
       action,
       targetType: target?.type ?? null,
       targetId: target?.id ?? null,
-      meta: meta ?? null,
+      // an action made with a Super Admin support token is attributed to the Super Admin, not only to the Admin it signed in as
+      meta: requestContext.getStore()?.impersonatedBy ? { ...(meta ?? {}), impersonatedBy: requestContext.getStore()!.impersonatedBy } : (meta ?? null),
     });
   } catch {
     /* audit is best-effort */

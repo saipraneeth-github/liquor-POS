@@ -16,7 +16,7 @@ interface Movement { id: string; at: string; reason: string; changeQty: number; 
 const inr = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const REASONS: Record<string, string> = {
   SALE: 'Sale', PURCHASE: 'Invoice received', VOID_REVERSAL: 'Void / reversal', BREAKAGE: 'Breakage', DAMAGE: 'Damage',
-  COUNTER_SHEET: 'Counter count', TYPE_TRANSFER: 'Moved between counters', MANUAL_ADJUST: 'Adjustment', SCHEME_FREE_GOODS: 'Free goods',
+  COUNTER_SHEET: 'Counter count', TYPE_TRANSFER: 'Moved between counters', TRANSFER_OUT: 'Sent to another outlet', TRANSFER_IN: 'Received from another outlet', SALES_RETURN: 'Customer return', PURCHASE_RETURN: 'Returned to supplier', MANUAL_ADJUST: 'Adjustment', SCHEME_FREE_GOODS: 'Free goods',
 };
 
 import { showToast } from '../lib/print';

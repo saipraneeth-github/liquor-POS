@@ -32,7 +32,6 @@ export interface DraftLine {
   caseRate: string | null;
   costPrice: string;
   displayCostPrice: string;
-  mrp: string;
   taxRate: string;
   extractedAmount: string | null;
   lineCostTotal: string;
@@ -99,7 +98,7 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       rate: line.rate,
       caseRate: line.caseRate,
       amount: line.amount,
-      mrp: line.mrp ?? product?.mrp ?? null,
+      mrp: line.mrp,   // only a printed MRP column of the document, used to tell a case rate from a bottle rate; never stored
       currentProductCost: product?.costPrice ?? null,
     });
 
@@ -110,13 +109,10 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       ? `${line.description} [${line.cases} cs${line.quantity ? ' + ' + line.quantity + ' btls' : ''}]`
       : line.description;
 
-    const effectiveMrp = line.mrp ?? product?.mrp ?? null;
     const validated = validateLine({
       quantity: calc.totalQuantity,
       costPrice: calc.costPrice,
-      mrp: effectiveMrp,
       extractedAmount: line.amount,
-      catalogMrp: product?.mrp ?? null,
       confidence: line.confidence,
       productId: match.productId,
       matchStatus: match.status,
@@ -145,7 +141,6 @@ export function buildDraftLines(lines: ExtractedLine[], catalog: CatalogEntry[])
       caseRate: calc.caseRate,
       costPrice: calc.costPrice,
       displayCostPrice: calc.displayUnitCost,
-      mrp: effectiveMrp ?? '0.00',
       taxRate: validTaxRate(line.taxRate) ?? product?.taxRate ?? DEFAULT_TAX_RATE,
       extractedAmount: line.amount,
       lineCostTotal: calc.lineCostTotal,

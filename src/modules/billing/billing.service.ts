@@ -1,3 +1,4 @@
+import { Decimal } from 'decimal.js';
 import { branchCodeOf } from '../../lib/branch-code.js';
 import { z } from 'zod';
 import { db } from '../../db/client.js';
@@ -15,6 +16,7 @@ import {
   customers,
   creditTransactions,
   shiftSessions,
+  salesReturns,
 } from '../../db/schema.js';
 import { eq, inArray, and, gte, lt, ne, desc, sql, getTableColumns } from 'drizzle-orm';
 import { calculateBill, mergeBillItems, resolveTaxRate, formatBillNumber } from './billing.engine.js';
@@ -25,8 +27,11 @@ import { assertCreditAvailable, applyCreditPurchase, applyCreditReversal } from 
 import { emitDomainEvent, type Tx } from '../../lib/domain-events.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import { businessDateOf, businessDayBounds, isIsoDate } from '../../lib/business-day.js';
+import { assertBusinessDayOpen } from '../../lib/closed-day.js';
 import type { JwtPayload } from '../auth/auth.service.js';
-import { counterQuantity, rowTypeId, unitPriceFor } from '../saletypes/saletype.engine.js';
+import { counterQuantity, rowTypeId } from '../saletypes/saletype.engine.js';
+import { branchPriceMap } from '../catalog/catalog.service.js';
+import { resolveUnitPrice } from '../catalog/price.engine.js';
 import { explicitSums, resolveSaleType, typePrices } from '../saletypes/saletype.service.js';
 import { assertSaleTypeAllowed, userDiscountCapPct } from '../permissions/permission.service.js';
 import { discountWithinCap } from '../permissions/permissions.engine.js';
@@ -45,7 +50,6 @@ export const CreateBillSchema = z.object({
   roundOff:    z.boolean().optional(),   // overrides the branch setting for this bill
   customerGstin: z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, 'GSTIN must be 15 alphanumeric characters').optional(),
   clientRef:   z.string().trim().min(1).max(64).optional(),
-  skipStockDeduction: z.boolean().optional(),
   items: z.array(z.object({
     productId: z.string().uuid(),
     servingId: z.string().uuid().optional(),   // peg / glass serving; omit for the product's own rate
@@ -63,7 +67,7 @@ export const VoidBillSchema = z.object({
 export const ListBillsQuerySchema = z.object({
   branchId: z.string().uuid(),
   date:     z.string().refine(isIsoDate, 'date must be YYYY-MM-DD').optional(),
-  status:   z.enum(['OPEN', 'PAID', 'VOIDED']).optional(),
+  status:   z.enum(['OPEN', 'PAID', 'VOIDED', 'RETURNED']).optional(),
   limit:    z.coerce.number().int().min(1).max(200).default(50),
   offset:   z.coerce.number().int().min(0).default(0),
 });
@@ -79,7 +83,9 @@ export type BillItemRow = typeof billItems.$inferSelect;
 async function generateBillNumber(branchId: string, tx: Tx): Promise<string> {
   const code = await branchCodeOf(tx, branchId);
 
-  // Business-day year (store time zone), not the server's local clock
+  // Year of the BUSINESS day (BUSINESS_UTC_OFFSET_MINUTES, default IST), not the server's local or UTC clock: a bill rung just
+  // after local midnight is numbered with the new year/day even while UTC is still on the old one. It is the same day the
+  // closing and the vouchers use, so the number never disagrees with the day the bill belongs to.
   const year = Number(businessDateOf().slice(0, 4));
   const [counter] = await tx
     .insert(billCounters)
@@ -118,7 +124,10 @@ function idempotentReplay(existing: BillRow & { items: BillItemRow[] }, input: C
 export async function createBill(
   input: CreateBillInput,
   cashier: JwtPayload,
+  /** Server-side only (never parsed from JSON): table checkout already deducted stock at KOT-serve time. */
+  opts: { internal?: { skipStockDeduction?: boolean } } = {},
 ): Promise<{ bill: BillRow & { items: BillItemRow[] }; created: boolean }> {
+  const skipStockDeduction = opts.internal?.skipStockDeduction === true;
   // 0. Idempotency: replay existing bill for the same clientRef
   if (input.clientRef) {
     const existing = await findBillByClientRef(input.clientRef);
@@ -154,20 +163,14 @@ export async function createBill(
   if (inactive.length > 0) {
     throw new BusinessRuleError(`Inactive products cannot be billed: ${inactive.map((p) => p.name).join(', ')}`);
   }
-  // Guard: a product with ₹0.00 MRP has not had its retail selling price set yet.
-  // Block the sale so cashiers don't accidentally bill at zero price.
-  const unpriced = productRows.filter((p) => !p.mrp || parseFloat(p.mrp) <= 0);
-  if (unpriced.length > 0) {
-    throw new BusinessRuleError(
-      `The following product(s) have no selling price set (MRP ₹0.00). Please configure MRP on the Products page before billing: ${unpriced.map((p) => p.name).join(', ')}`,
-    );
-  }
-
   // Everything below only needs the products above, not each other: ask the database for all of it at once. On a hosted
   // database every round trip costs a network hop, so doing these one after another was the biggest part of checkout time.
   const servingIds = [...new Set(items.flatMap((i) => (i.servingId ? [i.servingId] : [])))];
-  const [, [branchSettings], servingRows, saleType, cap, stockEntriesAll, explicitRowsAll] = await Promise.all([
-    assertBranchCanSell(db, input.branchId, productRows),
+  const [, [branchSettings], servingRows, saleType, cap, stockEntriesAll, explicitRowsAll, branchPrices] = await Promise.all([
+    Promise.all([
+      assertBranchCanSell(db, input.branchId, productRows),
+      assertBusinessDayOpen(db, input.branchId),   // a closed day takes no more bills (same wave: no extra wait)
+    ]),
     db.select({ roundOff: branches.roundOff }).from(branches).where(eq(branches.id, input.branchId)).limit(1),
     // Servings (peg / glass / full bottle) must belong to their product and be active
     servingIds.length ? db.select().from(productServings).where(inArray(productServings.id, servingIds)) : Promise.resolve([] as (typeof productServings.$inferSelect)[]),
@@ -181,6 +184,8 @@ export async function createBill(
     db.select({ productId: stock.productId, quantity: stock.quantity }).from(stock)
       .where(and(eq(stock.branchId, input.branchId), inArray(stock.productId, productIds))),
     db.select().from(stockByType).where(and(eq(stockByType.branchId, input.branchId), inArray(stockByType.productId, productIds))),
+    // This branch's own prices (same wave as the rest: no extra wait)
+    branchPriceMap(db, input.branchId, productIds),
   ]);
   const servingMap = new Map(servingRows.map((s) => [s.id, s]));
   for (const item of items) {
@@ -196,10 +201,17 @@ export async function createBill(
 
   const billTypeId = rowTypeId(saleType);
   const typePriceMap = saleType.isDefault ? new Map<string, string>() : await typePrices(db, saleType.id, productIds);
-  if (!saleType.isDefault) {
-    if (items.some((i) => i.servingId)) throw new BusinessRuleError('Peg / glass servings can only be sold under the default sale type');
-    const unpriced = productRows.filter((p) => unitPriceFor(saleType, p.mrp, typePriceMap.get(p.id)) === null);
-    if (unpriced.length > 0) throw new BusinessRuleError(`No ${saleType.name} price set for: ${unpriced.map((p) => p.name).join(', ')}`);
+  if (!saleType.isDefault && items.some((i) => i.servingId)) {
+    throw new BusinessRuleError('Peg / glass servings can only be sold under the default sale type');
+  }
+  // The price a product sells at HERE: the branch's override, else the business's price (the master catalog has none).
+  // Guard: nothing priced means the business has not typed a selling price yet, so refuse rather than bill at zero.
+  const priceOf = (p: { id: string; mrp: string }) => resolveUnitPrice(saleType, p.mrp, typePriceMap.get(p.id), branchPrices.get(p.id));
+  const unpriced = productRows.filter((p) => priceOf(p) === null);
+  if (unpriced.length > 0) {
+    throw new BusinessRuleError(
+      `The following product(s) have no selling price set (MRP ₹0.00). Set the price on the Products page (Pricing) before billing: ${unpriced.map((p) => p.name).join(', ')}`,
+    );
   }
 
   // 2. Price from DB (serving rate, MRP or the sale type's price, tax-inclusive) — never from the client
@@ -210,7 +222,7 @@ export async function createBill(
       return {
         productId: item.productId,
         quantity:  item.quantity,
-        unitPrice: serving?.price ?? unitPriceFor(saleType, product.mrp, typePriceMap.get(item.productId))!,
+        unitPrice: serving?.price ?? priceOf(product)!,
         taxRate:   resolveTaxRate(product.taxRate, product.gstRate),
         servingId:    serving?.id ?? null,
         servingLabel: serving?.label ?? null,
@@ -240,7 +252,7 @@ export async function createBill(
   const unitItems = [...units].map(([productId, quantity]) => ({ productId, quantity }));
 
   // 3. Friendly stock pre-check (the in-transaction guarded UPDATE is authoritative)
-  if (!input.skipStockDeduction) {
+  if (!skipStockDeduction) {
     const unitIds = new Set(unitItems.map((u) => u.productId));
     const stockEntries = stockEntriesAll.filter((e) => unitIds.has(e.productId));
     // Each counter only sees its own bottles: the default type gets the total minus the other counters' share
@@ -331,7 +343,7 @@ export async function createBill(
       ).returning();
 
       // Guarded, atomic stock deduction (sorted to keep lock order stable)
-      if (!input.skipStockDeduction) {
+      if (!skipStockDeduction) {
         const deltas = computeStockDeltas(unitItems).sort((a, b) => a.productId.localeCompare(b.productId));
         if (deltas.length > 0) {
           // ⚡ Bolt Optimization: Batch update stock with CASE WHEN
@@ -467,17 +479,26 @@ export async function voidBill(
   user: JwtPayload,
 ): Promise<BillRow> {
   return db.transaction(async (tx) => {
+    // Check if any returns were recorded against this bill
+    const [retCount] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(salesReturns)
+      .where(eq(salesReturns.billId, billId));
+    if ((retCount?.count ?? 0) > 0) {
+      throw new BusinessRuleError('Cannot void a bill with sales returns recorded on it');
+    }
+
     // Race-free status flip: only one void can win
     const [bill] = await tx
       .update(bills)
       .set({ status: 'VOIDED', voidedAt: new Date(), voidReason })
-      .where(and(eq(bills.id, billId), ne(bills.status, 'VOIDED')))
+      .where(and(eq(bills.id, billId), eq(bills.status, 'PAID')))   // OPEN bills never moved stock or credit, so there is nothing to reverse
       .returning();
 
     if (!bill) {
-      const [exists] = await tx.select({ id: bills.id }).from(bills).where(eq(bills.id, billId)).limit(1);
+      const [exists] = await tx.select({ id: bills.id, status: bills.status }).from(bills).where(eq(bills.id, billId)).limit(1);
       if (!exists) throw new NotFoundError('Bill not found');
-      throw new BusinessRuleError('Bill is already voided');
+      throw new BusinessRuleError(exists.status === 'VOIDED' ? 'Bill is already voided' : 'Only a paid bill can be voided');
     }
 
     const items = await tx.select().from(billItems).where(eq(billItems.billId, billId));
@@ -603,22 +624,55 @@ export async function getBillById(billId: string) {
   const bill = await getBillHeader(billId);
   if (!bill) return null;
 
-  const items = await db
-    .select({
-      ...getTableColumns(billItems),
-      productName: products.name,
-    })
-    .from(billItems)
-    .leftJoin(products, eq(billItems.productId, products.id))
-    .where(eq(billItems.billId, billId));
+  const [items, returnsList] = await Promise.all([
+    db
+      .select({
+        ...getTableColumns(billItems),
+        productName: products.name,
+      })
+      .from(billItems)
+      .leftJoin(products, eq(billItems.productId, products.id))
+      .where(eq(billItems.billId, billId)),
+    db
+      .select({
+        id: salesReturns.id,
+        returnNumber: salesReturns.returnNumber,
+        refundMode: salesReturns.refundMode,
+        refundAmount: salesReturns.refundAmount,
+        grossAmount: salesReturns.grossAmount,
+        taxAmount: salesReturns.taxAmount,
+        discountAmount: salesReturns.discountAmount,
+        reason: salesReturns.reason,
+        createdAt: salesReturns.createdAt,
+      })
+      .from(salesReturns)
+      .where(eq(salesReturns.billId, billId))
+      .orderBy(desc(salesReturns.createdAt)),
+  ]);
 
-  return { ...bill, items };
+  const refundedDecimal = returnsList.reduce((acc, r) => acc.plus(new Decimal(r.refundAmount || '0')), new Decimal(0));
+  const refundedAmount = refundedDecimal.toFixed(2);
+  const totalDecimal = new Decimal(bill.total || '0');
+  const netTotal = Decimal.max(0, totalDecimal.minus(refundedDecimal)).toFixed(2);
+
+  return {
+    ...bill,
+    items,
+    returns: returnsList,
+    refundedAmount,
+    returnCount: returnsList.length,
+    netTotal,
+  };
 }
 
 /** Paginated bill history for a branch, newest first. */
 export async function listBills(query: ListBillsQuery) {
   const conditions = [eq(bills.branchId, query.branchId)];
-  if (query.status) conditions.push(eq(bills.status, query.status));
+  if (query.status === 'RETURNED') {
+    conditions.push(sql`EXISTS (SELECT 1 FROM ${salesReturns} WHERE ${salesReturns.billId} = ${bills.id})`);
+  } else if (query.status) {
+    conditions.push(eq(bills.status, query.status));
+  }
   if (query.date) {
     const { start, end } = businessDayBounds(query.date);
     conditions.push(gte(bills.createdAt, start), lt(bills.createdAt, end));
@@ -631,6 +685,8 @@ export async function listBills(query: ListBillsQuery) {
         ...getTableColumns(bills),
         customerName: customers.name,
         customerPhone: customers.phone,
+        refundedAmount: sql<string>`coalesce((select sum(${salesReturns.refundAmount}) from ${salesReturns} where ${salesReturns.billId} = ${bills.id}), 0)::numeric(12,2)::text`.as('refunded_amount'),
+        returnCount: sql<number>`coalesce((select count(*) from ${salesReturns} where ${salesReturns.billId} = ${bills.id}), 0)::int`.as('return_count'),
       })
       .from(bills)
       .leftJoin(customers, eq(bills.customerId, customers.id))
@@ -641,5 +697,15 @@ export async function listBills(query: ListBillsQuery) {
     db.select({ count: sql<number>`count(*)::int` }).from(bills).where(where),
   ]);
 
-  return { bills: rows, total: Number(count), limit: query.limit, offset: query.offset };
+  const mappedRows = rows.map((b) => {
+    const total = new Decimal(b.total || '0');
+    const refunded = new Decimal(b.refundedAmount || '0');
+    const netTotal = Decimal.max(0, total.minus(refunded)).toFixed(2);
+    return {
+      ...b,
+      netTotal,
+    };
+  });
+
+  return { bills: mappedRows, total: Number(count), limit: query.limit, offset: query.offset };
 }

@@ -8,6 +8,7 @@ import nodemailer from 'nodemailer';
 import { db } from '../../db/client.js';
 import { emailOutbox } from '../../db/schema.js';
 import { mailConfig } from '../../config/integrations.js';
+import { redactMailBody } from './redact.js';
 
 export interface MailInput {
   to: string;
@@ -38,7 +39,7 @@ export async function sendMail(input: MailInput): Promise<'SENT' | 'LOGGED' | 'F
   }
 
   await db.insert(emailOutbox).values({
-    toEmail: input.to, subject: input.subject, body: input.text, kind: input.kind ?? null, status, error,
+    toEmail: input.to, subject: input.subject, body: status === 'SENT' ? redactMailBody(input.kind, input.text) : input.text, kind: input.kind ?? null, status, error,
   }).catch(() => undefined);
   return status;
 }

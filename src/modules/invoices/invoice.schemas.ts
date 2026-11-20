@@ -30,7 +30,6 @@ export const LineInputSchema = z.object({
   quantity: z.number().int().min(0).max(100_000),
   caseRate: MONEY.nullable().optional(),
   costPrice: PRECISION_MONEY,
-  mrp: MONEY,
   taxRate: MONEY.refine((v) => Number(v) <= 100, 'taxRate must be <= 100').optional(),
   extractedAmount: MONEY.nullable().optional(),
 });

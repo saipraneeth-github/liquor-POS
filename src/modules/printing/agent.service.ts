@@ -5,7 +5,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import { branches, printJobs } from '../../db/schema.js';
 import { NotFoundError } from '../../lib/errors.js';
@@ -33,7 +33,10 @@ export async function authenticateAgent(token: string | undefined) {
   if (!token || !token.startsWith('pa_')) return null;
   const [branch] = await db.select().from(branches).where(eq(branches.agentTokenHash, sha256(token))).limit(1);
   if (!branch) return null;
-  await db.update(branches).set({ agentLastSeenAt: new Date() }).where(eq(branches.id, branch.id));
+  // The agent polls every few seconds: only write "last seen" when it is stale (the UI treats <30 s as online)
+  if (!branch.agentLastSeenAt || Date.now() - branch.agentLastSeenAt.getTime() > 5_000) {
+    await db.update(branches).set({ agentLastSeenAt: new Date() }).where(eq(branches.id, branch.id));
+  }
   return branch;
 }
 
@@ -53,22 +56,22 @@ export async function createAgentJob(branchId: string, kind: 'bill' | 'kot' | 't
 /** Hands the agent its pending jobs. Each is claimed so two polls never print the same job twice. */
 export async function claimAgentJobs(branchId: string, limit = 5, now = new Date()) {
   const cutoff = new Date(now.getTime() - CLAIM_TIMEOUT_MS);
-  const candidates = await db.select({ id: printJobs.id }).from(printJobs)
+  // One statement: pick the oldest claimable jobs (rows another poll already locked are skipped) and claim them
+  const candidates = db.select({ id: printJobs.id }).from(printJobs)
     .where(and(
       eq(printJobs.branchId, branchId), eq(printJobs.target, 'AGENT'), eq(printJobs.status, 'PENDING'),
       or(isNull(printJobs.claimedAt), lt(printJobs.claimedAt, cutoff)),
     ))
-    .orderBy(printJobs.createdAt).limit(limit);
+    .orderBy(printJobs.createdAt).limit(limit)
+    .for('update', { skipLocked: true });
 
-  const claimed = [];
-  for (const c of candidates) {
-    const [job] = await db.update(printJobs)
-      .set({ claimedAt: now, attempts: sql`${printJobs.attempts} + 1` })
-      .where(and(eq(printJobs.id, c.id), eq(printJobs.status, 'PENDING'), or(isNull(printJobs.claimedAt), lt(printJobs.claimedAt, cutoff))))
-      .returning();
-    if (job) claimed.push({ id: job.id, kind: job.kind, data: job.payload ?? '' });
-  }
-  return claimed;
+  const jobs = await db.update(printJobs)
+    .set({ claimedAt: now, attempts: sql`${printJobs.attempts} + 1` })
+    .where(inArray(printJobs.id, candidates))
+    .returning();
+  return jobs
+    .sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0))
+    .map((job) => ({ id: job.id, kind: job.kind, data: job.payload ?? '' }));
 }
 
 export async function ackAgentJob(branchId: string, jobId: string, ok: boolean, error?: string) {

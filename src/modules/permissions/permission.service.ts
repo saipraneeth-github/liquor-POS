@@ -34,14 +34,32 @@ export async function loadRolePermissions(userId: string, exec: Exec = db): Prom
   return (await loadCustomRole(userId, exec))?.permissions ?? null;
 }
 
+/**
+ * One permission snapshot per request: `requireRole` sets a fresh `request.user` object on every request, so keying a
+ * WeakMap on it means a request reads the overrides + custom role once (in parallel) however many `userCan` /
+ * discount-cap calls its handlers make, and nothing survives into the next request. Only for the *current* user.
+ */
+const snapshots = new WeakMap<object, Promise<{ overrides: PermissionOverrides; rolePerms: string[] | null }>>();
+function snapshotOf(user: JwtPayload) {
+  let snap = snapshots.get(user);
+  if (!snap) {
+    snap = Promise.all([loadOverrides(user.sub), loadRolePermissions(user.sub)]).then(([overrides, rolePerms]) => ({ overrides, rolePerms }));
+    snapshots.set(user, snap);
+    snap.catch(() => snapshots.delete(user));   // do not cache a failure
+  }
+  return snap;
+}
+
 /** `user` must be the account as the guard just re-read it (role is current). */
 export async function userCan(user: JwtPayload, key: PermissionKey): Promise<boolean> {
-  return can(user.role, await loadOverrides(user.sub), key, await loadRolePermissions(user.sub));
+  const { overrides, rolePerms } = await snapshotOf(user);
+  return can(user.role, overrides, key, rolePerms);
 }
 
 /** Largest bill discount in % for this user; null = unlimited. */
 export async function userDiscountCapPct(user: JwtPayload): Promise<number | null> {
-  return discountCapPct(user.role, await loadOverrides(user.sub), await loadRolePermissions(user.sub));
+  const { overrides, rolePerms } = await snapshotOf(user);
+  return discountCapPct(user.role, overrides, rolePerms);
 }
 
 /**
@@ -93,7 +111,7 @@ export async function myPermissions(user: Pick<JwtPayload, 'sub' | 'role'>) {
   };
 }
 
-const COST_FIELDS = ['costPrice', 'previousCostPrice', 'costPerCase', 'lastInvoiceId', 'lastInvoiceNumber', 'lastInvoiceDate', 'costUpdatedAt', 'costValue'] as const;
+export const COST_FIELDS = ['costPrice', 'previousCostPrice', 'costPerCase', 'lastInvoiceId', 'lastInvoiceNumber', 'lastInvoiceDate', 'costUpdatedAt', 'costValue'] as const;
 
 /** Removes every cost field, at any depth, from a row, a list of rows or a nested response (e.g. {breakage: {...}}). */
 export function stripCost<T>(value: T): T {

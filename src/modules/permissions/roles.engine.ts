@@ -18,7 +18,7 @@ export const BUILT_IN_ROLE_KEYS = ['owner', 'office_admin', 'manager', 'cashier'
 export const PERMISSION_GROUPS: { id: string; label: string; keys: PermissionKey[] }[] = [
   { id: 'costs', label: 'Costs and prices', keys: ['cost.view', 'prices.edit', 'discount.unlimited'] },
   { id: 'billing', label: 'Billing', keys: ['bills.void'] },
-  { id: 'stock', label: 'Stock and sale types', keys: ['sale_types.manage', 'stock.move', 'counter.opening'] },
+  { id: 'stock', label: 'Stock and sale types', keys: ['sale_types.manage', 'stock.move', 'stock.adjust', 'stock.transfer', 'counter.opening'] },
   { id: 'invoices', label: 'Supplier invoices', keys: ['invoices.approve'] },
   { id: 'accounting', label: 'Accounting', keys: ['accounting.view', 'accounting.post'] },
   { id: 'bank', label: 'Bank reconciliation', keys: ['bank.reconcile'] },

@@ -4,7 +4,7 @@ import { requireRole, getUser, assertBranchAccess, getAccessibleBranchIds } from
 import { requirePermission } from '../permissions/permission.service.js';
 import { sendError } from '../../lib/errors.js';
 import { isIsoDate } from '../../lib/business-day.js';
-import { performDailyClosing, listDailyClosings, getDailyClosingPreview } from './closing.service.js';
+import { performDailyClosing, listDailyClosings, getDailyClosingPreview, reopenDailyClosing, closingBranchId } from './closing.service.js';
 
 const SubmitClosingSchema = z.object({
   branchId: z.string().uuid(),
@@ -65,6 +65,24 @@ export async function closingRoutes(fastify: FastifyInstance) {
       return reply.code(201).send(record);
     } catch (err: unknown) {
       return sendError(reply, err, 'Daily closing failed');
+    }
+  });
+
+  // POST /closing/:id/reopen — undo a closing (office admin / owner): the day takes bills again; the record is kept in the audit log
+  fastify.post('/closing/:id/reopen', {
+    preHandler: [requireRole('office_admin')],
+  }, async (request, reply) => {
+    const user = getUser(request);
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const body = z.object({ reason: z.string().min(10).max(500) }).safeParse(request.body);
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'A reason of at least 10 characters is required' });
+    const branchId = await closingBranchId(params.data.id);
+    if (!branchId) return reply.code(404).send({ error: 'Closing not found' });
+    if (!(await assertBranchAccess(user, branchId, reply))) return;
+    try {
+      return reply.send(await reopenDailyClosing(params.data.id, body.data.reason, user));
+    } catch (err: unknown) {
+      return sendError(reply, err, 'Could not reopen the day');
     }
   });
 

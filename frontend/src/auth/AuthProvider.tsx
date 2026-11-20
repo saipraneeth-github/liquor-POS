@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
+import { clearOfflineData } from '../lib/pwa';
+import { onSessionExpired } from '../api/session';
 
 export type User = {
   id: string;
@@ -13,6 +15,8 @@ export type User = {
   pages?: { routePath: string; canAccess: boolean }[];
   /** What the user may do (see the server's permissions engine); owner and office admin always have everything. */
   permissions?: Record<string, boolean>;
+  /** An administrator set this password: the person must choose their own before anything else. */
+  mustChangePassword?: boolean;
   /** Largest bill discount in % (null = unlimited). */
   discountCapPct?: number | null;
   /** Sale types a cashier is limited to (null = all). */
@@ -72,11 +76,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('support_label');
+    localStorage.removeItem('support_return_token');   // older versions kept the Super Admin token here
     localStorage.removeItem(ACTIVE_BRANCH_KEY);
+    clearOfflineData();   // the next person on this device must not be offered this person's saved lists
     setRawUser(null);
     setBranches([]);
     setSelected(null);
   };
+
+  // Any request answered 401 while signed in (token expired, revoked, password changed...) ends the session once, cleanly.
+  // Work in progress that must not be lost (an offline POS bill) is parked by its screen before this fires.
+  useEffect(() => onSessionExpired(() => {
+    if (!localStorage.getItem('token')) return;
+    setError('Your session has ended. Please sign in again.');
+    logout();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -87,8 +103,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRawUser(freshUser);
         localStorage.setItem('user', JSON.stringify(freshUser));
       })
-      .catch(() => {
-        setError('Your session has expired. Please sign in again.');
+      .catch((err) => {
+        // Only the server saying "no" ends the session. No network, or a server that is down, must not sign a cashier out:
+        // carry on with the profile saved at the last sign-in, so the counter can still open and bill offline.
+        const refused = err instanceof ApiError && (err.status === 401 || err.status === 403);
+        let saved: User | null = null;
+        try { saved = JSON.parse(localStorage.getItem('user') ?? 'null') as User | null; } catch { saved = null; }
+        if (!refused && saved) { setRawUser(saved); return; }
+        setError(refused ? 'Your session has expired. Please sign in again.' : 'Cannot reach the server. Check the connection and sign in again.');
         logout();
       })
       .finally(() => setLoading(false));

@@ -88,7 +88,7 @@ describe('bill → SALES voucher', () => {
     const v = await voucherFor('BILL', bill.id);
     expect(v).not.toBeNull();
     expect(v!.voucher.voucherType).toBe('SALES');
-    expect(v!.voucher.voucherNumber).toMatch(/^JV-MAIN-\d{8}-[0-9A-F]{8}$/);
+    expect(v!.voucher.voucherNumber).toMatch(/^JV-MAIN-\d{8}-[0-9A-F]{12}$/);
     expect(v!.totalDebit).toBe(v!.totalCredit);
     expect(v!.lines.CASH).toEqual({ debit: '1000.00', credit: '0.00' });
     expect(v!.lines.SALES).toEqual({ debit: '0.00', credit: '847.46' });

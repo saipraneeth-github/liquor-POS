@@ -8,6 +8,8 @@ import { useAuth, isManagerLike, userCan } from '../auth/AuthProvider';
 import { showToast } from '../lib/print';
 import { StockSplit } from './StockSplit';
 import { StockByType } from './StockByType';
+import { StockCount } from './StockCount';
+import { StockTransfers } from './StockTransfers';
 
 interface StockRow {
   productId: string;
@@ -64,6 +66,9 @@ export function Inventory() {
   const isManager = isManagerLike(user);
   const canSeeCost = userCan(user, 'cost.view');
   const canMove = userCan(user, 'stock.move');
+  const canAdjust = userCan(user, 'stock.adjust');
+  const canTransfer = userCan(user, 'stock.transfer');
+  const [showCount, setShowCount] = useState(false);
 
   // Navigation tab: 'current' = Current Store Stock & Breakage, 'counters' = Move Stock (Counters)
   const [activeTab, setActiveTab] = useState<'current' | 'counters'>('current');
@@ -341,9 +346,20 @@ export function Inventory() {
                   {showBreakage ? '✕ Hide Breakage' : 'Record Breakage'}
                 </button>
 
+                {canAdjust && (
+                  <button
+                    id="stockCountBtn"
+                    type="button"
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 cursor-pointer transition-colors"
+                    onClick={() => setShowCount(true)}
+                  >
+                    Stock Count
+                  </button>
+                )}
+
                 <ProtectedButton
                   variant="danger"
-                  minRole="manager"
+                  minRole="office_admin"
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 cursor-pointer flex items-center gap-1 transition-colors"
                   onClick={handleClearCompleteInventory}
                   title="Delete all stock and previous bills to start fresh"
@@ -620,6 +636,29 @@ export function Inventory() {
                 reorderLevel: r.reorderLevel,
                 mrp: r.mrp,
               }))}
+            />
+          )}
+
+          {canTransfer && branchId && (
+            <StockTransfers
+              branchId={branchId}
+              stockRows={stockRows.map((r) => ({ productId: r.productId, name: r.name, quantity: r.quantity }))}
+              onChanged={() => {
+                void loadStock();
+                window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
+              }}
+            />
+          )}
+
+          {showCount && canAdjust && branchId && (
+            <StockCount
+              branchId={branchId}
+              rows={stockRows.map((r) => ({ productId: r.productId, name: r.name, brand: r.brand, volumeMl: r.volumeMl, quantity: r.quantity }))}
+              onClose={() => setShowCount(false)}
+              onDone={() => {
+                void loadStock();
+                window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
+              }}
             />
           )}
 

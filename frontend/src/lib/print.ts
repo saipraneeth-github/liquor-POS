@@ -1,4 +1,4 @@
-import { api } from '../api/client';
+import { api, authFetch } from '../api/client';
 
 /** api.* throws the raw response text; pull the error/message and validation details out when it is JSON. */
 export function errorMessage(err: unknown): string {
@@ -64,7 +64,7 @@ export type PrintKind = 'bills' | 'kot';
 /** Browser print: fetches the HTML receipt / ticket and prints it instantly via a hidden iframe (with popup fallback). */
 export async function printInBrowser(kind: PrintKind, id: string): Promise<void> {
   try {
-    const res = await fetch(`/api/v1/print/${kind}/${id}?format=html`, {
+    const res = await authFetch(`/api/v1/print/${kind}/${id}?format=html`, {
       headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
     });
     if (!res.ok) throw new Error(await res.text());

@@ -8,6 +8,8 @@ import {
   CATEGORY_DEFINITIONS,
   type LiquorCategoryKey,
 } from '../components/category-icons';
+import { authFetch } from '../api/client';
+import { notifySessionExpired } from '../api/session';
 import { useAuth } from '../auth/AuthProvider';
 import { printInBrowser, sendToNetworkPrinter, showToast } from '../lib/print';
 import { autoPrint } from '../lib/auto-print';
@@ -65,8 +67,20 @@ function queueKey(sub: string) { return `lc_offline_bills:${sub}`; }
 function getQueue(sub: string): QueuedBill[] {
   try { return JSON.parse(localStorage.getItem(queueKey(sub)) || '[]'); } catch { return []; }
 }
-function saveQueue(sub: string, q: QueuedBill[]) {
-  localStorage.setItem(queueKey(sub), JSON.stringify(q));
+/** Returns false when the browser refused the write (quota / private mode), so the caller can keep the sale on screen. */
+function saveQueue(sub: string, q: QueuedBill[]): boolean {
+  try { localStorage.setItem(queueKey(sub), JSON.stringify(q)); return true; } catch { return false; }
+}
+
+// Bills the server refused (stock gone, price missing, discount over cap...). They are NEVER dropped: the sale already
+// happened at the counter, so each one stays here, with the server's reason, until the cashier retries or dismisses it.
+export type FailedBill = QueuedBill & { error: string; failedAt: string };
+function failedKey(sub: string) { return `lc_failed_bills:${sub}`; }
+function getFailed(sub: string): FailedBill[] {
+  try { return JSON.parse(localStorage.getItem(failedKey(sub)) || '[]'); } catch { return []; }
+}
+function saveFailed(sub: string, list: FailedBill[]) {
+  try { localStorage.setItem(failedKey(sub), JSON.stringify(list)); } catch { /* nothing more we can do */ }
 }
 
 function genUUID(): string {
@@ -149,9 +163,25 @@ export function POS() {
     if (select) searchRef.current?.select();
   }, []);
 
+  const [failedBills, setFailedBills] = useState<FailedBill[]>([]);
   const refreshQueueCount = useCallback(() => {
     setQueuedCount(getQueue(sub).length);
+    setFailedBills(getFailed(sub));
   }, [sub]);
+
+  const retryFailedBill = (clientRef: string) => {
+    const item = getFailed(sub).find((x) => x.clientRef === clientRef);
+    if (!item) return;
+    const { error: _e, failedAt: _f, ...bill } = item;
+    if (!saveQueue(sub, [...getQueue(sub), bill])) { showToast('Could not save the bill on this device', 'error'); return; }
+    saveFailed(sub, getFailed(sub).filter((x) => x.clientRef !== clientRef));
+    refreshQueueCount();
+    void syncQueue();
+  };
+  const dismissFailedBill = (clientRef: string) => {
+    saveFailed(sub, getFailed(sub).filter((x) => x.clientRef !== clientRef));
+    refreshQueueCount();
+  };
 
   // Expose helpers for E2E tests (offline-billing.spec.ts)
   useEffect(() => {
@@ -165,7 +195,7 @@ export function POS() {
     const url = branchId ? `/api/v1/products?branchId=${branchId}` : '/api/v1/products';
     setLoadingProducts(true);
     try {
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+      const r = await authFetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
       if (r.ok) setRawProducts((await r.json()) || []);
     } catch {
       /* offline — products not available */
@@ -191,9 +221,9 @@ export function POS() {
     const headers = { Authorization: `Bearer ${localStorage.getItem('token')}` };
     try {
       const [t, p, s] = await Promise.all([
-        fetch(`/api/v1/sale-types/${branchId}`, { headers }),
-        fetch(`/api/v1/sale-types/${branchId}/prices`, { headers }),
-        fetch(`/api/v1/sale-types/${branchId}/stock`, { headers }),
+        authFetch(`/api/v1/sale-types/${branchId}`, { headers }),
+        authFetch(`/api/v1/sale-types/${branchId}/prices`, { headers }),
+        authFetch(`/api/v1/sale-types/${branchId}/stock`, { headers }),
       ]);
       if (t.ok) {
         const types: SaleType[] = await t.json();
@@ -206,8 +236,9 @@ export function POS() {
         });
       }
       if (p.ok) {
-        const m = await p.json() as { products: { id: string; prices: Record<string, string> }[] };
-        setTypePrices(Object.fromEntries(m.products.map((x) => [x.id, x.prices])));
+        const m = await p.json() as { products: { id: string; prices: Record<string, string>; branchPrices?: Record<string, string> }[] };
+        // this outlet's own price for a sale type wins over the business's
+        setTypePrices(Object.fromEntries(m.products.map((x) => [x.id, { ...x.prices, ...(x.branchPrices ?? {}) }])));
       }
       if (s.ok) {
         const c = await s.json() as { products: { productId: string; counters: Record<string, number> }[] };
@@ -269,13 +300,27 @@ export function POS() {
     for (const item of [...q]) {
       if (item.ownerSub !== sub) continue;
       try {
-        const res = await fetch('/api/v1/bills', {
+        const res = await authFetch('/api/v1/bills', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
           body: JSON.stringify(item.body),
         });
+        if (res.status === 401) {
+          // Token expired: keep every bill, stop, and tell the cashier to sign in again.
+          showToast('Session expired - sign in again to sync the offline bills', 'error');
+          break;
+        }
+        if (res.status >= 500 || res.status === 429) break;   // server trouble: keep the bill, retry on the next tick
+        if (!res.ok) {
+          // The server refused this bill (stock, price, discount cap...). Never drop it silently: park it with the reason.
+          const errJson = await res.json().catch(() => null);
+          const reason = errJson?.error || errJson?.message || `Rejected (HTTP ${res.status})`;
+          saveFailed(sub, [...getFailed(sub).filter((x) => x.clientRef !== item.clientRef), { ...item, error: String(reason), failedAt: new Date().toISOString() }]);
+          saveQueue(sub, getQueue(sub).filter((x) => x.clientRef !== item.clientRef));
+          continue;
+        }
         const data = await res.json();
-        // Remove from queue whether 201 (new) or 200 (idempotent replay)
+        // Only a 201 (new) or 200 (idempotent replay) removes the bill from the queue
         saveQueue(sub, getQueue(sub).filter((x) => x.clientRef !== item.clientRef));
         const isReplay = res.status === 200;
         localStorage.setItem(`lc_last_sync:${sub}`, JSON.stringify({ billNumber: data.billNumber, total: data.total, at: new Date().toISOString(), replay: isReplay }));
@@ -349,6 +394,11 @@ export function POS() {
     const isTracked = product.trackStock !== false;
     if (isTracked && stockQty <= 0) {
       showToast(`Cannot add "${product.name}". It is currently out of stock.`, 'error');
+      return;
+    }
+    // A product the business has not priced yet cannot be sold (the server refuses it too): say so instead of adding ₹0.00
+    if (!serving && !(parseFloat(product.mrp) > 0)) {
+      showToast(`"${product.name}" has no selling price yet. A manager sets it in Products → Pricing.`, 'error');
       return;
     }
     const line: CartItem = { ...product, qty: 1, price: serving?.price ?? product.mrp, servingId: serving?.id, servingLabel: serving?.label };
@@ -554,15 +604,23 @@ export function POS() {
       const soldIds = cart.map((c) => c.id);
 
       let res: Response;
+      let sessionEnded = false;
       try {
-        res = await fetch('/api/v1/bills', {
+        res = await authFetch('/api/v1/bills', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        });
+        }, { notify401: false });
+        // The token no longer works: treat it like "cannot reach the server" so the sale is parked (same clientRef),
+        // then end the session. The bill is sent after the next sign-in.
+        if (res.status === 401) { sessionEnded = true; throw new Error('session ended'); }
       } catch {
-        // Network error — queue for offline sync
-        saveQueue(sub, [...getQueue(sub), { clientRef, ownerSub: sub, queuedAt: new Date().toISOString(), body }]);
+        // Network error or ended session — queue for offline sync
+        if (!saveQueue(sub, [...getQueue(sub), { clientRef, ownerSub: sub, queuedAt: new Date().toISOString(), body }])) {
+          // Nowhere to keep it: leave the cart on screen so the sale is not lost or half-recorded.
+          showToast('Offline and this device cannot store the bill - keep the cart and try again when online', 'error');
+          return;
+        }
         refreshQueueCount();
         setCart([]);
         resetBillFields();
@@ -571,6 +629,10 @@ export function POS() {
         setRecentTick((n) => n + 1);
         cartClientRef.current = genUUID();   // the next cart gets a fresh UUID
         setCheckoutModal({ title: 'Saved offline', billNumber: clientRef.slice(0, 8), total: cartTotal.toFixed(2), paymentMode, offline: true, ...tendered });
+        if (sessionEnded) {
+          showToast('Your session ended. The bill is saved on this device and is sent after you sign in again.', 'error');
+          notifySessionExpired();
+        }
         return;
       }
 
@@ -1057,6 +1119,20 @@ export function POS() {
 
           <input id="posBuyerGstin" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-mono bg-white dark:bg-gray-700" placeholder="Buyer GSTIN (optional, B2B)" maxLength={15} value={buyerGstin} onChange={(e) => setBuyerGstin(e.target.value)} />
           {lastSync && <div id="lastSync" className="text-xs text-gray-500">{lastSync}</div>}
+          {failedBills.length > 0 && (
+            <div id="failedBills" role="alert" className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-900 p-2 text-xs text-red-800 dark:text-red-200 space-y-1.5">
+              <div className="font-semibold">{failedBills.length} offline bill{failedBills.length > 1 ? 's' : ''} could not be saved - sale already made, fix and retry</div>
+              {failedBills.map((f) => (
+                <div key={f.clientRef} className="flex items-start justify-between gap-2">
+                  <span>{new Date(f.queuedAt).toLocaleTimeString('en-IN')} · {f.body.items.length} item(s) · {f.body.paymentMode} - {f.error}</span>
+                  <span className="shrink-0 flex gap-2">
+                    <button type="button" className="underline" onClick={() => retryFailedBill(f.clientRef)}>Retry</button>
+                    <button type="button" className="underline" onClick={() => dismissFailedBill(f.clientRef)}>Dismiss</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           <button
             id="checkoutBtn"
             onClick={checkout}

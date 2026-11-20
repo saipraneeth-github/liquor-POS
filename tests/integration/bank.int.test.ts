@@ -93,8 +93,9 @@ describe('bank accounts', () => {
     const [platform] = await ctx.db.insert(ctx.schema.users).values({
       name: 'Platform owner', email: 'platform@test.local', passwordHash: 'x', role: 'owner', branchId: null, syndicateId: null,
     }).returning();
+    const [loose] = await ctx.db.insert(ctx.schema.branches).values({ name: 'No group', code: 'NOGRP' }).returning();   // a branch that belongs to no business
     const res = await inject('POST', '/bank/accounts', ctx.authFor({ sub: platform.id, email: platform.email, role: 'owner', branchId: null, syndicateId: null }),
-      { branchId: ctx.otherBranchId, name: 'Shared2', scope: 'SYNDICATE' });
+      { branchId: loose.id, name: 'Shared2', scope: 'SYNDICATE' });
     expect(res.statusCode).toBe(422);
     expect(res.json().error).toMatch(/business group/);
   });
