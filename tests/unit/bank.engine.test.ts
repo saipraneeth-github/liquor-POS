@@ -24,10 +24,37 @@ const OPENING = 210000;
 
 function runCsv(rows: string[][]) {
   const m = detectMapping(rows);
-  const hints = scanBalanceHints(rows);
+  const hints = scanBalanceHints(rows, m.mapping);
   const res = rowsToLines(rows, m.headerRow, m.mapping, { opening: hints.opening });
   return { m, hints, ...res, check: verifyBalanceChain(res.lines, hints) };
 }
+
+describe('dated statement balances', () => {
+  it('keeps the printed opening balance and flags a mismatched first movement', () => {
+    const rows = [
+      ['Date', 'Narration', 'Debit', 'Credit', 'Balance'],
+      ['26/11/2026', 'Opening balance', '', '', '1000.00'],
+      ['26/11/2026', 'Bank fee', '100.00', '', '925.00'],
+      ['27/11/2026', 'Deposit', '', '250.00', '1175.00'],
+    ];
+    const result = runCsv(rows);
+    expect(result.hints.opening).toBe('1000.00');
+    expect(result.lines).toHaveLength(2);
+    expect(result.skipped).toEqual([]);
+    expect(result.check.status).toBe('FAIL');
+  });
+
+  it('retains a transaction with an opening-balance caption when it has an amount', () => {
+    const rows = [
+      ['Date', 'Narration', 'Debit', 'Credit', 'Balance'],
+      ['26/11/2026', 'Opening balance', '', '1000.00', '1000.00'],
+      ['27/11/2026', 'Deposit', '', '250.00', '1250.00'],
+    ];
+    const result = runCsv(rows);
+    expect(result.hints.opening).toBeNull();
+    expect(result.lines).toHaveLength(2);
+  });
+});
 
 describe('parseMoney', () => {
   it('reads Indian grouping, currency marks, signs and Dr/Cr', () => {

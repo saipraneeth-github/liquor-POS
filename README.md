@@ -24,6 +24,20 @@ npm run dev:local
 
 Open **http://localhost:3001** in your browser.
 
+## Repository Layout
+
+| Path | What lives there |
+|---|---|
+| [src/](src/), [frontend/](frontend/), [print-agent/](print-agent/) | API, React app, and local printer companion |
+| [drizzle/](drizzle/), [scripts/](scripts/), [.github/workflows/](.github/workflows/) | Database migrations, maintenance scripts, and CI |
+| [tests/](tests/README.md) | Automated tests, QA utilities, and sample inputs. Real invoices and bank statements live in the Git-ignored `tests/fixtures/local/` folder. |
+| [docs/](docs/), [docs/plans/](docs/plans/), [docs/qa/](docs/qa/), [docs/archive/](docs/archive/) | Project documentation, plans, QA guides, and historical work |
+| [.agents/](.agents/) | Shared AI toolkit. Skills, agent definitions, rules, and workflows each have a folder here. |
+
+Run the npm commands from the repository root. The root also holds npm, TypeScript, Drizzle, and test configuration. Local databases, builds, and browser output stay at their configured Git-ignored paths.
+
+Start with [AGENTS.md](AGENTS.md) for project conventions, [PROGRESS.md](PROGRESS.md) for the handoff, or the [runbook](docs/RUNBOOK.md) for deployment. Optional services are covered in the [integrations guide](docs/INTEGRATIONS.md).
+
 ### Demo Accounts (Password: `Password@123`)
 
 | Role | Email | Scope |

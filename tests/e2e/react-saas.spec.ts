@@ -299,6 +299,7 @@ test('B2B: buyer GSTIN on the POS gives an IGST bill for another state', async (
   await page.click('#nav-pos');
   await page.fill('#posSearch', 'Paneer Tikka');
   await page.locator('.pos-product', { hasText: 'Paneer Tikka' }).click();
+  await page.getByText('Customer GST number (optional)', { exact: true }).click();
   await page.fill('#posBuyerGstin', '27AAAAA0000A1Z5');
   await page.click('#checkoutBtn');
   await expect(page.locator('#checkoutBillNo')).toBeVisible();

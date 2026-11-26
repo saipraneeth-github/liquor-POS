@@ -365,7 +365,7 @@ export async function parseStatementFile(buf: Buffer, fields: UploadFields = {})
     });
   }
 
-  const hints: BalanceHints = pdfHints ?? scanBalanceHints(rows);
+  const hints: BalanceHints = pdfHints ?? scanBalanceHints(rows, mapping);
   if (fields.opening !== undefined) hints.opening = money2(D(fields.opening));
   if (fields.closing !== undefined) hints.closing = money2(D(fields.closing));
 

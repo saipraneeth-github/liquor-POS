@@ -7,6 +7,7 @@ import { extractInvoice } from '../../src/modules/invoices/extraction/index.js';
 import { matchLine, type CatalogProduct } from '../../src/modules/invoices/match.engine.js';
 import { convertCases } from '../../src/modules/invoices/draft.engine.js';
 import { TELANGANA_ICDC_PRODUCTS } from '../../src/db/data/telangana-products.js';
+import { supplierInvoicesDir } from '../fixtures/paths.mjs';
 
 describe('Telangana Excise ICDC Engine', () => {
   it('detects ICDC documents from text lines and rejects generic commercial invoices', () => {
@@ -93,12 +94,7 @@ describe('Telangana Excise ICDC Engine', () => {
     isActive: true,
   }));
 
-  describe('Testing All 10 Telangana ICDC PDFs in testing_invoices/', () => {
-    const pdfDir = fs.existsSync('testing_invoices')
-      ? 'testing_invoices'
-      : fs.existsSync('Testing_invoices')
-      ? 'Testing_invoices'
-      : 'testing_invoices';
+  describe('Local Telangana ICDC invoice PDFs', () => {
     const testCases: Array<{
       file: string;
       expectedLines: number;
@@ -202,13 +198,8 @@ describe('Telangana Excise ICDC Engine', () => {
     ];
 
     for (const tc of testCases) {
-      it(`extracts ${tc.file} cleanly with 100% accuracy`, async () => {
-        const filePath = path.join(pdfDir, tc.file);
-        if (!fs.existsSync(filePath)) {
-          console.warn(`Skipping ${tc.file} (file not found)`);
-          return;
-        }
-
+      const filePath = path.join(supplierInvoicesDir, tc.file);
+      it.skipIf(!fs.existsSync(filePath))(`extracts ${tc.file} cleanly with 100% accuracy`, async () => {
         const buf = fs.readFileSync(filePath);
         const result = await extractInvoice(buf);
 

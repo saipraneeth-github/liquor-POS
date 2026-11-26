@@ -28,7 +28,8 @@ test('dialogs open in the middle of the window, on a tall screen and on a short 
   await expect(page.locator('[role=dialog]')).toBeVisible();
   expect(Math.abs(await centreOffset(page))).toBeLessThanOrEqual(2);
   await page.keyboard.press('Escape');
-  await page.locator('[role=dialog] button[aria-label="Close"]').click();
+  await expect(page.locator('[role=dialog]')).toBeHidden();
+  await expect(page.locator('#changePasswordBtn')).toBeFocused();
 
   // a short window: the dialog must still be reachable from its first field to its last button
   await page.setViewportSize({ width: 1100, height: 420 });

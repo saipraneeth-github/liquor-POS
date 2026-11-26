@@ -5,8 +5,9 @@ import { eq } from 'drizzle-orm';
 import { setupIntegration, type IntegrationContext } from './helpers.js';
 import { TELANGANA_ICDC_PRODUCTS } from '../../src/db/data/telangana-products.js';
 import { upsertMasterProducts } from '../../src/modules/catalog/catalog.service.js';
+import { supplierInvoicesDir } from '../fixtures/paths.mjs';
 
-const FILE = join(process.cwd(), 'Testing_invoices', 'ICDCB.pdf');
+const FILE = join(supplierInvoicesDir, 'ICDCB.pdf');
 let ctx: IntegrationContext;
 
 beforeAll(async () => {

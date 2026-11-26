@@ -1,5 +1,5 @@
 /**
- * Golden tests on the real Telangana ICDC challans in Testing_invoices/.
+ * Golden tests on the real Telangana ICDC challans in tests/fixtures/local/supplier-invoices/.
  * They pin the two properties the whole purchase flow depends on:
  *  1. every figure printed in the totals block is read correctly and the printed chain reconciles — which also proves
  *     no item line was dropped (Σ lines = printed Invoice Value);
@@ -14,8 +14,9 @@ import { buildDraftLines, type CatalogEntry } from '../../src/modules/invoices/d
 import { matchLine, type CatalogProduct } from '../../src/modules/invoices/match.engine.js';
 import { reconcileTotalsBlock } from '../../src/modules/invoices/totals.engine.js';
 import { TELANGANA_ICDC_PRODUCTS } from '../../src/db/data/telangana-products.js';
+import { supplierInvoicesDir } from '../fixtures/paths.mjs';
 
-const DIR = join(process.cwd(), 'Testing_invoices');
+const DIR = supplierInvoicesDir;
 const FILES = existsSync(DIR) ? readdirSync(DIR).filter((f) => f.toLowerCase().endsWith('.pdf')) : [];
 
 const CATALOG: CatalogEntry[] = TELANGANA_ICDC_PRODUCTS.map((p, i) => ({
@@ -39,7 +40,7 @@ const EXPECTED: Record<string, Record<string, string | number>> = {
   },
 };
 
-describe.skipIf(FILES.length === 0)('real ICDC challans (Testing_invoices/)', () => {
+describe.skipIf(FILES.length === 0)('real ICDC challans', () => {
   for (const file of FILES) {
     describe(file, () => {
       const loaded = (async () => extractInvoice(readFileSync(join(DIR, file))))();

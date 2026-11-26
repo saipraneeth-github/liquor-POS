@@ -45,7 +45,7 @@ export function ProtectedRoute() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-slate-950" id="sessionLoading">
-        <BeerBottleLoader inline size="md" title="Chilling & Opening Session…" subtitle="Checking session credentials and active branch…" />
+        <BeerBottleLoader inline size="md" title="Loading your shop…" />
       </div>
     );
   }

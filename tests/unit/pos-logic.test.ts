@@ -82,6 +82,16 @@ describe('parked bills', () => {
     expect(list).toHaveLength(1);
     expect(list[0].total).toBe('250.00');
   });
+  it('isolates drafts by outlet and retains legacy bills and rupee discounts', () => {
+    const store = memory();
+    const discounted: ParkedBill = { ...bill('a'), branchId: 'a', discountMode: 'AMT', discountAmount: '10' };
+    saveParked(store, 'u1', [bill('legacy')]);
+    saveParked(store, 'u1', [discounted, ...loadParked(store, 'u1', 'a')], 'a');
+    saveParked(store, 'u1', [{ ...bill('b'), branchId: 'b' }, ...loadParked(store, 'u1', 'b')], 'b');
+    expect(loadParked(store, 'u1', 'b').map(b => b.id)).toEqual(['b', 'legacy']);
+    expect(loadParked(store, 'u1', 'a')).toEqual([bill('legacy'), discounted]);
+  });
+
   it('removes one, and survives storage round-trips and bad data', () => {
     const store = memory();
     saveParked(store, 'u1', [bill('a'), bill('b')]);

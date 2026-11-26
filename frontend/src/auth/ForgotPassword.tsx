@@ -25,18 +25,18 @@ export function ForgotPassword() {
   };
 
   return (
-    <AuthShell id="forgotPage" heading="Locked out? It happens." text="We will send a link to your e-mail so you can choose a new password and get back to the counter.">
+    <AuthShell id="forgotPage" heading="Reset your password" text="">
       <h1>Forgot your password?</h1>
       {sent ? (
         <>
           <div className="lc-alert good" id="forgotSent" role="status">
-            <span>If that address has an account, a reset link is on its way. It works for one hour. Check your spam folder if it does not arrive.</span>
+            <span>If this email is registered, check your inbox for a link. It works for one hour.</span>
           </div>
           <Link to="/login" className="lc-link" style={{ alignSelf: 'flex-start', marginLeft: -6 }}>Back to sign in</Link>
         </>
       ) : (
         <form onSubmit={submit} className="lc-login-form" style={{ padding: 0, maxWidth: 'none' }}>
-          <p className="lead">Enter the e-mail you sign in with and we will send you a link to choose a new password.</p>
+          <p className="lead">Enter the email you use to sign in.</p>
           {error && <div className="lc-alert bad" role="alert"><span>{error}</span></div>}
           <div className="lc-field">
             <label htmlFor="forgotEmail">Email</label>

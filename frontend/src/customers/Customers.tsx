@@ -222,7 +222,7 @@ export function Customers() {
               <label htmlFor="custSearch" className="sr-only">Search customers</label>
               <input
                 id="custSearch"
-                className="input grow p-2 border rounded"
+                className="input min-w-0 grow p-2 border rounded"
                 style={{ width: 'auto' }}
                 placeholder="Search by name or phone"
                 value={search}

@@ -136,7 +136,7 @@ export function Ledger() {
 
   return (
     <div id="page-accounting" className="space-y-4">
-      <div className="flex gap-4 border-b dark:border-gray-700 pb-2">
+      <div className="flex flex-wrap gap-x-4 gap-y-2 border-b dark:border-gray-700 pb-2">
         <button
           id="acctab-tb"
           type="button"

@@ -388,7 +388,7 @@ export function Tables() {
       .filter((def) => def.id === 'ALL' || def.count > 0);
   }, [products, kotDest]);
 
-  // View KOTs State
+  // View orders State
   const [tableKots, setTableKots] = useState<KotOrder[]>([]);
   const [kotFilter, setKotFilter] = useState<'ALL' | 'KITCHEN' | 'BAR'>('ALL');
 
@@ -921,11 +921,11 @@ export function Tables() {
     <div id="page-tables" className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold" id="tablesTitle">Tables &amp; KOT</h2>
+          <h2 className="text-2xl font-bold" id="tablesTitle">Table orders</h2>
           <div className="text-sm text-gray-500 mt-0.5" id="tablesHelp">
             {canCashier
-              ? 'Tap a free table to open it, or an occupied one for orders, billing, move and merge.'
-              : 'Tap an occupied table to raise a KOT or update item status. A cashier opens and bills tables.'}
+              ? 'Tap a free table to seat guests. Tap a table in use to see its orders and bill.'
+              : 'Tap a table in use to send orders or mark items served. A cashier opens tables and makes bills.'}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -938,7 +938,7 @@ export function Tables() {
       {/* The day at a glance */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2" id="tablesSummary">
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Open bills</div>
+          <div className="text-xs font-semibold text-gray-500">Open bills</div>
           <div className="font-display font-bold text-xl tabular-nums" id="sumOpenTotal">₹{money(openTotal)}</div>
         </div>
         <button
@@ -946,7 +946,7 @@ export function Tables() {
           onClick={() => setView(view === 'COLLECTION' ? 'ALL' : 'COLLECTION')}
           className={`text-left rounded-xl border px-3 py-2.5 cursor-pointer transition ${view === 'COLLECTION' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 ring-1 ring-emerald-500' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-emerald-300'}`}
         >
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Collection today</div>
+          <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Collection today</div>
           <div className="font-display font-bold text-xl tabular-nums text-emerald-700 dark:text-emerald-300" id="sumCollectionToday">
             ₹{money(todaySummary?.collection.total ?? '0.00')}
           </div>
@@ -956,14 +956,14 @@ export function Tables() {
           onClick={() => setView(view === 'BILLS' ? 'ALL' : 'BILLS')}
           className={`text-left rounded-xl border px-3 py-2.5 cursor-pointer transition ${view === 'BILLS' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 ring-1 ring-blue-500' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-blue-300'}`}
         >
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">Bills today</div>
+          <div className="text-xs font-semibold text-blue-600 dark:text-blue-400">Bills today</div>
           <div className="font-display font-bold text-xl tabular-nums text-blue-700 dark:text-blue-300" id="sumBillsToday">
             {todaySummary?.collection.billCount ?? 0} <span className="text-xs font-sans font-medium text-gray-500">settled</span>
           </div>
         </button>
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2.5">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Tables</div>
-          <div className="text-sm font-semibold flex items-center gap-3 mt-1">
+          <div className="text-sm font-semibold flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
             <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />{tables.filter((t) => t.status === 'FREE').length} free</span>
             <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-red-500" aria-hidden="true" />{occupied.length} occupied</span>
             {tables.some((t) => t.status === 'RESERVED') && <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500" aria-hidden="true" />{tables.filter((t) => t.status === 'RESERVED').length} reserved</span>}
@@ -1650,7 +1650,7 @@ export function Tables() {
                         onClick={() => handleOpenKotModal('BAR')}
                         className="px-4 py-2.5 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 text-sm cursor-pointer"
                       >
-                        + Bar KOT
+                        Bar order
                       </button>
                       <button
                         type="button"
@@ -1658,7 +1658,7 @@ export function Tables() {
                         onClick={() => handleOpenKotModal('KITCHEN')}
                         className="px-4 py-2.5 bg-amber-700 text-white rounded-lg font-semibold hover:bg-amber-800 text-sm cursor-pointer"
                       >
-                        + Kitchen KOT
+                        Kitchen order
                       </button>
                       <button
                         type="button"
@@ -2755,7 +2755,7 @@ export function Tables() {
                     {filteredKots.length === 0 ? (
                       <div className="p-4 text-center text-gray-500">
                         {tableKots.length === 0
-                          ? 'No KOTs for this table yet.'
+                          ? 'No orders for this table yet.'
                           : `No ${kotFilter.toLowerCase()} KOTs for this table.`}
                       </div>
                     ) : (
@@ -2785,7 +2785,7 @@ export function Tables() {
                                     onClick={() => handleServeAllKot(o.id)}
                                     title="Mark all items in this KOT as SERVED"
                                   >
-                                    <span>✓</span> Serve KOT
+                                    <span>✓</span> Mark order served
                                   </button>
                                 )}
                                 <button
@@ -2855,7 +2855,7 @@ export function Tables() {
                           onClick={() => handleOpenKotModal('BAR')}
                           className="px-3 py-2 bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/40 dark:hover:bg-purple-900/70 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1"
                         >
-                          <span>+</span> Add KOT
+                          <span>+</span> Add order
                         </button>
                       </div>
 

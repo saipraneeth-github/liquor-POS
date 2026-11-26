@@ -94,9 +94,9 @@ export function Dashboard() {
           <div className="lc-card" style={{ maxWidth: 560 }}>
             <h3>Steward access</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)' }}>
-              Use <b style={{ color: 'var(--text)' }}>Tables &amp; KOT</b> to see occupied tables, raise KOTs and update item status. Opening tables, billing, inventory and reports need a cashier or manager login.
+              Open <b style={{ color: 'var(--text)' }}>Table orders</b> to send orders to the kitchen or bar and mark items served.
             </p>
-            <button type="button" className="lc-btn lc-btn-primary" id="dashTablesBtn" onClick={() => go('/tables')}>Open Tables &amp; KOT</button>
+            <button type="button" className="lc-btn lc-btn-primary" id="dashTablesBtn" onClick={() => go('/tables')}>Open table orders</button>
           </div>
         </div>
       </section>

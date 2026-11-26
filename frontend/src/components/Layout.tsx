@@ -1,5 +1,7 @@
 import { PAGE_PERMISSION, pageDisabled } from '../lib/features';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useDesktopViewport } from '../lib/useDesktopViewport';
+import { useOverlayFocus } from '../lib/useOverlayFocus';
 import { Outlet, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, userCan, type SaasRole } from '../auth/AuthProvider';
 import { useTheme } from '../context/ThemeContext';
@@ -121,6 +123,13 @@ export function Layout() {
     }
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const desktop = useDesktopViewport();
+  const mobileDrawerOpen = !desktop && mobileOpen;
+  const drawerVisible = desktop ? !isCollapsed : mobileDrawerOpen;
+  const navToggleRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const sidebarCloseRef = useRef<HTMLButtonElement>(null);
+  useOverlayFocus(mobileDrawerOpen, sidebarRef, sidebarCloseRef, navToggleRef);
   const [pwOpen, setPwOpen] = useState(false);
   // After an administrator reset the app is unusable until the person picks their own password (the server refuses every other call)
   const pwForced = !!user?.mustChangePassword;
@@ -129,7 +138,8 @@ export function Layout() {
 
   const toggleSidebar = () => {
     if (window.innerWidth < 768) {
-      setMobileOpen((prev) => !prev);
+      if (mobileOpen) closeSidebar();
+      else setMobileOpen(true);
     } else {
       setIsCollapsed((prev) => {
         const next = !prev;
@@ -145,6 +155,7 @@ export function Layout() {
     if (window.innerWidth < 768) {
       setMobileOpen(false);
     } else {
+      navToggleRef.current?.focus();
       setIsCollapsed(true);
       try {
         localStorage.setItem('lc_sidebar_collapsed', 'true');
@@ -186,12 +197,13 @@ export function Layout() {
   // Keyboard shortcut Ctrl+B / Cmd+B to toggle sidebar, Escape to close on mobile
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.('#cartPanel[aria-modal="true"]')) return;
       if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
         e.preventDefault();
         toggleSidebar();
       }
       if (e.key === 'Escape') {
-        if (mobileOpen) setMobileOpen(false);
+        if (mobileOpen && window.innerWidth < 768) closeSidebar();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -285,16 +297,22 @@ export function Layout() {
 
   return (
     <div className="flex h-dvh bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" id="mainApp">
-      {mobileOpen && (
+      {mobileDrawerOpen && (
         <div
           className="fixed inset-0 bg-black/40 z-30 md:hidden backdrop-blur-xs transition-opacity"
-          onClick={() => setMobileOpen(false)}
+          onClick={closeSidebar}
         />
       )}
       <aside
+        id="appSidebar"
+        ref={sidebarRef}
+        inert={!drawerVisible}
+        role={mobileDrawerOpen ? 'dialog' : undefined}
+        aria-modal={mobileDrawerOpen || undefined}
+        aria-label={mobileDrawerOpen ? 'Navigation menu' : undefined}
         onClick={(e) => {
           if (window.innerWidth < 768 && (e.target as HTMLElement).closest('a')) {
-            setMobileOpen(false);
+            closeSidebar();
           }
         }}
         className={`fixed inset-y-0 left-0 z-40 bg-[#0e2a21] dark:bg-[#0c2219] text-[#e7f0eb] border-r border-white/5 flex flex-col transition-all duration-300 ease-in-out md:static ${
@@ -319,6 +337,7 @@ export function Layout() {
             <button
               type="button"
               id="sidebarCloseBtn"
+              ref={sidebarCloseRef}
               aria-label="Close navigation sidebar"
               title="Close sidebar (Ctrl+B)"
               onClick={closeSidebar}
@@ -381,7 +400,7 @@ export function Layout() {
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0" inert={mobileDrawerOpen}>
         {dueAmount && location.pathname !== '/settings' && (
           <div id="billingBanner" className="bg-purple-100 dark:bg-purple-950/60 text-purple-900 dark:text-purple-200 text-sm px-4 py-1.5 flex items-center justify-between border-b dark:border-purple-800">
             <span>A subscription invoice of <b>₹{Number(dueAmount).toLocaleString('en-IN')}</b> is waiting.</span>
@@ -399,8 +418,11 @@ export function Layout() {
             <button
               type="button"
               id="navToggle"
-              aria-label={isCollapsed ? 'Open navigation menu' : 'Close navigation menu'}
-              title={isCollapsed ? 'Open sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+              ref={navToggleRef}
+              aria-controls="appSidebar"
+              aria-expanded={drawerVisible}
+              aria-label={drawerVisible ? 'Close navigation menu' : 'Open navigation menu'}
+              title={drawerVisible ? 'Close sidebar (Ctrl+B)' : 'Open sidebar (Ctrl+B)'}
               className="p-2 -ml-2 rounded-lg cursor-pointer text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors flex items-center justify-center"
               onClick={toggleSidebar}
             >

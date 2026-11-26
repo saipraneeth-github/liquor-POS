@@ -48,7 +48,7 @@ test('supplier invoice upload: CSV extract -> review & map unmatched line -> app
   await expect(page.locator('#invDetailBox')).toContainText(/reviewed/i);
 
   // Confirm the inward and approve it
-  await page.getByRole('button', { name: /Submit Invoice/ }).click();
+  await page.getByRole('button', { name: /Check before adding stock/ }).click();
   await page.click('#invApproveBtn');
   await page.click('#confirmOk');
 

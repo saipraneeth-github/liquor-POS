@@ -81,6 +81,9 @@ export interface ParkedBill {
   saleTypeId: string;
   paymentMode: 'CASH' | 'CARD' | 'UPI' | 'CREDIT';
   discountPercent: string;
+  discountAmount?: string;
+  discountMode?: 'PCT' | 'AMT';
+  branchId?: string;
   buyerGstin: string;
   customer: { id: string; name: string; phone: string; creditAllowed: boolean; isActive: boolean; creditLimit: string; currentCredit: string } | null;
   lines: ParkedLine[];
@@ -92,14 +95,17 @@ export const MAX_PARKED = 10;
 type Store = Pick<Storage, 'getItem' | 'setItem'>;
 const parkedKey = (sub: string) => `lc_pos_parked:${sub}`;
 
-export function loadParked(store: Store, sub: string): ParkedBill[] {
+export function loadParked(store: Store, sub: string, branchId?: string): ParkedBill[] {
   try {
     const list = JSON.parse(store.getItem(parkedKey(sub)) || '[]');
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+    return branchId ? list.filter((bill: ParkedBill) => !bill.branchId || bill.branchId === branchId) : list;
   } catch { return []; }
 }
-export function saveParked(store: Store, sub: string, list: ParkedBill[]): void {
-  try { store.setItem(parkedKey(sub), JSON.stringify(list.slice(0, MAX_PARKED))); } catch { /* private mode: parking is a convenience */ }
+export function saveParked(store: Store, sub: string, list: ParkedBill[], branchId?: string): void {
+  const otherOutlets = branchId ? loadParked(store, sub).filter(bill => bill.branchId && bill.branchId !== branchId) : [];
+  try { store.setItem(parkedKey(sub), JSON.stringify([...list.slice(0, MAX_PARKED), ...otherOutlets])); }
+  catch { /* private mode: parking is a convenience */ }
 }
 /** Newest first; the oldest falls off beyond ten. */
 export function addParked(list: ParkedBill[], bill: ParkedBill): ParkedBill[] {

@@ -135,7 +135,7 @@ export function Compliance() {
       <div className="card pad p-4 bg-white rounded shadow mb-6">
         <div className="row between flex flex-wrap items-end gap-3 border-b pb-3 mb-4">
           <div className="h2 text-base font-bold">Lifting report</div>
-          <div className="row flex items-end gap-2 text-sm">
+          <div className="row flex flex-wrap items-end gap-2 text-sm">
             <label className="field flex flex-col gap-1 text-xs font-medium" htmlFor="liftFrom">
               From
               <input

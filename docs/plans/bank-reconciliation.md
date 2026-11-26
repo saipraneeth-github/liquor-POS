@@ -1,10 +1,10 @@
 # Bank Statement Reconciliation: Analysis & Improvement Plan
 
-This document details the analysis of real-world bank statements from `Bank Invoices/` against the platform's bank statement reconciliation engine (`src/modules/bank/bank.engine.ts` and `src/modules/bank/bank.service.ts`), along with the phased remediation plan to ensure 100% automated parsing and balance verification.
+This document details the analysis of real-world bank statements from `tests/fixtures/local/bank-statements/` against the platform's bank statement reconciliation engine (`src/modules/bank/bank.engine.ts` and `src/modules/bank/bank.service.ts`), along with the phased remediation plan to ensure 100% automated parsing and balance verification.
 
 ---
 
-## 1. Audit Summary of Real Bank Statements (`Bank Invoices/`)
+## 1. Audit Summary of Real Bank Statements
 
 | File Name | Bank & Branch | Outlet / Account | Extracted Txns | Initial Balance Status | Compatibility |
 |---|---|---|---|---|---|
@@ -48,7 +48,7 @@ This document details the analysis of real-world bank statements from `Bank Invo
 - [x] **Task 3**: Add `By-` (CR) and `To-` (DR) banking prefix detection in direction resolution with high confidence.
 - [x] **Task 4**: Support sparse/intermittent running balance verification in `verifyBalanceChain` using continuous balance projection tied to opening/closing and checkpoints.
 - [x] **Task 5**: Add comprehensive unit tests in `tests/unit/bank.engine.test.ts` (106 tests passing).
-- [x] **Task 6**: Run verification against all 8 actual PDF files in `Bank Invoices/` to confirm 100% PASS rate.
+- [x] **Task 6**: Run verification against all 8 local bank statement PDFs to confirm 100% PASS rate.
 
 ---
 

@@ -1176,8 +1176,8 @@ export function InvoiceUpload() {
             Supplier Invoices
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {activeTab === 'all-invoices' ? 'All uploaded supplier invoices with immutable snapshots and history.'
-              : activeTab === 'upload' ? 'Upload or create a supplier invoice, map brand codes, and submit.'
+            {activeTab === 'all-invoices' ? 'Bills from your suppliers'
+              : activeTab === 'upload' ? 'Add a supplier bill to update stock after approval.'
               : 'Live bottle counts, cost and margin for this store.'}
           </p>
         </div>
@@ -1185,7 +1185,7 @@ export function InvoiceUpload() {
         {/* Tab Switcher */}
         <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-sm font-medium">
           {canSeeCost && (<>
-          <button
+          {activeTab !== 'all-invoices' && <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'upload'
@@ -1195,7 +1195,7 @@ export function InvoiceUpload() {
             onClick={() => setActiveTab('upload')}
           >
             Add Supplier Bill
-          </button>
+          </button>}
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${
@@ -1225,9 +1225,6 @@ export function InvoiceUpload() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b dark:border-slate-800">
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">All Uploaded Invoices</h2>
-              <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                Open a bill to see it as it was saved. To add bills, use the Add Supplier Bill button.
-              </p>
             </div>
             <button
               type="button"
@@ -1299,7 +1296,7 @@ export function InvoiceUpload() {
               <BeerBottleLoader inline size="sm" title="Loading Invoices…" subtitle="Fetching all uploaded supplier invoices…" />
             ) : filteredAllInvoices.length === 0 ? (
               <div className="p-8 text-center text-gray-500 text-sm">
-                {searchIcdc ? `No invoices found matching "${searchIcdc}".` : 'No invoices found. Click "Upload New Invoice" to begin.'}
+                {searchIcdc ? `No invoices found matching "${searchIcdc}".` : 'No invoices found. Click "Add Supplier Bill" to begin.'}
               </div>
             ) : (
               <table className="w-full text-left text-sm" id="allInvoicesTable">
@@ -1362,7 +1359,7 @@ export function InvoiceUpload() {
                             type="button"
                             className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                             onClick={() => openSnapshot(inv.id)}
-                            title="View read-only immutable snapshot"
+                            title="View saved bill"
                           >
                             <Eye size={13} /> View
                           </button>
@@ -1726,7 +1723,7 @@ export function InvoiceUpload() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl font-bold text-gray-900">
-                      Step 2: Check Bottles &amp; Product Matching
+                      Check items and quantities
                     </h2>
                     <span
                       className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
@@ -2518,7 +2515,7 @@ export function InvoiceUpload() {
                       className="min-h-[48px] px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold text-sm shadow-sm flex items-center gap-2 cursor-pointer transition-all"
                       onClick={() => setWizardStep(3)}
                     >
-                      Submit Invoice
+                      Check before adding stock
                     </button>
                   )}
                 </div>
@@ -2640,7 +2637,7 @@ export function InvoiceUpload() {
                         className="w-full sm:w-auto min-h-[48px] px-8 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold text-base shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
                         onClick={handleApprove}
                       >
-                        {isApproving ? 'Pouring into Live Stock...' : 'Confirm & Add to Live Stock'}
+                        {isApproving ? 'Adding stock…' : 'Approve and add stock'}
                       </ProtectedButton>
                   </div>
                 )
@@ -2946,7 +2943,7 @@ export function InvoiceUpload() {
       {/* 1. During Stock Inward & Approval */}
       <BeerBottleLoader
         open={isApproving}
-        title="Pouring Stock into Live Inventory..."
+        title="Adding stock…"
         subtitle="Adding bottles to store stock, updating ledgers, and securing audit logs..."
         stage={approvalStage}
         bottlesCount={activeInvoice?.items.reduce((sum, it) => sum + (it.quantity || 0), 0)}

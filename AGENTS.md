@@ -2,6 +2,7 @@
 
 Read this first. It is the single source of project context for any AI assistant or new contributor.
 For current work status and how to resume an unfinished task, read **`PROGRESS.md`**.
+The [repository layout](README.md#repository-layout) locates app code, QA material, and shared AI tooling.
 
 ## 1. What this project is
 
@@ -167,7 +168,8 @@ Schema change: edit `schema.ts` → `npm run db:generate` (needs any `DATABASE_U
 - Slab payouts use the "best slab reached" rule (non-cumulative) and assume `scheme_purchases.qty` is in cases.
 - Closing selects bills by creation date; voiding a bill from an already-closed day is not reflected in that closing.
 - Windows PowerShell 5.1 `Get-Content` mis-displays UTF-8 (box-drawing comments look like `â”€`); the files are fine — use `-Encoding utf8`.
-- `.agents/` and `README.md` describe generic AI tooling, not this app; ignore them for project context.
+- `.agents/` is the shared toolkit for skills, agent definitions, rules and workflows. Use `AGENTS.md` for Liquor Counter-specific instructions.
+- See [tests/README.md](tests/README.md) for QA utilities and fixture locations. Real supplier invoices and bank statements belong under `tests/fixtures/local/` and are Git-ignored.
 
 ### Permissions (`src/modules/permissions/`, Staff & Terminals → Access)
 
@@ -244,6 +246,7 @@ Things that are easy to get wrong:
 
 ### Frontend look (app-wide)
 
+- Design for Indian liquor-shop and bar staff with varied reading confidence and digital experience. Use short, familiar action labels, keep the amount to collect and change to give clearly labelled, and show where to go next when an action fails. Use the existing English, Hindi and Telugu support for new staff-facing labels. Check key workflows on narrow phones as well as desktop.
 - The whole app shares one palette, defined in `frontend/src/index.css` under `@theme`. The screens are written with Tailwind's `purple` and `gray` classes, so those ramps were **redefined**: `purple-*` is the brand green (primary buttons, active states, links), `gray-*` and `slate-*` are green-tinted neutrals, `blue-*` is a calm card-blue, `green-*`/`emerald-*` is the "good" green, `indigo-*`/`violet-*` alias the brand green. Do not look for purple on screen: changing the look means editing those ramps, not the screens.
 - The dark-mode overrides lower in `index.css` use the matching dark hex values (surface `#111c18`, background `#0a1310`, line `#253630`). `th` has one base style for every table (it sits in `@layer base`, so a screen's own classes still win).
 - Fonts are self-hosted (`@fontsource`): Hanken Grotesk for text, Bricolage Grotesque (`font-display`) for headings and big figures, IBM Plex Mono for codes.

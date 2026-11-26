@@ -29,7 +29,7 @@ export function ResetPassword() {
   };
 
   return (
-    <AuthShell id="resetPage" heading="Choose a new password" text="Pick something you will remember and nobody else can guess. At least 8 characters.">
+    <AuthShell id="resetPage" heading="Choose a new password" text="Use at least 8 characters.">
       <h1>Choose a new password</h1>
       {!token ? (
         <>

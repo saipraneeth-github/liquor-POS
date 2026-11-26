@@ -1,0 +1,189 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Liquor Counter · Design samples</title>
+<style>
+:root{font:16px/1.5 "Segoe UI",Arial,sans-serif;color:#242925;background:#f0f0ec;color-scheme:light}
+*{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}a{color:inherit}button:focus-visible,input:focus-visible{outline:3px solid #b66d31;outline-offset:3px}button:disabled{cursor:default;opacity:.55}button, input{-webkit-tap-highlight-color:transparent}
+.gallery{max-width:1504px;margin:auto;padding:40px 40px 32px}.intro{display:flex;justify-content:space-between;align-items:end;gap:24px;margin-bottom:24px}.intro h1{margin:0;font-size:clamp(28px,4vw,44px);font-weight:600;line-height:1.1;letter-spacing:-.035em}.intro p{margin:8px 0 0;color:#525b53}.device,.styles{display:flex;flex-wrap:wrap;gap:8px}.gallery button{border:1px solid #cbd0c8;background:#fafbf8;color:#2d3930;border-radius:8px;padding:8px 14px;min-height:44px}.gallery button[aria-pressed="true"]{background:#283931;color:#fff;border-color:#283931}.chooser{display:flex;justify-content:space-between;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.description{font-size:14px;color:#4f5951;margin:0 0 16px}.stage{width:100%;margin:0 auto;font-family:"Segoe UI",Arial,sans-serif}.stage[data-phone="true"]{width:min(100%,390px)}.caption{margin:16px 0 0;color:#525b53;font-size:14px}
+.sample{--page:#f5f5ee;--paper:#fffef9;--raised:#ecefe7;--ink:#232c26;--muted:#505c52;--line:#d7dbd0;--accent:#225b43;--accentText:#fff;--tint:#e0eee3;--rail:#17362a;--railText:#f5f7f3;--alert:#922c28;--alertBg:#f8e7e3;background:var(--page);color:var(--ink);border:1px solid var(--line);border-radius:16px;overflow:hidden;container-type:inline-size;min-width:0}
+.sample[data-variant="shelf"]{--page:#edf3f5;--paper:#fbfeff;--raised:#e6eef2;--ink:#182d37;--muted:#435b67;--line:#cbdbe3;--accent:#174e68;--tint:#daebf3;--rail:#193746;--railText:#f3f8fa}
+.sample[data-variant="quick"]{--page:#151a18;--paper:#202723;--raised:#2c352f;--ink:#f1f6f2;--muted:#becbc2;--line:#47554c;--accent:#aee0bd;--accentText:#132a19;--tint:#294735;--rail:#1b211e;--railText:#f1f6f2;--alert:#ffd0c9;--alertBg:#502b28;color-scheme:dark}
+.sample[data-variant="floor"]{--page:#f4f0ea;--paper:#fffdf8;--raised:#f0e8dd;--ink:#2d251e;--muted:#61544a;--line:#ded2c5;--accent:#863e29;--tint:#f4e3d8;--rail:#473529;--railText:#fff9ef}
+.top{min-height:64px;padding:12px 24px;display:flex;align-items:center;gap:16px;justify-content:space-between;background:var(--rail);color:var(--railText)}.brand{display:flex;align-items:center;gap:12px;white-space:nowrap;font-size:20px;font-weight:600;letter-spacing:-.02em}.brand-mark{display:block;width:20px;height:20px;border:1px solid currentColor;border-radius:4px;position:relative}.brand-mark:after{content:"";position:absolute;inset:4px 4px 5px;border-bottom:1px solid currentColor;border-top:1px solid currentColor}.location{font-size:13px}.bar-status{display:flex;align-items:center;gap:16px}.shift{font-size:13px;padding-left:12px;border-left:1px solid #ffffff52}
+.shell{display:grid;grid-template-columns:152px minmax(0,1fr);min-height:580px}.sample[data-variant="quick"] .shell,.sample[data-variant="floor"] .shell{grid-template-columns:minmax(0,1fr)}
+.rail{background:var(--paper);border-right:1px solid var(--line);padding:16px 12px;display:grid;align-content:start;gap:4px}.rail button,.tabs button{min-height:44px;padding:8px 12px;border:0;background:none;color:var(--muted);text-align:left;border-radius:8px;font-weight:600}.rail button[aria-pressed="true"],.tabs button[aria-pressed="true"]{background:var(--tint);color:var(--ink)}.rail button:hover,.tabs button:hover{background:var(--raised)}.tabs{display:none}.sample[data-variant="quick"] .rail,.sample[data-variant="floor"] .rail{display:none}.sample[data-variant="quick"] .tabs,.sample[data-variant="floor"] .tabs{display:flex}
+.work{min-width:0;padding:20px 24px 24px}.heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.heading h2{font-size:clamp(24px,3.5cqw,32px);letter-spacing:-.025em;line-height:1.16;font-weight:600;margin:0}.tabs{gap:4px;flex-wrap:wrap;padding:0 0 12px;margin-bottom:12px;border-bottom:1px solid var(--line)}.price-list{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:13px;color:var(--muted)}.price-list span{margin-right:4px}
+.sample button:not(.nav-button),.sample input{color:var(--ink);border:1px solid var(--line);background:var(--paper);border-radius:8px;min-height:40px;padding:8px 12px}.sample button:not(.nav-button):hover{background:var(--raised)}.sample button[aria-pressed="true"]:not(.nav-button){color:var(--accentText);background:var(--accent);border-color:var(--accent)}.price-list button{font-size:13px}
+.bill-layout{display:grid;gap:16px;grid-template-columns:minmax(0,1.36fr) minmax(270px,1fr);grid-template-areas:"catalog bill" "catalog settle";align-items:start}
+.catalog{grid-area:catalog;min-width:0}.bill{grid-area:bill}.settle{grid-area:settle}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:12px;min-width:0;overflow:hidden}
+.panel-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}.panel-head h3{font-size:17px;font-weight:600;margin:0}.panel-head small,.muted{color:var(--muted);font-size:13px}
+.find{display:grid;gap:4px;padding:12px 16px}.find label{font-size:13px;font-weight:600}.find input{width:100%;min-width:0;padding:8px 12px}
+.sample input::placeholder{color:var(--muted);opacity:1}
+.list-head{display:grid;grid-template-columns:1fr auto;padding:8px 16px;background:var(--raised);color:var(--muted);font-size:13px;border-block:1px solid var(--line)}
+.products{display:grid;gap:0}.sample button.product{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;text-align:left;align-items:center;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:12px 16px}.product:last-child{border-bottom:0}.product strong{font-size:15px;font-weight:600}.product span{font-variant-numeric:tabular-nums}.product .price{font-size:17px;font-weight:600}.product small{display:block;font-size:13px;color:var(--muted)}.add-mark{margin-left:8px;display:inline-block;min-width:20px;text-align:center;border:1px solid var(--line);border-radius:4px}
+.sample[data-variant="shelf"] .products{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:8px 12px 12px}.sample[data-variant="shelf"] .list-head{display:none}.sample[data-variant="shelf"] .product{grid-template-columns:minmax(0,1fr);align-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;min-height:120px;padding:12px}.sample[data-variant="shelf"] .product .price{display:flex;justify-content:space-between;font-size:22px}.sample[data-variant="shelf"] .product .add-mark{font-size:15px}.sample[data-variant="shelf"] .bill-layout{grid-template-columns:minmax(0,1.55fr) minmax(270px,1fr)}
+.lines{min-height:0;padding:0 16px}.line{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:4px 8px;padding:12px 0;border-bottom:1px solid var(--line)}.line:last-child{border:0}.line b{font-weight:600}.line-price{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}.line .qty{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}.sample .qty button{min-height:32px;min-width:32px;padding:2px 4px}.sample[data-variant="receipt"] .bill .panel-head{border-bottom-style:dashed}.sample[data-variant="receipt"] .line{border-bottom-style:dashed}.sample[data-variant="receipt"] .line:last-child{border:0}
+.settle{padding:12px;display:grid;gap:12px}.money{font-variant-numeric:tabular-nums}.due{display:grid;gap:2px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--raised)}.due span,.change span{font-size:13px;font-weight:600}.due strong{font-size:30px;font-weight:600;line-height:1.15;letter-spacing:-.035em}.payments{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.sample .payments button{padding:4px 2px;min-width:0;font-size:13px}.cash{display:grid;gap:8px}.cash label{display:grid;grid-template-columns:1fr minmax(80px,112px);align-items:center;gap:8px;font-size:14px;font-weight:600}.cash input{text-align:right;min-width:0;width:100%;font-variant-numeric:tabular-nums;padding-inline:8px}.change{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--tint)}.change strong{font-size:20px;font-weight:600}.change[data-short="true"]{color:var(--alert);background:var(--alertBg)}.sample button.save{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:48px;background:var(--accent);color:var(--accentText);border-color:var(--accent);font-weight:600}.sample button.save:hover{background:var(--accent);filter:brightness(.92)}.payment-note{color:var(--muted);font-size:14px;margin:0}
+.sample[data-variant="quick"] .bill-layout{grid-template-columns:minmax(290px,1fr) minmax(0,1.36fr);grid-template-areas:"settle catalog" "bill catalog"}.sample[data-variant="quick"] .due{background:var(--tint)}.sample[data-variant="quick"] .due strong{font-size:38px}
+.sample[data-variant="floor"] .bill-layout{grid-template-columns:minmax(0,1.24fr) minmax(0,1fr);grid-template-areas:"catalog bill" "settle settle";align-items:stretch}.sample[data-variant="floor"] .settle{grid-template-columns:minmax(130px,.9fr) minmax(176px,1.15fr) minmax(140px,1fr) minmax(100px,.72fr);align-items:center}.sample[data-variant="floor"] .settle .cash{align-self:stretch;align-content:center}.sample[data-variant="floor"] .cash label{grid-template-columns:1fr auto}.sample[data-variant="floor"] .due{height:100%;align-content:center}
+.notice{display:none;padding:8px 12px;border-radius:8px;background:var(--tint);font-size:14px}.notice:empty{display:none}.notice:not(:empty){display:block;margin-bottom:12px}
+.stock{width:100%;border-collapse:collapse}.stock th,.stock td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}.stock th{background:var(--raised);font-size:13px;color:var(--muted);font-weight:600}.stock td:nth-child(n+2),.stock th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}.stock tr:last-child td{border:0}.stock small{color:var(--muted);display:block}
+.tables{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.table-card{padding:16px}.table-card h3{margin:0;font-size:18px;font-weight:600}.table-card p{margin:4px 0 12px;color:var(--muted)}.table-card strong{font-variant-numeric:tabular-nums}.table-state{display:inline-block;font-size:13px;padding:4px 8px;border-radius:6px;background:var(--raised);color:var(--ink)}.table-state[data-used="true"]{background:var(--tint)}
+@container(max-width:980px){.shell{grid-template-columns:minmax(0,1fr)}.rail{display:none}.tabs{display:flex}}
+@container(max-width:760px){.sample[data-variant="floor"] .settle{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container(max-width:620px){
+ .top{padding:8px 12px;gap:8px;min-height:52px}.brand{font-size:17px;gap:8px}.brand-mark{width:16px;height:16px}.brand-mark:after{inset:3px}.bar-status{gap:8px}.location{font-size:12px}.shift{display:none}.work{padding:12px}
+ .sample .bill-layout,.sample[data-variant] .bill-layout{grid-template-columns:minmax(0,1fr);grid-template-areas:"catalog" "bill" "settle";gap:12px}
+ .sample[data-variant="quick"] .bill-layout{grid-template-areas:"settle" "bill" "catalog"}.sample[data-variant="floor"] .settle{grid-template-columns:minmax(0,1fr)}
+ .sample button.product{min-height:52px}.sample[data-variant="shelf"] .product{min-height:120px}.heading{flex-wrap:wrap;gap:8px;margin-bottom:12px}.heading h2{font-size:24px}.tabs{padding-bottom:8px;margin-bottom:8px}
+ .tables{grid-template-columns:minmax(0,1fr)}.stock td,.stock th{padding:8px}.shell{min-height:0}
+}
+@media(max-width:600px){.gallery{padding:20px 12px}.intro{display:block;margin-bottom:16px}.chooser{gap:8px}.gallery button{padding-inline:10px}}
+@media(prefers-reduced-motion:no-preference){.sample button,.gallery button{transition:background-color .14s ease,color .14s ease,border-color .14s ease}}
+</style>
+</head>
+<body>
+<main class="gallery">
+  <header class="intro"><div><h1>Liquor Counter design samples</h1><p>Compare the same till, stock list and table floor in four layouts.</p></div></header>
+  <div class="chooser">
+    <div class="styles" role="group" aria-label="Design samples">
+      <button type="button" data-style="receipt" aria-pressed="true">Receipt Counter</button>
+      <button type="button" data-style="shelf" aria-pressed="false">Bottle Shelf</button>
+      <button type="button" data-style="quick" aria-pressed="false">Quick Bill</button>
+      <button type="button" data-style="floor" aria-pressed="false">Shop &amp; Bar</button>
+    </div>
+    <div class="device" role="group" aria-label="Preview size"><button type="button" data-phone="false" aria-pressed="true">Desktop</button><button type="button" data-phone="true" aria-pressed="false">Phone</button></div>
+  </div>
+  <p class="description" id="description"></p>
+  <div class="stage" id="stage" data-phone="false"></div>
+  <p class="caption">Demo data. Select a product to add it, change the cash received, or try Stock and Tables.</p>
+</main>
+<script>
+'use strict';
+const designs={
+  receipt:'A familiar receipt alongside the product list. Designed for keyboard and barcode use.',
+  shelf:'Large product tiles, bottle sizes and prices. Designed for a touch counter.',
+  quick:'Payment is the first thing you see. Dark surfaces suit an evening counter.',
+  floor:'The bill and product list sit above one payment bar. Designed for a shared shop and bar counter.'
+};
+const products=[
+  {id:'monk',name:'Old Monk XXX Rum',size:'750 ml',price:450,stock:24,janata:440},
+  {id:'kingfisher',name:'Kingfisher Premium',size:'650 ml',price:180,stock:36,janata:170},
+  {id:'stag',name:'Royal Stag Whisky',size:'375 ml',price:490,stock:12,janata:475},
+  {id:'magic',name:'Magic Moments Vodka',size:'180 ml',price:220,stock:18,janata:210},
+  {id:'signature',name:'Signature Whisky',size:'750 ml',price:1420,stock:8,janata:1400},
+  {id:'tuborg',name:'Tuborg Green',size:'650 ml',price:170,stock:20,janata:160}
+];
+const money=new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',minimumFractionDigits:2});
+let variant='receipt', phone=false, screen='Billing', janata=false, payment='Cash', received='1000', search='', saved='';
+let quantities={monk:1,kingfisher:2};
+const stage=document.getElementById('stage');
+const price=p=>janata?p.janata:p.price;
+const nav=()=>['Billing','Stock','Tables'].map(s=>'<button type="button" class="nav-button" data-screen="'+s+'" aria-pressed="'+(s===screen)+'">'+s+'</button>').join('');
+const amount=()=>products.reduce((n,p)=>n+(quantities[p.id]||0)*price(p),0);
+function catalog(){
+ return '<section class="panel catalog"><div class="panel-head"><h3>Products</h3><small>'+products.length+' items</small></div><div class="find"><label for="search">Find a product</label><input type="search" id="search" placeholder="Type product name or size"></div><div class="list-head"><span>Product</span><span>Price</span></div><div class="products" id="products"></div></section>';
+}
+function bill(){
+ const count=Object.values(quantities).reduce((a,b)=>a+b,0);
+ const lines=products.filter(p=>quantities[p.id]).map(p=>'<div class="line"><b>'+p.name+'</b><b class="line-price">'+money.format(price(p)*quantities[p.id])+'</b><div class="qty"><span>'+p.size+'</span><button type="button" data-step="-1" data-id="'+p.id+'" aria-label="Remove one '+p.name+'">−</button><span>'+quantities[p.id]+'</span><button type="button" data-step="1" data-id="'+p.id+'" aria-label="Add one '+p.name+'">+</button></div></div>').join('');
+ return '<section class="panel bill" id="bill"><div class="panel-head"><h3>Bill items</h3><small>'+count+' '+(count===1?'item':'items')+'</small></div><div class="lines">'+(lines||'<p class="muted">No items added</p>')+'</div></section>';
+}
+function settlement(){
+ const cash=payment==='Cash';
+ const total=amount();
+ return '<section class="panel settle" id="settle" aria-label="Payment"><div class="due"><span>Amount to collect</span><strong class="money">'+money.format(total)+'</strong></div><div class="payments" role="group" aria-label="Payment method">'+['Cash','UPI','Card','Khata'].map(p=>'<button type="button" data-pay="'+p+'" aria-pressed="'+(payment===p)+'">'+p+'</button>').join('')+'</div>'+(cash?'<div class="cash"><label for="cashReceived">Cash received <input id="cashReceived" type="number" min="0" step="1" inputmode="numeric"></label><div class="change" id="change" aria-live="polite"></div></div>':'<p class="payment-note">'+(payment==='Khata'?'Add the sale to the customer’s account.':'Check payment in your '+(payment==='UPI'?'UPI app.':'card machine.'))+'</p>')+'<button class="save" id="save" type="button"><span>Save bill</span><span class="money">'+money.format(total)+'</span></button></section>';
+}
+function showProducts(){
+ const grid=document.getElementById('products');
+ if(!grid)return;
+ const visible=products.filter(p=>(p.name+' '+p.size).toLowerCase().includes(search.toLowerCase().trim()));
+ grid.innerHTML=visible.map(p=>'<button type="button" class="product" data-product="'+p.id+'" aria-label="Add '+p.name+' '+p.size+'"><span><strong>'+p.name+'</strong><small>'+p.size+' · '+p.stock+' in stock</small></span><span class="price">'+money.format(price(p))+'<span class="add-mark" aria-hidden="true">+</span></span></button>').join('')||'<p class="muted" style="padding:0 16px">No products match your search</p>';
+}
+function change(){
+ const text=document.getElementById('change');
+ const save=document.getElementById('save');
+ if(!save)return;
+ const actual=received===''?amount():Number(received);
+ const short=payment==='Cash'&&actual<amount();
+ save.disabled=amount()===0||short;
+ if(text){
+   text.dataset.short=String(short);
+   const delta=actual-amount();
+   text.innerHTML='<span>'+(short?'Cash still needed':delta===0?'No change needed':'Change to give')+'</span><strong class="money">'+money.format(Math.abs(delta))+'</strong>';
+ }
+}
+function stock(){
+ return '<section class="panel"><table class="stock"><thead><tr><th>Product</th><th>Size</th><th>In stock</th></tr></thead><tbody>'+products.map(p=>'<tr><td>'+p.name+'</td><td>'+p.size+'</td><td>'+p.stock+' bottles</td></tr>').join('')+'</tbody></table></section>';
+}
+function tables(){
+ return '<div class="tables">'+[['Table 1','4 seats','In use','₹810.00'],['Table 2','4 seats','Free',''],['Table 3','6 seats','Free',''],['Bar counter','3 seats','In use','₹450.00']].map(t=>'<article class="panel table-card"><h3>'+t[0]+'</h3><p>'+t[1]+'</p><span data-used="'+(t[2]==='In use')+'" class="table-state">'+t[2]+'</span> '+(t[3]?'<strong>'+t[3]+'</strong>':'')+'</article>').join('')+'</div>';
+}
+function render(){
+ document.getElementById('description').textContent=designs[variant];
+ stage.dataset.phone=String(phone);
+ document.querySelectorAll('[data-style]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.style===variant)));
+ document.querySelectorAll('button[data-phone]').forEach(b=>b.setAttribute('aria-pressed',String(String(phone)===b.dataset.phone)));
+ const list=screen==='Billing'?'<div class="price-list"><span>Price list</span><button type="button" data-type="walkin" aria-pressed="'+(!janata)+'">Walk-in</button><button type="button" data-type="janata" aria-pressed="'+janata+'">Janata</button></div>':'';
+ stage.innerHTML='<article class="sample" data-variant="'+variant+'" aria-label="Liquor Counter '+screen+' demo"><header class="top"><div class="brand"><span class="brand-mark" aria-hidden="true"></span>Liquor Counter</div><div class="bar-status"><span class="location">Main Counter · Hyderabad</span><span class="shift">Shift open</span></div></header><div class="shell"><nav class="rail" aria-label="Shop pages">'+nav()+'</nav><div class="work"><nav class="tabs" aria-label="Shop pages">'+nav()+'</nav><header class="heading"><h2>'+screen+'</h2>'+list+'</header><div class="notice" id="notice" role="status"></div>'+(screen==='Billing'?'<div class="bill-layout">'+(variant==='quick'?settlement()+bill()+catalog():catalog()+bill()+settlement())+'</div>':screen==='Stock'?stock():tables())+'</div></div></article>';
+ const searchField=document.getElementById('search');
+ if(searchField)searchField.value=search;
+ document.getElementById('notice').textContent=saved;
+ showProducts();
+ restoreCash();
+}
+function restoreCash(){
+ const input=document.getElementById('cashReceived');
+ if(input)input.value=received;
+ change();
+}
+function refreshPayment(){
+ document.getElementById('settle').outerHTML=settlement();
+ restoreCash();
+}
+document.querySelector('.chooser').addEventListener('click',event=>{
+ const b=event.target.closest('button');
+ if(!b)return;
+ if(b.dataset.style)variant=b.dataset.style;
+ if(b.dataset.phone!==undefined)phone=b.dataset.phone==='true';
+ render();
+});
+stage.addEventListener('input',event=>{
+ if(event.target.id==='search'){search=event.target.value;showProducts();}
+ if(event.target.id==='cashReceived'){received=event.target.value;change();}
+});
+stage.addEventListener('click',event=>{
+ const b=event.target.closest('button');
+ if(!b)return;
+ if(b.dataset.screen){
+   const selector=b.closest('.rail')?'.rail':'.tabs';
+   screen=b.dataset.screen;saved='';render();
+   stage.querySelector(selector+' [aria-pressed="true"]')?.focus();
+ } else if(b.dataset.type){
+   janata=b.dataset.type==='janata';saved='';render();
+   stage.querySelector('[data-type="'+b.dataset.type+'"]')?.focus();
+ } else if(b.dataset.pay){
+   payment=b.dataset.pay;refreshPayment();
+   stage.querySelector('[data-pay="'+payment+'"]')?.focus();
+ } else if(b.dataset.product||b.dataset.step){
+   const id=b.dataset.product||b.dataset.id;
+   quantities[id]=Math.max(0,(quantities[id]||0)+Number(b.dataset.step||1));
+   saved='';document.getElementById('notice').textContent='';
+   document.getElementById('bill').outerHTML=bill();refreshPayment();
+   if(b.dataset.step){
+     const target=stage.querySelector('.qty [data-id="'+id+'"][data-step="'+b.dataset.step+'"]')||stage.querySelector('[data-product="'+id+'"]');
+     target?.focus();
+   }
+ } else if(b.id==='save'){
+   saved='Demo bill saved · '+money.format(amount());
+   document.getElementById('notice').textContent=saved;
+ }
+});
+render();
+</script>
+</body>
+</html>

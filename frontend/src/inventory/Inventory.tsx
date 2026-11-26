@@ -120,8 +120,8 @@ export function Inventory() {
   const loadBreakage = useCallback(async () => {
     if (!branchId) return;
     try {
-      const data = await api.get<BreakageRow[]>('/compliance/breakage/' + branchId);
-      setBreakLog(data || []);
+      const data = await api.get<{ entries: BreakageRow[] }>('/compliance/breakage/' + branchId);
+      setBreakLog(data.entries);
     } catch {
       // quiet fail
     }
@@ -175,7 +175,7 @@ export function Inventory() {
     setConfirmModal({
       title: 'Delete Complete Store Inventory?',
       message:
-        'Are you sure you want to delete all current stock, breakage logs, and bills for this store? All bottle counts will be reset to 0 so you can inward fresh stock from invoices.',
+        'This resets bottle counts and deletes supplier invoices, breakage logs, stock audit history, and recorded purchase costs for this outlet. Sales bills are kept.',
       onOk: async () => {
         setConfirmModal(null);
         setIsClearing(true);
@@ -183,7 +183,7 @@ export function Inventory() {
           const res = await api.delete<{ success: boolean; deletedStock: number; deletedInvoices: number }>(
             `/inventory/stock/${branchId}/clear`
           );
-          showToast(`✓ Inventory cleared: ${res.deletedStock} stock lines and ${res.deletedInvoices} bills removed.`, 'success');
+          showToast(`✓ Inventory cleared: ${res.deletedStock} stock lines and ${res.deletedInvoices} supplier invoices removed.`, 'success');
           await loadStock();
           window.dispatchEvent(new CustomEvent('app:stock_updated', { detail: { branchId } }));
         } catch (err: any) {
@@ -287,9 +287,9 @@ export function Inventory() {
           <div className="bg-white dark:bg-slate-900 rounded-xl border dark:border-slate-800 shadow-sm">
             {/* Streamlined Single-Row Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 border-b dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/40">
-              <div className="flex items-center gap-2 flex-1 min-w-[260px]">
+              <div className="flex items-center gap-2 flex-1 min-w-0 basis-full sm:basis-auto sm:min-w-[260px]">
                 <input
-                  className="flex-1 p-2 border dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400"
+                  className="min-w-0 flex-1 p-2 border dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 placeholder-gray-400"
                   placeholder="Search product or brand…"
                   value={stockSearch}
                   onChange={(e) => setStockSearch(e.target.value)}
@@ -694,7 +694,7 @@ export function Inventory() {
                 className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-bold cursor-pointer"
                 onClick={confirmModal.onOk}
               >
-                Delete Everything
+                Reset this outlet’s stock
               </button>
             </div>
           </div>

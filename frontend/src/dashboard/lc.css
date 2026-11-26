@@ -173,20 +173,23 @@
 .lc-dot.bad { background: #F2796B; }
 .lc-dot.wait { background: #9DB7AC; }
 .lc-login-form-wrap { padding: 40px 32px; display: flex; align-items: center; justify-content: center; position: relative; }
-.lc-theme-btn { position: absolute; top: 16px; right: 16px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 7px 12px; font-weight: 600; font-size: 12px; }
+.lc-auth-tools { position: absolute; top: 16px; right: 16px; display: flex; gap: 8px; align-items: center; }
+.lc-auth-tools select, .lc-theme-btn { min-height: 40px; }
+.lc-theme-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 7px 12px; font-weight: 600; font-size: 12px; }
 .lc-login-form { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; }
 .lc-login-form h1 { margin: 0; font: 700 28px/1.1 var(--font-display); letter-spacing: -.015em; }
 .lc-login-form .lead { margin: -8px 0 0; color: var(--muted); }
 .lc-field { display: flex; flex-direction: column; gap: 6px; }
-.lc-field label { font-weight: 600; font-size: 13px; }
+.lc-field label { font-weight: 600; font-size: 14px; }
 .lc-input { display: flex; align-items: center; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
 .lc-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 /* the app's global dark stylesheet restyles every <input>; this one is deliberately transparent inside its own box */
 .lc .lc-input input { flex: 1; min-width: 0; border: 0 !important; background: transparent !important; color: var(--text) !important; padding: 12px 14px; outline: none !important; font-size: 15px; border-radius: 10px; }
 .lc .lc-input input::placeholder { color: var(--muted) !important; }
-.lc-input button { border: 0; background: transparent; color: var(--muted); font-weight: 700; font-size: 12px; padding: 8px 12px; border-radius: 8px; }
+.lc-input button { border: 0; background: transparent; color: var(--muted); font-weight: 600; font-size: 14px; min-height: 44px; padding: 8px 12px; border-radius: 8px; }
 .lc-input button:hover { color: var(--text); }
-.lc-hint { font-size: 12px; color: var(--warn); display: flex; align-items: center; gap: 6px; min-height: 18px; }
+.lc-hint { font-size: 12px; color: var(--warn); display: flex; align-items: center; gap: 6px; }
+.lc-hint:empty { display: none; }
 .lc-alert { padding: 10px 12px; border-radius: 10px; font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
 .lc-alert svg { flex: none; margin-top: 2px; }
 .lc-alert.bad { background: var(--bad-soft); color: var(--bad); }
@@ -228,8 +231,10 @@
   .lc-btn-big { width: 100%; }
   .lc-hbar { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; }
   .lc-hbar .track { grid-column: 1 / -1; order: 3; }
-  .lc-login-brand { padding: 24px 20px; min-height: 240px; }
-  .lc-login-brand h2 { font-size: 28px; }
-  .lc-login-form-wrap { padding: 56px 20px 32px; }
+  .lc-login-brand { padding: 16px 20px; min-height: auto; gap: 12px; }
+  .lc-login-brand h2 { font-size: 24px; max-width: none; }
+  .lc-login-brand p { margin-top: 4px; }
+  .lc-shelf, .lc-login-default-intro { display: none; }
+  .lc-login-form-wrap { padding: 64px 20px 32px; }
 }
 @media (prefers-reduced-motion: reduce) { .lc *, .lc *::before, .lc *::after { animation: none !important; transition: none !important; } }

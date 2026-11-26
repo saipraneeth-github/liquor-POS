@@ -173,7 +173,7 @@ The items listed as open above (payment gateway, billing reminders, forgot passw
 
 # Phase 4 — Payment gateway and the remaining functionality
 
-All external values live in `.env` (template in `.env.example`, walkthrough in `INTEGRATIONS.md`); the app runs without any of them
+All external values live in `.env` (template in `.env.example`, walkthrough in [the integrations guide](../INTEGRATIONS.md)); the app runs without any of them
 (built-in test gateway, e-mail stored in an outbox) and the Super Admin console shows what is still missing.
 
 ## Checklist

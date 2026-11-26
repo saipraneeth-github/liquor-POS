@@ -15,6 +15,7 @@ export const PAGE_FEATURE: Record<string, string> = {
 
 /** Pages opened by a named permission rather than by rank: anyone who holds it can open the page, anyone who does not cannot. */
 export const PAGE_PERMISSION: Record<string, string> = {
+  '/invoices': 'cost.view',
   '/accounting': 'accounting.view',
   '/bank': 'bank.reconcile',
   '/closing': 'day.close',

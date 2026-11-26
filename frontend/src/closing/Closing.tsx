@@ -356,7 +356,7 @@ export function Closing() {
             Daily Closing &amp; Sales Reconciliation
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Auto-calculated sales breakdown from bills today. Review, verify, or adjust Cash, UPI, and Card before locking.
+            Check amounts before closing the day. Count the cash in the drawer.
           </p>
         </div>
 
@@ -551,7 +551,7 @@ export function Closing() {
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-gray-500 font-medium">Drawer Diff:</span>
+                <span className="text-gray-500 font-medium">Cash difference</span>
                 <span
                   className={`font-mono font-bold text-xs px-2 py-0.5 rounded ${
                     isBalanced

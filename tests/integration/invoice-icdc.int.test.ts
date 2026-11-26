@@ -1,5 +1,5 @@
 /**
- * End-to-end on a REAL Telangana ICDC challan (Testing_invoices/ICDCB.pdf): upload → stored depot-ledger figures →
+ * End-to-end on a real Telangana ICDC challan: upload → stored depot-ledger figures →
  * the guards that stop a wrong bottle size or a broken total from reaching stock and the books.
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -8,8 +8,9 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { setupIntegration, type IntegrationContext } from './helpers.js';
 import { TELANGANA_ICDC_PRODUCTS } from '../../src/db/data/telangana-products.js';
+import { supplierInvoicesDir } from '../fixtures/paths.mjs';
 
-const FILE = join(process.cwd(), 'Testing_invoices', 'ICDCB.pdf');
+const FILE = join(supplierInvoicesDir, 'ICDCB.pdf');
 let ctx: IntegrationContext;
 let productByKey: Map<string, string>;     // "code/ml" → product id
 

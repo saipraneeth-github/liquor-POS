@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
+import { supplierInvoicesDir } from '../fixtures/paths.mjs';
 
 const require = createRequire(import.meta.url);
 const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -10,7 +11,7 @@ function standardFontDataUrl() {
 }
 
 async function dumpItems(filename) {
-  let buf = fs.readFileSync('testing_invoices/' + filename);
+  let buf = fs.readFileSync(path.join(supplierInvoicesDir, filename));
   const pdfIdx = buf.indexOf(Buffer.from('%PDF-'));
   if (pdfIdx > 0) buf = buf.subarray(pdfIdx);
 

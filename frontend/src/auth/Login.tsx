@@ -6,6 +6,7 @@ import { useAuth, type User } from './AuthProvider';
 import { useTheme } from '../context/ThemeContext';
 import { errorMessage } from '../lib/print';
 import { Mark, Shelf } from './AuthShell';
+import { LanguageSwitcher } from '../i18n';
 
 // Demo accounts (one-click sign-in, prefilled credentials) exist only for local dev and deliberate demo
 // deployments. A production build must never advertise known logins, so it needs an explicit opt-in.
@@ -26,6 +27,7 @@ type Problem =
 const AlertIcon = (
   <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /><path d="M8 6v4M8 11.6v.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
 );
+
 
 export function Login() {
   const remembered = read(EMAIL_KEY);
@@ -124,28 +126,30 @@ export function Login() {
       <div className="lc-login">
         <div className="lc-login-brand">
           <div className="lc-brandmark"><Mark /><div><b>Liquor Counter</b><small>Billing, stock and books</small></div></div>
-          <div>
-            <h2>{workplace || 'Counter, stock and books in one place'}</h2>
-            <p>{workplace ? 'Welcome back. Sign in to start your shift.' : 'Sign in to start your shift.'}</p>
+          <div className={workplace ? undefined : 'lc-login-default-intro'}>
+            <h2>{workplace || 'Sign in to your shop'}</h2>
+            <p>Make bills and check stock</p>
           </div>
           <div className="lc-brand-foot">
             <span className="lc-chip" id="loginServerStatus" data-server={server}>
               <span className={`lc-dot ${server === 'down' ? 'bad' : server === 'checking' ? 'wait' : ''}`} />
-              {server === 'up' ? 'Server reachable' : server === 'down' ? 'Server not reachable' : 'Checking the server'}
+              {server === 'up' ? 'Connection ready' : server === 'down' ? 'Connection unavailable' : 'Checking connection'}
             </span>
-            <span className="lc-chip">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
           </div>
           <Shelf />
         </div>
 
         <div className="lc-login-form-wrap">
-          <button id="loginThemeBtn" type="button" className="lc-theme-btn" onClick={toggleTheme} aria-label="Toggle dark/light theme" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
-            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
-          </button>
+          <div className="lc-auth-tools">
+            <LanguageSwitcher />
+            <button id="loginThemeBtn" type="button" className="lc-theme-btn" onClick={toggleTheme} aria-label="Toggle dark/light theme" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
+          </div>
 
           <form className="lc-login-form" onSubmit={handleSubmit} noValidate>
             <h1>Sign in</h1>
-            <p className="lead">Use the email your manager gave you.</p>
+            <p className="lead">Enter your work email and password.</p>
 
             {(problem || shownError) && (
               <div id="loginError" role="alert" className={`lc-alert ${problem?.kind === 'down' ? 'warn' : 'bad'}`}>
@@ -161,7 +165,7 @@ export function Login() {
                     <><b>Too many wrong tries.</b> Try again in <span className="lc-num" id="loginLockTimer">{mmss}</span>, or ask your manager to reset your password.</>
                   )}
                   {problem?.kind === 'down' && (
-                    <><b>Cannot reach the server.</b> Check the shop router. Once you are signed in you can still ring bills; they send when the connection returns.</>
+                    <>Could not connect. Check your internet and try again.</>
                   )}
                   {problem?.kind === 'other' && problem.message}
                   {!problem && shownError}

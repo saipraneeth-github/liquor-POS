@@ -318,16 +318,30 @@ export function detectMapping(rows: string[][], dayFirst = true): MappingResult 
 const OPENING_RE = /\b(opening\s*bal(ance)?|balance\s*b\s*\/\s*f|brought\s*forward)\b/i;
 const CLOSING_RE = /\b(closing\s*bal(ance)?|balance\s*c\s*\/\s*f|carried\s*forward)\b/i;
 
-/** Opening / closing balance printed on the statement outside the transaction table, if any. */
-export function scanBalanceHints(rows: string[][]): BalanceHints {
+function datedBalanceHint(row: string[], mapping: ColumnMapping): 'opening' | 'closing' | null {
+  const { narration, balance, debit, credit, amount } = mapping;
+  if (narration === undefined || balance === undefined || !parseMoney(row[balance])) return null;
+  if ([debit, credit, amount].some(index => index !== undefined && index !== balance && parseMoney(row[index]))) return null;
+  const label = (row[narration] ?? '').trim();
+  if (/^(opening\s*bal(?:ance)?|balance\s*b\s*\/\s*f|brought\s*forward)$/i.test(label)) return 'opening';
+  if (/^(closing\s*bal(?:ance)?|balance\s*c\s*\/\s*f|carried\s*forward)$/i.test(label)) return 'closing';
+  return null;
+}
+
+/** Opening / closing balance in a summary row, including dated rows with only a balance. */
+export function scanBalanceHints(rows: string[][], mapping?: ColumnMapping): BalanceHints {
   const hints: BalanceHints = { opening: null, closing: null };
   for (const row of rows) {
     const text = row.join(' ');
     const isOpening = OPENING_RE.test(text);
     const isClosing = CLOSING_RE.test(text);
     if (!isOpening && !isClosing) continue;
-    if (row.some((c) => parseBankDate(c) !== null && !looksLikeMoney(c))) continue;   // a transaction row, not a summary
-    const amounts = row.filter(looksLikeMoney).map((c) => parseMoney(c)!);
+    const dated = row.some((c) => parseBankDate(c) !== null && !looksLikeMoney(c));
+    const datedKind = dated && mapping ? datedBalanceHint(row, mapping) : null;
+    if (dated && !datedKind) continue;
+    const amounts = datedKind && mapping?.balance !== undefined
+      ? [parseMoney(row[mapping.balance])!]
+      : row.filter(looksLikeMoney).map((c) => parseMoney(c)!);
     if (amounts.length === 0) continue;
     const t = amounts[amounts.length - 1];
     const signed = t.negative || t.side === 'DR' ? t.value.negated() : t.value;
@@ -373,6 +387,8 @@ export function rowsToLines(rows: string[][], headerRow: number, mapping: Column
       }
       continue;
     }
+
+    if (datedBalanceHint(r, mapping)) continue;
 
     let debit = D(0);
     let credit = D(0);

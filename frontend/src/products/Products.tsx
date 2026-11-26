@@ -249,7 +249,7 @@ export function Products() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-gray-200 dark:border-gray-700 gap-2 mb-4" role="tablist">
+      <div className="flex flex-wrap border-b border-gray-200 dark:border-gray-700 gap-2 mb-4" role="tablist">
         <button
           type="button"
           role="tab"

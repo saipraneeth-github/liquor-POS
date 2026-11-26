@@ -663,7 +663,7 @@ export function Counter() {
           <div className="state p-8 text-center text-gray-500">Loading Counter Stock for today...</div>
         ) : (
           <div>
-            <div className="pad row between p-4 flex justify-between items-center border-b">
+            <div className="pad row between p-4 flex flex-wrap justify-between items-center gap-3 border-b">
               <div>
                 <div className="h2 text-lg font-bold">
                   Counter Stock Sheet for {sheet.sheetDate}
@@ -674,7 +674,7 @@ export function Counter() {
                   {sheet.postedAt ? ` · posted ${new Date(sheet.postedAt).toLocaleString('en-IN')}` : ''}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {isDraft && (
                   <button
                     type="button"
@@ -1064,8 +1064,8 @@ export function Counter() {
             </div>
 
             {isDraft ? (
-              <div className="pad row p-4 flex items-center justify-between gap-3 border-t">
-                <div className="flex items-center gap-3">
+              <div className="pad row p-4 flex flex-wrap items-center justify-between gap-3 border-t">
+                <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="button"
                     className="btn-primary px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-medium"

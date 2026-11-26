@@ -109,7 +109,7 @@ export function PlatformMaster() {
                   {catEdits[c.id] !== undefined && catEdits[c.id] !== c.taxRate && <button type="button" className="text-xs font-semibold text-purple-600 cursor-pointer" onClick={() => void saveCat(c)}>Save</button>}
                 </div>
               ))}
-              <div className="flex items-center gap-2 border border-dashed rounded px-2 py-1 text-sm">
+              <div className="flex max-w-full flex-wrap items-center gap-2 border border-dashed rounded px-2 py-1 text-sm">
                 <input aria-label="New category name" placeholder="New category" className={`${input} w-36`} value={newCat.name} onChange={(e) => setNewCat({ ...newCat, name: e.target.value })} />
                 <input aria-label="New category GST %" className={`${input} w-16 text-right`} value={newCat.taxRate} onChange={(e) => setNewCat({ ...newCat, taxRate: e.target.value })} />%
                 <button type="button" disabled={newCat.name.trim().length < 2} className="text-xs font-semibold text-purple-600 disabled:opacity-40 cursor-pointer" onClick={() => void addCat()}>Add</button>
@@ -166,8 +166,8 @@ export function PlatformMaster() {
           <div className="pt-3 space-y-2">
             <p className="text-xs text-gray-500">One product per line: <code>category, name, brand, volumeMl, packQuantity, exciseCode, sku, state</code> (state defaults to TS). A product with the same state, excise code and size is refreshed; missing categories are created at 18% GST.</p>
             <textarea id="masterPaste" rows={6} className={`${input} w-full font-mono text-xs`} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="Whisky,Royal Stag 750ml,Royal Stag,750,12,5028,TS-5028-750,TS" />
-            <div className="flex items-center gap-3">
-              <input type="file" accept=".csv,.txt" aria-label="Upload a CSV" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setPaste(await f.text()); }} />
+            <div className="flex flex-wrap items-center gap-3">
+              <input type="file" className="min-w-0 max-w-full" accept=".csv,.txt" aria-label="Upload a CSV" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setPaste(await f.text()); }} />
               <button type="button" id="masterImport" disabled={busy || !paste.trim()} onClick={() => void importPaste()} className="px-3 py-1.5 rounded bg-purple-600 text-white text-sm font-semibold disabled:opacity-40 cursor-pointer">Import</button>
             </div>
           </div>

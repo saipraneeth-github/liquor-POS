@@ -3,7 +3,7 @@
  *
  * Nothing here is required to run the app: with no values set it uses safe stand-ins
  * (test payment gateway, e-mail written to the outbox table instead of sent).
- * Put the real values in `.env` (see `.env.example` and INTEGRATIONS.md) and restart.
+ * Put the real values in `.env` (see `.env.example` and docs/INTEGRATIONS.md) and restart.
  * Read lazily so tests can change process.env.
  */
 

@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { LanguageSwitcher } from '../i18n';
+
 
 export function Mark() {
   return (
@@ -43,15 +45,18 @@ export function AuthShell({ id, heading, text, children }: { id: string; heading
           <div className="lc-brandmark"><Mark /><div><b>Liquor Counter</b><small>Billing, stock and books</small></div></div>
           <div>
             <h2>{heading}</h2>
-            <p>{text}</p>
+            {text && <p>{text}</p>}
           </div>
           <Shelf />
         </div>
         {/* These forms are short, so centring them exactly makes them look pushed down: sit them a little above the middle */}
         <div className="lc-login-form-wrap" style={{ paddingBottom: 'max(32px, 14vh)' }}>
-          <button type="button" className="lc-theme-btn" onClick={toggleTheme} aria-label="Toggle dark/light theme" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
-            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
-          </button>
+          <div className="lc-auth-tools">
+            <LanguageSwitcher />
+            <button type="button" className="lc-theme-btn" onClick={toggleTheme} aria-label="Toggle dark/light theme" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
+              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
+          </div>
           <div className="lc-login-form">{children}</div>
         </div>
       </div>

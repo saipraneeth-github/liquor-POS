@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { inr } from '../components/ui';
+import { useDesktopViewport } from '../lib/useDesktopViewport';
+import { useOverlayFocus } from '../lib/useOverlayFocus';
 import { useNavigate } from 'react-router-dom';
 import { X, Plus, Minus, Trash2, RefreshCw, Search, Banknote, CreditCard, Smartphone, BookUser, ShoppingBag, Pause, Undo2, Keyboard, ChevronDown, Clock } from 'lucide-react';
 import {
@@ -104,11 +106,11 @@ const PAY_MODES = [
 
 const SHORTCUTS: [string, string][] = [
   ['F2', 'Search / scan'], ['Enter', 'Add the scanned or only matching item'], ['+  −  Del', 'More, fewer, remove (last touched line)'],
-  ['Alt + 1–4', 'Cash, UPI, Card, Khata'], ['F4', 'Park this bill'], ['F8', 'Parked bills'], ['F9', 'Checkout'], ['Esc', 'Clear search / close'],
+  ['Alt + 1–4', 'Cash, UPI, Card, Khata'], ['F4', 'Hold bill'], ['F8', 'Held bills'], ['F9', 'Checkout'], ['Esc', 'Clear search / close'],
 ];
 
 export function POS() {
-  const { user } = useAuth();
+  const { user, branches } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<LiquorCategoryKey>('ALL');
@@ -128,6 +130,7 @@ export function POS() {
   const [received, setReceived] = useState('');
   const [creditCustomer, setCreditCustomer] = useState<KhataCustomer | null>(null);
   const [isPaying, setIsPaying] = useState(false);
+  const desktop = useDesktopViewport();
   const [cartOpen, setCartOpen] = useState(false);              // phone: the cart is a sheet over the catalog
   const [activeKey, setActiveKey] = useState<string | null>(null);   // the line + / − / Delete act on
   const [undo, setUndo] = useState<{ label: string; lines: CartItem[] } | null>(null);
@@ -152,6 +155,12 @@ export function POS() {
     change?: number;
     offline: boolean;
   } | null>(null);
+
+  const mobileCartOpen = !desktop && cartOpen;
+  const cartPanelRef = useRef<HTMLElement>(null);
+  const cartCloseRef = useRef<HTMLButtonElement>(null);
+  const cartBarRef = useRef<HTMLButtonElement>(null);
+  useOverlayFocus(mobileCartOpen && !parkedOpen, cartPanelRef, cartCloseRef, cartBarRef, !checkoutModal);
 
   const sub = (user as any)?.sub ?? user?.id ?? '';
   const branchId = (user as any)?.branchId ?? '';
@@ -206,7 +215,7 @@ export function POS() {
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
   useEffect(() => { focusSearch(); }, [focusSearch]);
-  useEffect(() => { if (sub) setParked(loadParked(localStorage, sub)); }, [sub]);
+  useEffect(() => { setParked(sub && branchId ? loadParked(localStorage, sub, branchId) : []); }, [sub, branchId]);
 
   // ── Sale types (Walk-in, Janata, ...): each has its own price list and its own counter of bottles ──
   const [saleTypes, setSaleTypes] = useState<SaleType[]>([]);
@@ -499,24 +508,26 @@ export function POS() {
 
   // ── park / resume ─────────────────────────────────────────────────────────
   const parkCurrent = useCallback(() => {
-    if (cart.length === 0) return false;
+    if (cart.length === 0 || !branchId) return false;
     const bill: ParkedBill = {
-      id: genUUID(), parkedAt: new Date().toISOString(), saleTypeId, paymentMode, discountPercent: discountMode === 'PCT' ? discountPercent : '',
+      id: genUUID(), parkedAt: new Date().toISOString(), saleTypeId, paymentMode, branchId, discountMode, discountAmount, discountPercent,
       buyerGstin, customer: creditCustomer, items: itemCount, total: cartTotal.toFixed(2),
       lines: cart.map((c) => ({ productId: c.id, ...(c.servingId ? { servingId: c.servingId } : {}), qty: c.qty })),
     };
     const next = addParked(parked, bill);
     setParked(next);
-    saveParked(localStorage, sub, next);
+    saveParked(localStorage, sub, next, branchId);
     setCart([]);
     resetBillFields();
     cartClientRef.current = genUUID();
-    showToast('Bill parked. Resume it from “Parked” (F8).', 'success');
+    showToast('Bill on hold. Open Held bills to continue.', 'success');
     focusSearch();
     return true;
-  }, [cart, saleTypeId, paymentMode, discountMode, discountPercent, buyerGstin, creditCustomer, itemCount, cartTotal, parked, sub, focusSearch]);
+  }, [cart, saleTypeId, paymentMode, discountMode, discountPercent, discountAmount, branchId, buyerGstin, creditCustomer, itemCount, cartTotal, parked, sub, focusSearch]);
 
   const resume = (b: ParkedBill) => {
+    if (!branchId || (b.branchId && b.branchId !== branchId)) return;
+    if (!b.branchId && branches.length > 1 && !window.confirm('The original outlet was not recorded for this bill. Resume it in the currently selected outlet?')) return;
     if (cart.length > 0) parkCurrent();            // never lose the bill that is on the screen
     setParkedOpen(false);
     const known = b.saleTypeId === '' || saleTypes.some((t) => t.id === b.saleTypeId);
@@ -543,15 +554,21 @@ export function POS() {
       if (qty < l.qty) skipped++;
       lines.push({ ...p, qty, price: serving?.price ?? p.mrp, servingId: serving?.id, servingLabel: serving?.label });
     }
+    if (lines.length === 0) {
+      showToast('None of the parked items are available in this outlet. The bill is still parked.', 'error');
+      setResuming(null);
+      return;
+    }
     setCart(lines);
     setPaymentMode(resuming.paymentMode);
-    setDiscountMode('PCT');
+    setDiscountMode(resuming.discountMode ?? 'PCT');
     setDiscountPercent(resuming.discountPercent);
+    setDiscountAmount(resuming.discountAmount ?? '');
     setBuyerGstin(resuming.buyerGstin);
     setCreditCustomer(resuming.customer);
     const next = removeParked(parked, resuming.id);
     setParked(next);
-    saveParked(localStorage, sub, next);
+    saveParked(localStorage, sub, next, branchId);
     cartClientRef.current = genUUID();
     if (skipped > 0) showToast(`${skipped} item${skipped === 1 ? ' was' : 's were'} no longer available at the same quantity and ${skipped === 1 ? 'was' : 'were'} left out or reduced.`, 'info');
     setResuming(null);
@@ -649,7 +666,7 @@ export function POS() {
       recordSale(localStorage, branchId, soldIds);
       setRecentTick((n) => n + 1);
       cartClientRef.current = genUUID();
-      setCheckoutModal({ title: 'Bill Generated', billId: data.id, billNumber: data.billNumber, total: data.total, paymentMode, customerName: custName, offline: false, ...tendered });
+      setCheckoutModal({ title: 'Bill saved', billId: data.id, billNumber: data.billNumber, total: data.total, paymentMode, customerName: custName, offline: false, ...tendered });
       // Best effort: kick the receipt out to the branch's network printer if one is set up
       void autoPrint(branchId ?? '', 'bills', data.id);
       // Refresh live stock on the POS screen and notify any other tabs/screens
@@ -681,12 +698,13 @@ export function POS() {
   // The handlers change with every render; the listener is added once and always calls the latest ones.
   const keys = useRef({ checkout, parkCurrent, updateCartQty, removeLine });
   keys.current = { checkout, parkCurrent, updateCartQty, removeLine };
-  const state = useRef({ activeKey, servingPicker, checkoutModal, parkedOpen, search });
-  state.current = { activeKey, servingPicker, checkoutModal, parkedOpen, search };
+  const state = useRef({ activeKey, servingPicker, checkoutModal, parkedOpen, search, mobileCartOpen });
+  state.current = { activeKey, servingPicker, checkoutModal, parkedOpen, search, mobileCartOpen };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
+      if (t?.closest?.('#appSidebar[aria-modal="true"]')) return;
       const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       const s = state.current;
       const overlay = !!s.servingPicker || !!s.checkoutModal || s.parkedOpen;
@@ -695,8 +713,8 @@ export function POS() {
         if (s.servingPicker) setServingPicker(null);
         else if (s.parkedOpen) setParkedOpen(false);
         else if (s.checkoutModal) setCheckoutModal(null);
+        else if (s.mobileCartOpen) setCartOpen(false);
         else if (s.search) setSearch('');
-        else setCartOpen(false);
         return;
       }
       if (overlay) {
@@ -707,7 +725,7 @@ export function POS() {
         }
         return;
       }
-      if (e.key === 'F2') { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); return; }
+      if (!s.mobileCartOpen && e.key === 'F2') { e.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); return; }
       if (e.key === 'F4') { e.preventDefault(); keys.current.parkCurrent(); return; }
       if (e.key === 'F8') { e.preventDefault(); setParkedOpen((v) => !v); return; }
       if (e.key === 'F9' || ((e.ctrlKey || e.metaKey) && e.key === 'Enter')) { e.preventDefault(); void keys.current.checkout(); return; }
@@ -751,7 +769,7 @@ export function POS() {
       </div>
 
       {/* ───────────── Catalog ───────────── */}
-      <div className="md:flex-1 flex flex-col min-w-0 md:h-full">
+      <div className="md:flex-1 flex flex-col min-w-0 md:h-full" inert={mobileCartOpen}>
         {/* Sale type, parked bills, shortcuts */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
           {limitedToOneType && (
@@ -762,7 +780,7 @@ export function POS() {
           )}
           {saleTypes.length > 1 && (
             <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Sale type" id="posSaleTypes">
-              <span className="text-xs font-semibold text-gray-500">Sell as:</span>
+              <span className="text-xs font-semibold text-gray-500">Price list</span>
               {saleTypes.map((t) => {
                 const selected = activeType?.id === t.id;
                 return (
@@ -794,10 +812,10 @@ export function POS() {
               type="button"
               id="posParkedBtn"
               onClick={() => setParkedOpen(true)}
-              title="Parked bills (F8)"
+              title="Held bills (F8)"
               className="relative inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
             >
-              <Clock size={16} aria-hidden="true" /> Parked
+              <Clock size={16} aria-hidden="true" /> Held bills
               {parked.length > 0 && <span id="parkedCount" className="min-w-5 h-5 px-1 grid place-items-center rounded-full bg-amber-500 text-white text-[11px] font-bold">{parked.length}</span>}
             </button>
             <div className="relative">
@@ -826,7 +844,8 @@ export function POS() {
               type="search"
               enterKeyHint="search"
               autoComplete="off"
-              placeholder="Scan a barcode, or search name or brand (F2)"
+              aria-label="Product search"
+              placeholder="Scan barcode or type product name"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onSearchEnter(); } }}
@@ -894,7 +913,7 @@ export function POS() {
 
         {loadingProducts && rawProducts.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 bg-white dark:bg-gray-800 rounded-lg border dark:border-gray-700">
-            <BeerBottleLoader inline size="sm" title="Pouring POS Catalog…" subtitle="Fetching live counter stock & prices…" />
+            <BeerBottleLoader inline size="sm" title="Loading products…" />
           </div>
         ) : filteredProducts.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-gray-500 bg-white dark:bg-gray-800 rounded-lg border border-dashed border-gray-300 dark:border-gray-600">
@@ -958,50 +977,55 @@ export function POS() {
       </div>
 
       {/* ───────────── Cart (a pinned panel on a screen, a sheet on a phone) ───────────── */}
-      {cartOpen && <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={() => setCartOpen(false)} aria-hidden="true" />}
+      {mobileCartOpen && <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={() => setCartOpen(false)} aria-hidden="true" />}
       <aside
         id="cartPanel"
+        ref={cartPanelRef}
+        inert={!desktop && !mobileCartOpen}
+        role={mobileCartOpen ? 'dialog' : undefined}
+        aria-modal={mobileCartOpen || undefined}
+        aria-labelledby={mobileCartOpen ? 'cartTitle' : undefined}
         className={`bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xs flex flex-col min-h-0
           fixed inset-x-0 bottom-0 z-40 max-h-[90dvh] rounded-t-2xl transition-transform duration-200 ${cartOpen ? 'translate-y-0' : 'translate-y-full'}
           md:static md:translate-y-0 md:z-auto md:max-h-none md:rounded-xl md:w-96 xl:w-[25rem] md:shrink-0`}
       >
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <button type="button" className="md:hidden p-1 -ml-1 text-gray-500 cursor-pointer" onClick={() => setCartOpen(false)} aria-label="Close the cart"><ChevronDown size={22} /></button>
-            <span className="font-display font-bold text-base">Current order</span>
+            <button ref={cartCloseRef} type="button" className="md:hidden p-1 -ml-1 text-gray-500 cursor-pointer" onClick={() => setCartOpen(false)} aria-label="Close bill items"><ChevronDown size={22} /></button>
+            <span id="cartTitle" className="font-display font-bold text-base">Bill items</span>
             {cart.length > 0 && <span id="cartCount" className="text-[11px] font-semibold px-2 py-px rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200 tabular-nums">{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>}
           </div>
           <div className="flex items-center gap-1">
-            <button type="button" id="parkBtn" onClick={() => parkCurrent()} disabled={cart.length === 0} title="Park this bill (F4)" className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 cursor-pointer">
-              <Pause size={13} aria-hidden="true" /> Park
+            <button type="button" id="parkBtn" onClick={() => parkCurrent()} disabled={cart.length === 0} title="Hold bill (F4)" className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 cursor-pointer">
+              <Pause size={13} aria-hidden="true" /> Hold bill
             </button>
             {cart.length > 0 && <button type="button" id="clearCartBtn" onClick={clearCart} className="px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:text-red-600 cursor-pointer">Clear</button>}
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-1 min-h-[7rem]" id="cartItems">
+        <div className="flex-1 overflow-y-auto px-4 py-1 min-h-24 md:min-h-28" id="cartItems">
           {cart.length === 0 && (
             <div className="h-full min-h-32 flex flex-col items-center justify-center text-center text-gray-500 gap-2 py-6">
               <ShoppingBag size={30} className="text-gray-300 dark:text-gray-600" aria-hidden="true" />
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Nothing in this order yet</p>
-              <p className="text-xs">Scan an item, or tap one to add it.</p>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">No items added</p>
+              <p className="text-xs">Tap a product or scan its barcode.</p>
               {parked.length > 0 && <button type="button" onClick={() => setParkedOpen(true)} className="text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline cursor-pointer">{parked.length} parked bill{parked.length === 1 ? '' : 's'} waiting</button>}
             </div>
           )}
           {cart.map((item) => {
             const k = cartKey(item);
             return (
-              <div key={k} onClick={() => setActiveKey(k)} className={`flex items-center gap-2.5 text-sm py-2.5 border-b border-gray-100 dark:border-gray-700/60 last:border-b-0 cart-line rounded ${activeKey === k ? 'bg-purple-50/60 dark:bg-purple-950/20' : ''}`}>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium leading-snug line-clamp-2" title={item.name}>{item.name}</div>
+              <div key={k} onClick={() => setActiveKey(k)} className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 md:flex text-sm py-2 border-b border-gray-100 dark:border-gray-700/60 last:border-b-0 cart-line rounded ${activeKey === k ? 'bg-purple-50/60 dark:bg-purple-950/20' : ''}`}>
+                <div className="col-span-2 min-w-0 md:flex-1">
+                  <div className="font-medium leading-snug break-words md:line-clamp-2" title={item.name}>{item.name}</div>
                   <div className="text-xs text-gray-500 tabular-nums">{item.servingLabel ? `${item.servingLabel} · ` : ''}₹{parseFloat(item.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })} each</div>
                 </div>
-                <div className="inline-flex items-center rounded-lg border border-gray-200 dark:border-gray-600 shrink-0">
-                  <button type="button" aria-label="Decrease quantity" onClick={(e) => { e.stopPropagation(); updateCartQty(k, -1); }} className="size-10 md:size-8 grid place-items-center rounded-l-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
+                <div className="inline-flex justify-self-start items-center rounded-lg border border-gray-200 dark:border-gray-600 shrink-0">
+                  <button type="button" aria-label="Decrease quantity" onClick={(e) => { e.stopPropagation(); updateCartQty(k, -1); }} className="size-11 md:size-8 grid place-items-center rounded-l-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
                     {item.qty === 1 ? <Trash2 size={14} className="text-red-500" /> : <Minus size={14} />}
                   </button>
                   <span className="min-w-8 text-center font-mono text-sm font-semibold px-1">×{item.qty}</span>
-                  <button type="button" aria-label="Increase quantity" onClick={(e) => { e.stopPropagation(); updateCartQty(k, 1); }} className="size-10 md:size-8 grid place-items-center rounded-r-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"><Plus size={14} /></button>
+                  <button type="button" aria-label="Increase quantity" onClick={(e) => { e.stopPropagation(); updateCartQty(k, 1); }} className="size-11 md:size-8 grid place-items-center rounded-r-lg hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"><Plus size={14} /></button>
                 </div>
                 <span className="w-[4.75rem] text-right font-mono text-[13px] font-semibold shrink-0 tabular-nums">₹{(parseFloat(item.price) * item.qty).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
@@ -1016,7 +1040,7 @@ export function POS() {
           </div>
         )}
 
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3 bg-gray-50/60 dark:bg-gray-900/30 md:rounded-b-xl overflow-y-auto">
+        <div className="min-h-0 overflow-y-auto border-t border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/30 p-4 space-y-3">
           <div className="flex justify-between text-xs text-gray-500">
             <span>Subtotal</span>
             <span className="font-mono">₹{money(cartSubtotal)}</span>
@@ -1024,10 +1048,10 @@ export function POS() {
 
           {/* Discount: a percentage or a rupee amount */}
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-semibold text-gray-600 dark:text-gray-300 shrink-0">Discount</span>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-semibold text-gray-700 dark:text-gray-200">Discount</span>
               {discountMode === 'PCT' && (
-                <div className="flex items-center gap-1 flex-1 min-w-0">
+                <div className={`flex flex-wrap items-center gap-1 ${discountCap !== null && discountCap < 10 ? '' : 'order-last basis-full sm:order-none sm:basis-auto sm:flex-1'}`}>
                   {[5, 10, 15, 20].filter((pct) => discountCap === null || pct <= discountCap).map((pct) => (
                     <button key={pct} type="button" aria-pressed={discountPercent === String(pct)} onClick={() => setDiscountPercent(discountPercent === String(pct) ? '' : String(pct))}
                       className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer border tabular-nums ${discountPercent === String(pct) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600'}`}>
@@ -1039,14 +1063,14 @@ export function POS() {
               <div className={`relative shrink-0 ${discountMode === 'PCT' ? 'w-20' : 'flex-1'}`}>
                 {discountMode === 'PCT' ? (
                   <>
-                    <input id="discountInput" type="number" inputMode="decimal" step="any" min="0" max={discountCap ?? 100}
+                    <input id="discountInput" aria-label="Discount in percent" type="number" inputMode="decimal" step="any" min="0" max={discountCap ?? 100}
                       className="w-full py-1.5 pl-2 pr-6 border border-gray-200 dark:border-gray-600 rounded-md text-right font-mono text-xs bg-white dark:bg-gray-700" placeholder="0" value={discountPercent}
                       onChange={(e) => { const v = e.target.value; setDiscountPercent(discountCap !== null && parseFloat(v) > discountCap ? String(discountCap) : v); }} />
                     <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-xs pointer-events-none">%</span>
                   </>
                 ) : (
                   <>
-                    <input id="discountAmount" type="number" inputMode="decimal" step="any" min="0"
+                    <input id="discountAmount" aria-label="Discount in rupees" type="number" inputMode="decimal" step="any" min="0"
                       className="w-full py-1.5 pl-6 pr-2 border border-gray-200 dark:border-gray-600 rounded-md text-right font-mono text-xs bg-white dark:bg-gray-700" placeholder="0" value={discountAmount}
                       onChange={(e) => setDiscountAmount(e.target.value)} />
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-xs pointer-events-none">₹</span>
@@ -1056,7 +1080,7 @@ export function POS() {
               <button type="button" id="discountModeBtn" title={discountMode === 'PCT' ? 'Enter the discount in rupees' : 'Enter the discount as a percentage'}
                 onClick={() => { setDiscountMode(discountMode === 'PCT' ? 'AMT' : 'PCT'); setDiscountPercent(''); setDiscountAmount(''); }}
                 className="px-2 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 text-[11px] font-bold text-gray-600 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer">
-                {discountMode === 'PCT' ? '₹' : '%'}
+                {discountMode === 'PCT' ? 'Use ₹' : 'Use %'}
               </button>
             </div>
             {discountCap !== null && <div className="text-[11px] text-gray-500" id="discountCapHint">Discounts up to {discountCap}%. A bigger discount needs a manager.</div>}
@@ -1070,16 +1094,16 @@ export function POS() {
             )}
           </div>
 
-          <div className="flex justify-between items-baseline pt-1">
-            <span className="font-semibold text-gray-600 dark:text-gray-300">Total</span>
+          <div className="flex flex-wrap justify-between items-baseline gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2">
+            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Amount to collect</span>
             <span id="totalAmount" className="font-display font-bold text-[30px] leading-none tabular-nums text-gray-900 dark:text-gray-50">₹{money(cartTotal)}</span>
           </div>
 
           {/* How they pay */}
-          <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Payment mode">
+          <div className="grid grid-cols-4 gap-2" role="group" aria-label="Choose payment">
             {PAY_MODES.map(([m, Icon, label, hot]) => (
-              <button key={m} type="button" id={`pay-${m}`} aria-pressed={paymentMode === m} aria-label={m} title={`${label} (Alt+${hot})`} onClick={() => setPaymentMode(m)}
-                className={`py-2.5 px-1 text-xs font-semibold rounded-lg border cursor-pointer transition-colors flex flex-col items-center gap-1 ${paymentMode === m ? 'bg-purple-600 text-white border-purple-600 shadow-xs' : 'bg-white dark:bg-gray-700/60 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-purple-300 dark:hover:border-purple-600'}`}>
+              <button key={m} type="button" id={`pay-${m}`} aria-pressed={paymentMode === m} title={`${label} (Alt+${hot})`} onClick={() => setPaymentMode(m)}
+                className={`min-h-12 py-2 px-1 text-sm font-semibold rounded-lg border cursor-pointer transition-colors flex flex-col items-center gap-1 ${paymentMode === m ? 'bg-purple-600 text-white border-purple-600 shadow-xs' : 'bg-white dark:bg-gray-700/60 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-purple-300 dark:hover:border-purple-600'}`}>
                 <Icon size={18} aria-hidden="true" />
                 {label}
               </button>
@@ -1090,7 +1114,7 @@ export function POS() {
           {paymentMode === 'CASH' && cart.length > 0 && (
             <div id="tenderBox" className="space-y-2 p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20">
               <div className="flex items-center gap-2">
-                <label htmlFor="tenderInput" className="text-xs font-semibold text-gray-600 dark:text-gray-300 shrink-0">Cash received</label>
+                <label htmlFor="tenderInput" className="text-sm font-semibold text-gray-700 dark:text-gray-200 shrink-0">Cash received</label>
                 <div className="relative flex-1">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">₹</span>
                   <input id="tenderInput" type="number" inputMode="decimal" min="0" step="any" placeholder={money(cartTotal)} value={received} onChange={(e) => setReceived(e.target.value)}
@@ -1102,22 +1126,25 @@ export function POS() {
                 {quickCashOptions(cartTotal).map((v, i) => (
                   <button key={v} type="button" data-tender={v} onClick={() => setReceived(i === 0 ? '' : String(v))}
                     className={`px-3 py-2 rounded-lg border text-xs font-semibold tabular-nums cursor-pointer ${(i === 0 && received === '') || received === String(v) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-emerald-400'}`}>
-                    {i === 0 ? 'Exact' : `₹${v.toLocaleString('en-IN')}`}
+                    {i === 0 ? 'Exact cash' : `₹${v.toLocaleString('en-IN')}`}
                   </button>
                 ))}
               </div>
-              <div id="changeDue" data-state={cash?.state} className={`flex items-baseline justify-between rounded-lg px-3 py-2 ${cash?.state === 'short' ? 'bg-red-100 dark:bg-red-950/40 text-red-800 dark:text-red-200' : cash?.state === 'ok' && cash.change > 0 ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
-                <span className="text-xs font-semibold">{cash?.state === 'short' ? 'Still to collect' : cash?.state === 'ok' && cash.change > 0 ? 'Give back' : 'Exact amount'}</span>
-                <span className="font-display font-bold text-xl tabular-nums">{cash?.state === 'short' ? `₹${money(cash.short)}` : cash?.state === 'ok' && cash.change > 0 ? `₹${money(cash.change)}` : '—'}</span>
-              </div>
             </div>
+          )}
+
+          {(paymentMode === 'UPI' || paymentMode === 'CARD') && cart.length > 0 && (
+            <p className="text-sm text-gray-700 dark:text-gray-200">Check payment received before saving.</p>
           )}
 
           {paymentMode === 'CREDIT' && (
             <KhataPanel branchId={branchId} canSetLimit={canSetLimit} total={cartTotal} customer={creditCustomer} onSelect={setCreditCustomer} />
           )}
 
-          <input id="posBuyerGstin" className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-mono bg-white dark:bg-gray-700" placeholder="Buyer GSTIN (optional, B2B)" maxLength={15} value={buyerGstin} onChange={(e) => setBuyerGstin(e.target.value)} />
+          <details className="text-sm text-gray-700 dark:text-gray-200">
+            <summary className="cursor-pointer py-1">Customer GST number (optional)</summary>
+            <input id="posBuyerGstin" aria-label="Customer GST number (optional)" className="mt-2 w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg font-mono bg-white dark:bg-gray-700" maxLength={15} value={buyerGstin} onChange={(e) => setBuyerGstin(e.target.value)} />
+          </details>
           {lastSync && <div id="lastSync" className="text-xs text-gray-500">{lastSync}</div>}
           {failedBills.length > 0 && (
             <div id="failedBills" role="alert" className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-900 p-2 text-xs text-red-800 dark:text-red-200 space-y-1.5">
@@ -1133,23 +1160,31 @@ export function POS() {
               ))}
             </div>
           )}
+        </div>
+        <div className="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3 space-y-2 rounded-b-xl">
+          {paymentMode === 'CASH' && cart.length > 0 && (
+            <div id="changeDue" aria-live="polite" data-state={cash?.state} className={`flex items-baseline justify-between rounded-lg px-3 py-2 ${cash?.state === 'short' ? 'bg-red-100 dark:bg-red-950/40 text-red-800 dark:text-red-200' : cash?.state === 'ok' && cash.change > 0 ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+              <span className="text-sm font-semibold">{cash?.state === 'short' ? 'Cash still needed' : cash?.state === 'ok' && cash.change > 0 ? 'Change to give' : 'No change needed'}</span>
+              <span className="font-display font-bold text-xl tabular-nums">{cash?.state === 'short' ? `₹${money(cash.short)}` : cash?.state === 'ok' && cash.change > 0 ? `₹${money(cash.change)}` : '—'}</span>
+            </div>
+          )}
           <button
             id="checkoutBtn"
             onClick={checkout}
             disabled={cart.length === 0 || isPaying || cashShort}
-            title="Checkout (F9)"
-            className="w-full bg-purple-600 text-white py-4 rounded-xl text-base font-bold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs transition-colors flex items-center justify-center gap-2"
+            title="Save bill (F9)"
+            className="w-full bg-purple-600 text-white min-h-12 px-4 py-3 rounded-lg text-base font-semibold hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-xs transition-colors flex items-center justify-between gap-2"
           >
-            {isPaying ? 'Processing…' : <>Checkout &amp; Print <span className="font-mono tabular-nums opacity-90">· ₹{money(cartTotal)}</span></>}
+            {isPaying ? 'Saving bill…' : <><span>Save bill</span><span className="font-mono tabular-nums">₹{money(cartTotal)}</span></>}
           </button>
         </div>
       </aside>
 
       {/* Phone: the cart is a bar at the bottom; tap it to open the sheet */}
       {!cartOpen && (
-        <button type="button" id="cartBar" onClick={() => setCartOpen(true)} className="md:hidden fixed bottom-3 inset-x-3 z-30 flex items-center justify-between gap-3 px-4 py-3.5 rounded-2xl bg-purple-600 text-white shadow-lg cursor-pointer">
-          <span className="flex items-center gap-2 font-semibold"><ShoppingBag size={18} aria-hidden="true" /> {itemCount === 0 ? 'Cart is empty' : `${itemCount} item${itemCount === 1 ? '' : 's'}`}</span>
-          <span className="font-mono font-bold tabular-nums">₹{money(cartTotal)} <span className="font-sans font-semibold opacity-80">· View ›</span></span>
+        <button type="button" id="cartBar" ref={cartBarRef} aria-controls="cartPanel" aria-expanded={false} onClick={() => setCartOpen(true)} className="md:hidden fixed bottom-3 inset-x-3 z-30 flex items-center justify-between gap-3 px-4 py-3.5 rounded-2xl bg-purple-600 text-white shadow-lg cursor-pointer">
+          <span className="flex items-center gap-2 font-semibold"><ShoppingBag size={18} aria-hidden="true" /> <span>Open bill{itemCount > 0 && <span className="ml-2 text-xs font-normal tabular-nums">({itemCount})</span>}</span></span>
+          <span className="font-mono font-bold tabular-nums">₹{money(cartTotal)}</span>
         </button>
       )}
 
@@ -1158,11 +1193,11 @@ export function POS() {
         <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex justify-center overflow-y-auto [&>*]:my-auto z-50 p-4" id="parkedList" onClick={() => setParkedOpen(false)}>
           <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-bold">Parked bills</h2>
+              <h2 className="text-lg font-bold">Held bills</h2>
               <button type="button" onClick={() => setParkedOpen(false)} className="p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" aria-label="Close dialog"><X size={18} /></button>
             </div>
             {parked.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center">No parked bills. Press <kbd className="px-1.5 py-0.5 rounded border font-mono text-xs">F4</kbd> or “Park” to put the current bill on hold while you serve someone else.</p>
+              <p className="text-sm text-gray-500 py-6 text-center">No held bills. Use Hold bill to finish it later.</p>
             ) : (
               <ul className="divide-y dark:divide-gray-700 max-h-[60dvh] overflow-y-auto">
                 {parked.map((b) => (
@@ -1171,8 +1206,8 @@ export function POS() {
                       <div className="font-semibold">₹{parseFloat(b.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })} <span className="font-normal text-gray-500">· {b.items} item{b.items === 1 ? '' : 's'}</span></div>
                       <div className="text-xs text-gray-500">Parked {fmtTime(b.parkedAt)}{b.customer ? ` · ${b.customer.name}` : ''}</div>
                     </div>
-                    <button type="button" className="parked-resume px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg cursor-pointer" onClick={() => resume(b)}>Resume</button>
-                    <button type="button" aria-label="Delete parked bill" className="parked-delete p-2 text-gray-400 hover:text-red-600 cursor-pointer" onClick={() => { const next = removeParked(parked, b.id); setParked(next); saveParked(localStorage, sub, next); }}><Trash2 size={16} /></button>
+                    <button type="button" className="parked-resume px-3 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg cursor-pointer" onClick={() => resume(b)}>Resume bill</button>
+                    <button type="button" aria-label="Delete held bill" className="parked-delete p-2 text-gray-400 hover:text-red-600 cursor-pointer" onClick={() => { const next = removeParked(parked, b.id); setParked(next); saveParked(localStorage, sub, next, branchId); }}><Trash2 size={16} /></button>
                   </li>
                 ))}
               </ul>

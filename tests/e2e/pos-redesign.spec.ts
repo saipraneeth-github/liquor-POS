@@ -133,6 +133,6 @@ test('POS: on a phone the order is a bar at the bottom that opens as a sheet', a
   await expect(page.locator('#cartPanel')).toBeInViewport();
   await expect(page.locator('.cart-line')).toHaveCount(1);
   await expect(page.locator('#checkoutBtn')).toBeVisible();
-  await page.getByRole('button', { name: 'Close the cart' }).click();
+  await page.getByRole('button', { name: 'Close bill items' }).click();
   await expect(page.locator('#cartBar')).toBeVisible();
 });

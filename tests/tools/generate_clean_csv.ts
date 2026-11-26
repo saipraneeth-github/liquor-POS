@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { extractInvoice } from '../src/modules/invoices/extraction/index.js';
-import { TELANGANA_ICDC_PRODUCTS } from '../src/db/data/telangana-products.js';
+import { extractInvoice } from '../../src/modules/invoices/extraction/index.js';
+import { TELANGANA_ICDC_PRODUCTS } from '../../src/db/data/telangana-products.js';
+import { supplierInvoicesDir, telanganaCatalogCsv } from '../fixtures/paths.mjs';
 
 const SAFE = (max: number) => z.string().trim().min(1).max(max).refine((s) => !/[<>]/.test(s), 'Must not contain < or >');
 const Row = z.object({
@@ -21,7 +22,7 @@ function cleanQuotes(str: string): string {
 }
 
 async function main() {
-  const dir = join(process.cwd(), 'Testing_invoices');
+  const dir = supplierInvoicesDir;
   const files = readdirSync(dir).filter(f => f.toLowerCase().endsWith('.pdf'));
 
   const map = new Map<string, {
@@ -140,7 +141,7 @@ async function main() {
     `${r.categoryName},${r.name},${r.brand},${r.volumeMl},${r.packQuantity},${r.exciseCode},${r.sku},${r.state}`
   ).join('\n');
 
-  writeFileSync(join(process.cwd(), 'Testing_invoices_master_products.csv'), csvOutput, 'utf-8');
+  writeFileSync(telanganaCatalogCsv, csvOutput, 'utf-8');
   console.log(`Generated ${cleanedRows.length} clean master product entries.`);
 }
 
