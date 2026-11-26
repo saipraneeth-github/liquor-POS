@@ -213,16 +213,16 @@ export function Inventory() {
   });
 
   return (
-    <section className="page active p-4 md:p-6 max-w-7xl mx-auto" id="page-inventory" aria-labelledby="inventoryTitle">
+    <section className="unslop-stock page active p-4 md:p-6 max-w-7xl mx-auto" id="page-inventory" aria-labelledby="inventoryTitle">
       {/* ── Top Header & Tab Navigation ────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-50" id="inventoryTitle">
-            Inventory Management
+            Store stock
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
             {activeTab === 'current'
-              ? 'Live bottle counts, cases, costs and breakage tracking for this store.'
+              ? 'Bottle counts, cases, and stock changes for this shop.'
               : 'Allocate and transfer bottle stock between Walk-in, Janata, and other counters.'}
           </p>
         </div>
@@ -239,7 +239,7 @@ export function Inventory() {
             onClick={() => setActiveTab('current')}
           >
             <Package size={16} />
-            Current Stock
+            Store stock
           </button>
           <button
             type="button"
@@ -353,7 +353,7 @@ export function Inventory() {
                     className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 cursor-pointer transition-colors"
                     onClick={() => setShowCount(true)}
                   >
-                    Stock Count
+                    Enter stock count
                   </button>
                 )}
 
@@ -400,10 +400,10 @@ export function Inventory() {
               ) : (
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b text-[11px] text-gray-500 bg-gray-50 dark:bg-gray-800 uppercase tracking-wider">
+                    <tr className="border-b text-sm text-gray-600 bg-gray-50 dark:bg-gray-800">
                       <th className="py-2.5 px-4">Product</th>
-                      <th className="py-2.5 px-4 w-44">Cases / Pack</th>
-                      <th className="py-2.5 px-4 w-56">Stock level</th>
+                      <th className="py-2.5 px-4 w-44">Cases and loose bottles</th>
+                      <th className="py-2.5 px-4 w-56">Bottles in stock</th>
                       {canSeeCost && <th className="py-2.5 px-3 text-right">Cost Price</th>}
                     </tr>
                   </thead>

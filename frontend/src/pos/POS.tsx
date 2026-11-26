@@ -753,7 +753,7 @@ export function POS() {
   const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
 
   return (
-    <div className="flex flex-col md:flex-row md:h-full gap-4 pb-20 md:pb-0" id="page-pos">
+    <div className="unslop-pos flex flex-col md:flex-row md:h-full gap-4 pb-20 md:pb-0" id="page-pos">
       {/* Offline / queue indicator */}
       <div
         id="offlineIndicator"
@@ -834,6 +834,10 @@ export function POS() {
           </div>
         </div>
 
+        <div className="pos-work-heading mb-3">
+          <h1>Billing</h1>
+          <span>Choose bottles and check the bill</span>
+        </div>
         {/* Search: always ready for a scanner */}
         <div className="flex items-center gap-2 mb-3">
           <div className="relative flex-1">
@@ -868,7 +872,7 @@ export function POS() {
         {/* Recently sold */}
         {noFilters && recentProducts.length > 0 && (
           <div className="flex items-center gap-2 mb-3 overflow-x-auto [scrollbar-width:none]" id="posRecent">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 shrink-0">Recent</span>
+            <span className="text-xs font-semibold text-gray-500 shrink-0">Recent</span>
             {recentProducts.map((p) => (
               <button key={p.id} type="button" data-recent={p.id} onClick={() => pickProduct(p)} className="shrink-0 inline-flex items-center gap-2 px-3 py-2 rounded-full border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20 text-sm hover:bg-emerald-100 dark:hover:bg-emerald-900/30 cursor-pointer">
                 <span className="font-medium max-w-[11rem] truncate">{p.name}</span>
