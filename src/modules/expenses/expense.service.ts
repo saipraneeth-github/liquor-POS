@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
-import { and, asc, eq, gte, lte, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { assertBusinessDayOpen } from '../../lib/closed-day.js';
 import { logAudit } from '../../lib/audit.js';
 import { db } from '../../db/client.js';
@@ -107,5 +107,29 @@ export async function listExpenses(branchId: string, query: ListExpensesQuery) {
     total: summary.total,
     count: summary.count,
     voidedCount: rows.filter((r) => r.voidedAt).length,
+  };
+}
+
+/** The selected calendar year's totals are independent of the ledger's date and category filters. */
+export async function expenseYearSummary(branchId: string, year: number) {
+  const rows = await db.select({
+    month: sql<number>`extract(month from ${expenses.expenseDate})::int`,
+    total: sql<string>`sum(${expenses.amount})::text`,
+    count: sql<number>`count(*)::int`,
+  }).from(expenses).where(and(
+    eq(expenses.branchId, branchId),
+    gte(expenses.expenseDate, `${year}-01-01`),
+    lte(expenses.expenseDate, `${year}-12-31`),
+    sql`${expenses.voidedAt} is null`,
+  )).groupBy(sql`extract(month from ${expenses.expenseDate})`);
+  const byMonth = new Map(rows.map((row) => [row.month, row]));
+  return {
+    year,
+    months: Array.from({ length: 12 }, (_, index) => ({
+      month: index + 1,
+      total: byMonth.get(index + 1)?.total ?? '0.00',
+      count: byMonth.get(index + 1)?.count ?? 0,
+    })),
+    total: rows.reduce((sum, row) => sum.plus(row.total), new Decimal(0)).toFixed(2),
   };
 }

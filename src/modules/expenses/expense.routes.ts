@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireRole, getUser, assertBranchAccess } from '../../middleware/auth.guard.js';
 import { requirePermission } from '../permissions/permission.service.js';
 import { sendError } from '../../lib/errors.js';
-import { ListExpensesQuerySchema, RecordExpenseSchema, VoidExpenseSchema, listExpenses, recordExpense, voidExpense } from './expense.service.js';
+import { ListExpensesQuerySchema, RecordExpenseSchema, VoidExpenseSchema, expenseYearSummary, listExpenses, recordExpense, voidExpense } from './expense.service.js';
 import { db } from '../../db/client.js';
 import { expenses } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
@@ -13,6 +13,16 @@ const BranchParamsSchema = z.object({ branchId: z.string().uuid() });
 // ─── EXPENSE ROUTES (manager+, branch-scoped) ────────────────────────────────
 
 export async function expenseRoutes(fastify: FastifyInstance) {
+  fastify.get('/expenses/:branchId/summary', {
+    preHandler: [requireRole('steward'), requirePermission('accounting.view')],
+  }, async (request, reply) => {
+    const params = BranchParamsSchema.safeParse(request.params);
+    const query = z.object({ year: z.coerce.number().int().min(2000).max(2100) }).safeParse(request.query);
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'Choose a valid year' });
+    if (!(await assertBranchAccess(getUser(request), params.data.branchId, reply))) return;
+    try { return await expenseYearSummary(params.data.branchId, query.data.year); }
+    catch (err) { return sendError(reply, err, 'Failed to load expense totals'); }
+  });
   // POST /expenses/:branchId — record an expense (posts a PAYMENT voucher)
   fastify.post('/expenses/:branchId', {
     preHandler: [requireRole('steward'), requirePermission('accounting.post')],

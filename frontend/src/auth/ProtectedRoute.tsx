@@ -18,6 +18,7 @@ const pageMinRole: Record<string, string> = {
   '/schemes': 'manager',
   '/compliance': 'manager',
   '/accounting': 'manager',
+  '/expenses': 'manager',
   '/closing': 'manager',
   '/admin': 'manager',
   '/menu/kitchen': 'steward',

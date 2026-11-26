@@ -213,7 +213,7 @@ export function Ledger() {
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          Expenses
+          Outgoing expenses
         </button>
         <button
           id="acctab-suppliers"

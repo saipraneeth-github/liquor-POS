@@ -79,6 +79,7 @@ const navItems: NavItem[] = [
   { path: '/schemes', label: 'Supplier Schemes', icon: Target, id: 'nav-schemes', min: 'manager', group: 'Money & Compliance', pageKey: 'schemes' },
   { path: '/compliance', label: 'Excise & Breakage', icon: ShieldCheck, id: 'nav-compliance', min: 'manager', group: 'Money & Compliance', pageKey: 'compliance' },
   { path: '/accounting', label: 'Accounting', icon: BookOpen, id: 'nav-accounting', min: 'manager', group: 'Money & Compliance', pageKey: 'accounting' },
+  { path: '/expenses', label: 'Outgoing Expenses', icon: BookOpen, id: 'nav-expenses', min: 'manager', group: 'Money & Compliance', pageKey: 'accounting' },
   { path: '/bank', label: 'Match Bank Statement', icon: Landmark, id: 'nav-bank', min: 'manager', group: 'Money & Compliance', pageKey: 'bank' },
   { path: '/closing', label: 'Day Closing', icon: Lock, id: 'nav-closing', min: 'manager', group: 'Money & Compliance', pageKey: 'closing' },
 

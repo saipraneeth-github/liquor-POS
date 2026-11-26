@@ -5,6 +5,7 @@
 export const PAGE_FEATURE: Record<string, string> = {
   '/bank': 'bank',
   '/accounting': 'accounting',
+  '/expenses': 'accounting',
   '/tables': 'bar',
   '/invoices': 'invoices',
   '/schemes': 'schemes',
@@ -17,6 +18,7 @@ export const PAGE_FEATURE: Record<string, string> = {
 export const PAGE_PERMISSION: Record<string, string> = {
   '/invoices': 'cost.view',
   '/accounting': 'accounting.view',
+  '/expenses': 'accounting.view',
   '/bank': 'bank.reconcile',
   '/closing': 'day.close',
 };

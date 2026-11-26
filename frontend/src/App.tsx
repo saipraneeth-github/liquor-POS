@@ -22,6 +22,7 @@ function screen<M extends Record<string, any>>(load: () => Promise<M>, name: key
 const Bills = screen(() => import('./bills/Bills'), 'Bills');
 const Tables = screen(() => import('./tables/Tables'), 'Tables');
 const Ledger = screen(() => import('./accounting/Ledger'), 'Ledger');
+const OutgoingExpenses = screen(() => import('./accounting/OutgoingExpenses'), 'OutgoingExpenses');
 const Customers = screen(() => import('./customers/Customers'), 'Customers');
 const Counter = screen(() => import('./counter/Counter'), 'Counter');
 const Shift = screen(() => import('./shifts/Shift'), 'Shift');
@@ -82,6 +83,7 @@ export default function App() {
                     <Route path="/schemes" element={<Schemes />} />
                     <Route path="/compliance" element={<Compliance />} />
                     <Route path="/accounting" element={<Ledger />} />
+                    <Route path="/expenses" element={<OutgoingExpenses />} />
                     <Route path="/bank" element={<BankReconciliation />} />
                     <Route path="/closing" element={<Closing />} />
                     <Route path="/admin" element={<Admin />} />

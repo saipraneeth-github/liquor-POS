@@ -219,6 +219,10 @@ describe('expenses', () => {
     expect((await post(`/expenses/${ctx.branchId}`, { category: 'rent', amount: '500', paymentMode: 'CASH', expenseDate: '2026-10-03' })).statusCode).toBe(201);
 
     const list = await get(`/expenses/${ctx.branchId}?from=2026-10-01&to=2026-10-31`);
+    const year = await get(`/expenses/${ctx.branchId}/summary?year=2026`);
+    expect(year.statusCode).toBe(200);
+    expect(year.json().months[9]).toMatchObject({ month: 10, total: '16700.50', count: 3 });
+    expect(year.json().total).toBe('16700.50');
     expect(list.statusCode).toBe(200);
     expect(list.json().total).toBe('16700.50');
     expect(list.json().totalsByCategory[0]).toEqual({ category: 'Rent', total: '15500.00', count: 2 });
