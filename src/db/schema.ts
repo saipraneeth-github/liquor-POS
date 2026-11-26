@@ -1272,6 +1272,7 @@ export const brandCodeMappings = pgTable('brand_code_mappings', {
 export const ledgerTransactions = pgTable('ledger_transactions', {
   id:          uuid('id').primaryKey().defaultRandom(),
   branchId:    uuid('branch_id').notNull().references(() => branches.id),
+  accountId:   uuid('account_id').references(() => bankAccounts.id),
   txnDate:     date('txn_date').notNull(),
   description: text('description').notNull(),
   amount:      numeric('amount', { precision: 12, scale: 2 }).notNull(),

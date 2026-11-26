@@ -32,7 +32,7 @@ import {
   previewStatement, addDefaultCategories, runAutoMatch, unmatchLine, updateAccount, updateRule,
   type UploadFields,
 } from './bank.service.js';
-import { SearchSchema, searchTransactions } from './ledger-txn.service.js';
+import { ManualBankTransactionSchema, SearchSchema, recordManualBankTransaction, searchTransactions } from './ledger-txn.service.js';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const IdParams = z.object({ id: z.string().uuid() });
@@ -259,6 +259,15 @@ export async function bankRoutes(app: FastifyInstance) {
     if (!params.success) return reply.code(404).send({ error: 'Branch not found' });
     if (!query.success) return reply.code(400).send({ error: 'Validation failed', details: query.error.flatten() });
     try { return await searchTransactions(getUser(req), params.data.branchId, query.data); } catch (err) { return fail(reply, err); }
+  });
+
+  app.post('/bank/transactions/:branchId/manual', { preHandler: [requireRole('steward'), requirePermission('accounting.post')] }, async (req, reply) => {
+    const params = z.object({ branchId: z.string().uuid() }).safeParse(req.params);
+    const body = ManualBankTransactionSchema.safeParse(req.body);
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'Check the bank entry fields' });
+    if (!(await assertBranchAccess(getUser(req), params.data.branchId, reply))) return;
+    try { return reply.code(201).send(await recordManualBankTransaction(getUser(req), params.data.branchId, body.data)); }
+    catch (err) { return fail(reply, err); }
   });
 
   app.patch('/bank/types/:id', manager, async (req, reply) => {

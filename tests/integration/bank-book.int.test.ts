@@ -35,6 +35,21 @@ async function importOne(narration: string, amount: number, dayOffset: number) {
 }
 
 describe('the book side of a statement', () => {
+  it('records a manual bank movement with a balanced voucher and source label', async () => {
+    const account = await inject('POST', '/bank/accounts', mgr(), { branchId: ctx.branchId, name: 'Manual entry test account' });
+    expect(account.statusCode).toBe(201);
+    const accountId = account.json().id as string;
+    const ledgers = (await inject('GET', `/accounting/ledgers/${ctx.branchId}`, mgr())).json().ledgers as { id: string; code: string }[];
+    const other = ledgers.find((ledger) => ledger.code === 'CASH');
+    expect(other).toBeTruthy();
+    const payload = { accountId, ledgerId: other!.id, txnDate: today, description: 'Cash paid into bank', amount: '250.00', direction: 'CREDIT' };
+    expect((await inject('POST', `/bank/transactions/${ctx.branchId}/manual`, mgr(), { ...payload, amount: '0.00' })).statusCode).toBe(400);
+    const posted = await inject('POST', `/bank/transactions/${ctx.branchId}/manual`, mgr(), payload);
+    expect(posted.statusCode, posted.body).toBe(201);
+    expect(posted.json()).toMatchObject({ source: 'MANUAL', amount: '250.00', reconStatus: 'UNMATCHED', accountId });
+    const result = (await inject('GET', `/bank/transactions/${ctx.branchId}?accountId=${accountId}`, mgr())).json();
+    expect(result.transactions).toEqual(expect.arrayContaining([expect.objectContaining({ id: posted.json().id, source: 'MANUAL' })]));
+  });
   it('lists BANK-ledger entries around the statement dates, and says which line each is matched to', async () => {
     const { statementId, lineId } = await importOne('SMS CHARGES BOOKVIEW', 23.6, 55);
     expect((await inject('GET', `/bank/statements/${statementId}/book`, mgr())).json()).toEqual([]);   // nothing posted yet

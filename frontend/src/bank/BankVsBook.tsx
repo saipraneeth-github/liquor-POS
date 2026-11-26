@@ -143,10 +143,11 @@ export function BankVsBook({ statementId, lines, search, onChanged, onRecord, li
     );
   };
 
-  const col = (which: 'matched' | 'bank' | 'book') => `${tab === which ? 'block' : 'hidden'} md:block`;
+  const col = (which: 'matched' | 'bank' | 'book') => `${tab === which ? 'block' : 'hidden'} md:block min-w-0 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/30`;
 
   return (
     <div id="bankVsBook" className="space-y-4">
+      <p className="text-sm text-gray-600 dark:text-gray-300">Select a bank payment, then select the matching entry in your books. The amounts appear together before you confirm.</p>
       {/* On a phone the two sides are tabs */}
       <div className="md:hidden inline-flex rounded-lg border border-gray-200 dark:border-gray-600 p-0.5 text-xs font-semibold">
         <button type="button" id="bvbTabMatched" onClick={() => setTab('matched')} className={`px-3 py-1.5 rounded-md cursor-pointer ${tab === 'matched' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Matched ({pairs.length})</button>
@@ -171,9 +172,23 @@ export function BankVsBook({ statementId, lines, search, onChanged, onRecord, li
         </div>
       )}
 
-        <div className="grid md:grid-cols-3 gap-4 items-start">
+        <div className="grid md:grid-cols-2 gap-4 items-start">
+          <div className={col('bank')}>
+            <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">1. Unmatched bank lines ({openLines.length})</div>
+            <div className="space-y-2" id="bvbBankList">
+              {openLines.length === 0 && <div className="p-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-xs text-gray-500">{lines.some(isOpen) ? 'No lines match your search.' : 'Every bank line is handled.'}</div>}
+              {openLines.map(bankCard)}
+            </div>
+          </div>
+          <div className={col('book')}>
+            <div className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">2. Unmatched book entries ({openEntries.length})</div>
+            <div className="space-y-2" id="bvbBookList">
+              {openEntries.length === 0 && <div className="p-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-xs text-gray-500">No book entries waiting for the bank.</div>}
+              {openEntries.map(entryCard)}
+            </div>
+          </div>
           <div className={col('matched')} id="bvbPairs">
-            <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-1.5">Matched ({pairs.length})</div>
+            <div className="text-sm font-semibold text-emerald-700 dark:text-emerald-400 mb-2">Matched ({pairs.length})</div>
             <div className="space-y-2">
               {pairs.length === 0 && <div className="p-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-xs text-gray-500">Nothing matched yet.</div>}
               {pairs.map((l) => {
@@ -190,20 +205,6 @@ export function BankVsBook({ statementId, lines, search, onChanged, onRecord, li
                   </div>
                 );
               })}
-            </div>
-          </div>
-          <div className={col('bank')}>
-            <div className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1.5">Unmatched bank lines ({openLines.length})</div>
-            <div className="space-y-2" id="bvbBankList">
-              {openLines.length === 0 && <div className="p-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-xs text-gray-500">{lines.some(isOpen) ? 'No lines match your search.' : 'Every bank line is handled.'}</div>}
-              {openLines.map(bankCard)}
-            </div>
-          </div>
-          <div className={col('book')}>
-            <div className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1.5">Unmatched book entries ({openEntries.length})</div>
-            <div className="space-y-2" id="bvbBookList">
-              {openEntries.length === 0 && <div className="p-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-xs text-gray-500">No book entries waiting for the bank.</div>}
-              {openEntries.map(entryCard)}
             </div>
           </div>
         </div>

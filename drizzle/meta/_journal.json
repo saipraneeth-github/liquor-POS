@@ -337,6 +337,13 @@
       "when": 1795085064075,
       "tag": "0047_error_events",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795090000000,
+      "tag": "0048_manual_bank_account",
+      "breakpoints": true
     }
   ]
 }

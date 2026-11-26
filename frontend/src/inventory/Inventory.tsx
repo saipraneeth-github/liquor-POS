@@ -353,7 +353,7 @@ export function Inventory() {
                     className="px-3 py-1.5 text-xs font-semibold rounded-lg border text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 cursor-pointer transition-colors"
                     onClick={() => setShowCount(true)}
                   >
-                    Stock Count
+                    Enter stock count
                   </button>
                 )}
 

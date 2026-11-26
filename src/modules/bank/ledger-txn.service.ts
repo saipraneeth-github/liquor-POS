@@ -9,6 +9,9 @@ import { and, asc, desc, eq, gte, lte, sql, type SQL } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
 import { db } from '../../db/client.js';
 import { accountLedgers, bankAccounts, bankStatementLines, bankTransactionTypes, ledgerTransactions } from '../../db/schema.js';
+import { businessDateOf, isIsoDate } from '../../lib/business-day.js';
+import { BusinessRuleError, NotFoundError } from '../../lib/errors.js';
+import { insertVoucher } from '../accounting/posting.service.js';
 import { ForbiddenError } from '../../lib/errors.js';
 import type { Tx } from '../../lib/domain-events.js';
 import { canAccessBranch } from '../../middleware/auth.guard.js';
@@ -25,7 +28,7 @@ export async function recordPostedLine(tx: Tx, args: { account: Account; line: L
   const { account, line, category, voucherId, userId } = args;
   const out = Number(line.debit) > 0;
   await tx.insert(ledgerTransactions).values({
-    branchId: account.branchId, txnDate: line.txnDate, description: line.narration || category, amount: out ? line.debit : line.credit,
+    branchId: account.branchId, accountId: account.id, txnDate: line.txnDate, description: line.narration || category, amount: out ? line.debit : line.credit,
     direction: out ? 'DEBIT' : 'CREDIT', category, categoryKey: categoryKey(category), reference: line.reference ?? null,
     source: 'BANK_STATEMENT', bankLineId: line.id, voucherId, reconStatus: 'MATCHED', createdById: userId,
   }).onConflictDoNothing({ target: ledgerTransactions.bankLineId });
@@ -56,7 +59,7 @@ async function backfill(branchId: string): Promise<void> {
       const out = Number(line.debit) > 0;
       const category = labelForPostedLine(line.category!, names);
       await tx.insert(ledgerTransactions).values({
-        branchId, txnDate: line.txnDate, description: line.narration || category, amount: out ? line.debit : line.credit,
+        branchId, accountId: line.accountId, txnDate: line.txnDate, description: line.narration || category, amount: out ? line.debit : line.credit,
         direction: out ? 'DEBIT' : 'CREDIT', category, categoryKey: categoryKey(category), reference: line.reference ?? null,
         source: 'BANK_STATEMENT', bankLineId: line.id, voucherId: line.voucherId, reconStatus: 'MATCHED', createdById: line.resolvedById ?? null,
       }).onConflictDoNothing({ target: ledgerTransactions.bankLineId });
@@ -75,6 +78,46 @@ export const SearchSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+export const ManualBankTransactionSchema = z.object({
+  accountId: z.string().uuid(),
+  ledgerId: z.string().uuid(),
+  txnDate: z.string().refine(isIsoDate, 'Enter a valid date').optional(),
+  description: z.string().trim().min(3).max(500),
+  amount: z.string().regex(/^\d{1,10}(\.\d{1,2})?$/).refine((value) => new Decimal(value).greaterThan(0)),
+  direction: z.enum(['DEBIT', 'CREDIT']),
+  reference: z.string().trim().max(100).optional(),
+});
+
+/** A hand-entered bank movement reaches the same BANK ledger used by reconciliation. */
+export async function recordManualBankTransaction(user: JwtPayload, branchId: string, input: z.infer<typeof ManualBankTransactionSchema>) {
+  if (!(await canAccessBranch(user, branchId))) throw new ForbiddenError('You do not have access to this branch');
+  const [account, other, bankLedger] = await Promise.all([
+    db.select().from(bankAccounts).where(and(eq(bankAccounts.id, input.accountId), eq(bankAccounts.branchId, branchId))).limit(1),
+    db.select().from(accountLedgers).where(and(eq(accountLedgers.id, input.ledgerId), eq(accountLedgers.branchId, branchId))).limit(1),
+    db.select().from(accountLedgers).where(and(eq(accountLedgers.branchId, branchId), eq(accountLedgers.code, 'BANK'))).limit(1),
+  ]);
+  if (!account[0]) throw new NotFoundError('Bank account not found in this branch');
+  if (!other[0] || other[0].code === 'BANK' || !bankLedger[0]) throw new BusinessRuleError('Choose another ledger in this branch');
+  const amount = new Decimal(input.amount).toFixed(2);
+  const outgoing = input.direction === 'DEBIT';
+  return db.transaction(async (tx) => {
+    const posted = await insertVoucher(tx, {
+      branchId, voucherDate: input.txnDate ?? businessDateOf(), voucherType: 'JOURNAL',
+      narration: input.description, sourceType: 'MANUAL', sourceId: null, createdById: user.sub,
+    }, [
+      { ledger: bankLedger[0].id, debit: outgoing ? '0.00' : amount, credit: outgoing ? amount : '0.00' },
+      { ledger: other[0].id, debit: outgoing ? amount : '0.00', credit: outgoing ? '0.00' : amount },
+    ]);
+    const [transaction] = await tx.insert(ledgerTransactions).values({
+      branchId, accountId: account[0].id, txnDate: input.txnDate ?? businessDateOf(), description: input.description,
+      amount, direction: input.direction, category: other[0].name, categoryKey: categoryKey(other[0].name),
+      reference: input.reference || null, source: 'MANUAL', voucherId: posted!.voucher.id,
+      reconStatus: 'UNMATCHED', createdById: user.sub,
+    }).returning();
+    return transaction;
+  });
+}
+
 const money = (v: unknown) => new Decimal(String(v ?? 0)).toFixed(2);
 
 /** Transactions of a branch matching a keyword and/or category and date range, with totals, plus every category's total. */
@@ -86,7 +129,7 @@ export async function searchTransactions(user: JwtPayload, branchId: string, inp
   if (input.from) base.push(gte(T.txnDate, input.from));
   if (input.to) base.push(lte(T.txnDate, input.to));
   if (input.direction) base.push(eq(T.direction, input.direction));
-  if (input.accountId) base.push(sql`${T.bankLineId} in (select id from bank_statement_lines where account_id = ${input.accountId})`);
+  if (input.accountId) base.push(eq(T.accountId, input.accountId));
   for (const w of searchWords(input.q)) {
     const like = `%${w.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
     base.push(sql`(lower(${T.description}) like ${like} or ${T.categoryKey} like ${like} or lower(coalesce(${T.reference}, '')) like ${like})`);

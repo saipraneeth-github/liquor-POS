@@ -12,7 +12,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { Decimal } from 'decimal.js';
 import { db } from '../../db/client.js';
 import {
-  accountLedgers, bankAccounts, bankIgnoreRules, bankLineMatches, bankTransactionTypes, bankStatementLines, bankStatements, branches, journalLines, journalVouchers, users,
+  accountLedgers, bankAccounts, bankIgnoreRules, bankLineMatches, bankTransactionTypes, bankStatementLines, bankStatements, branches, journalLines, journalVouchers, ledgerTransactions, users,
 } from '../../db/schema.js';
 import { BusinessRuleError, ConflictError, ForbiddenError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { Tx } from '../../lib/domain-events.js';
@@ -479,7 +479,7 @@ export async function importStatement(user: JwtPayload, accountId: string, buf: 
 
 // ─── BOOK SIDE ──────────────────────────────────────────────────────────────
 
-interface BookRow extends BookEntry { branchId: string }
+interface BookRow extends BookEntry { branchId: string; voucherId: string }
 
 // A BILL_VOID reversal sits on the opposite side of its sale but belongs to the same settlement group
 const isSalesNet = (e: BookRow) => e.sourceType === 'BILL' || e.sourceType === 'BILL_VOID';
@@ -489,7 +489,7 @@ async function loadUnmatchedBookEntries(account: Account, from: string, to: stri
   const branchIds = await scopeBranchIds(account);
   const rows = await db
     .select({
-      id: journalLines.id, date: journalVouchers.voucherDate, debit: journalLines.debit, credit: journalLines.credit,
+      id: journalLines.id, voucherId: journalVouchers.id, date: journalVouchers.voucherDate, debit: journalLines.debit, credit: journalLines.credit,
       narration: journalVouchers.narration, sourceType: journalVouchers.sourceType, branchId: journalVouchers.branchId,
     })
     .from(journalLines)
@@ -776,7 +776,7 @@ async function loadEntriesForMatch(tx: Tx, account: Account, entryIds: string[])
   const branchIds = await scopeBranchIds(account);
   const rows = await tx
     .select({
-      id: journalLines.id, date: journalVouchers.voucherDate, debit: journalLines.debit, credit: journalLines.credit,
+      id: journalLines.id, voucherId: journalVouchers.id, date: journalVouchers.voucherDate, debit: journalLines.debit, credit: journalLines.credit,
       narration: journalVouchers.narration, sourceType: journalVouchers.sourceType, branchId: journalVouchers.branchId,
     })
     .from(journalLines)
@@ -819,6 +819,8 @@ async function applyMatch(
     throw new BusinessRuleError(`The amounts differ by ₹${money2(fee)}. Confirm posting it as a bank charge, or choose different entries.`);
   }
   await linkEntries(tx, line.id, entries.map((e) => e.id));
+  await tx.update(ledgerTransactions).set({ reconStatus: 'MATCHED' })
+    .where(and(eq(ledgerTransactions.source, 'MANUAL'), inArray(ledgerTransactions.voucherId, entries.map((e) => e.voucherId))));
   let voucherId: string | null = null;
   if (hasFee) {
     voucherId = await postVoucherForLine(tx, account, line, user,
@@ -995,7 +997,12 @@ export async function unmatchLine(user: JwtPayload, lineId: string) {
     throw new ConflictError('Accepting this line posted a voucher. Reverse that voucher with a manual journal entry; the line cannot simply be un-matched.');
   }
   await db.transaction(async (tx) => {
+    const linked = await tx.select({ voucherId: journalLines.voucherId }).from(bankLineMatches)
+      .innerJoin(journalLines, eq(journalLines.id, bankLineMatches.journalLineId))
+      .where(eq(bankLineMatches.lineId, line.id));
     await tx.delete(bankLineMatches).where(eq(bankLineMatches.lineId, line.id));
+    if (linked.length > 0) await tx.update(ledgerTransactions).set({ reconStatus: 'UNMATCHED' })
+      .where(and(eq(ledgerTransactions.source, 'MANUAL'), inArray(ledgerTransactions.voucherId, linked.map((entry) => entry.voucherId))));
     await tx.update(bankStatementLines).set({
       status: 'UNMATCHED', category: null, suggestion: null, confidence: null, feeAmount: '0.00', note: null, ignoreReason: null, ignoredByRuleId: null,
       resolvedById: null, resolvedAt: null,
