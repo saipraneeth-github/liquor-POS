@@ -1,3 +1,4 @@
+import { defaultPage } from './navigation';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Moon, Sun } from 'lucide-react';
@@ -94,7 +95,7 @@ export function Login() {
       login(token, freshUser);
       // Best effort: remember the shop's name so the next sign-in screen can greet it
       api.get<Array<{ name: string }>>('/branches').then((b) => { if (b[0]?.name) write(WORKPLACE_KEY, b[0].name); }).catch(() => undefined);
-      navigate(freshUser.role === 'owner' && !freshUser.syndicateId ? '/platform' : '/');
+      navigate(defaultPage(freshUser) ?? '/');
     } catch (err: unknown) {
       localStorage.removeItem('token');
       if (err instanceof ApiError && err.status === 429) {

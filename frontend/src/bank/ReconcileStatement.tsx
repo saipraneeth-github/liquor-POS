@@ -1,9 +1,12 @@
+import { SimpleReview } from './SimpleReview';
+import { readStatementLines } from './statement-lines';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { Badge, Field, Modal, inr } from '../components/ui';
 import { errorMessage, showToast } from '../lib/print';
 import { BankVsBook } from './BankVsBook';
 import { IgnoreModal } from './IgnoreModal';
+import { useT } from '../i18n';
 import {
   CATEGORY_LABEL, CUSTOM_PREFIX, IGNORE_REASON_LABEL, NEEDS_LEDGER, isZero, type Account, type Candidate, type Category, type Line, type LineDetail, type LineStatus, type StatementRow, type Summary, type TxnType,
 } from './types';
@@ -46,6 +49,7 @@ export function ReconcileStatement({
   onBack: () => void;
   onReconciled?: () => void;
 }) {
+  const { t } = useT();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -64,7 +68,7 @@ export function ReconcileStatement({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [types, setTypes] = useState<TxnType[]>([]);
   const [addingType, setAddingType] = useState(false);
-  const [view, setView] = useState<'TABLE' | 'BOOK'>('BOOK');
+  const [view, setView] = useState<'SIMPLE' | 'TABLE' | 'BOOK'>('SIMPLE');
 
   const loadTypes = useCallback(async (accountId: string) => {
     try { setTypes(await api.get<TxnType[]>(`/bank/accounts/${accountId}/types`)); } catch { /* types are optional: the built-in ones still work */ }
@@ -80,7 +84,7 @@ export function ReconcileStatement({
     try {
       const [d, l, s] = await Promise.all([
         api.get<Detail>(`/bank/statements/${statementId}`),
-        api.get<Line[]>(`/bank/statements/${statementId}/lines?limit=500`),
+        readStatementLines((offset) => api.get<Line[]>(`/bank/statements/${statementId}/lines?limit=500&offset=${offset}`)),
         api.get<Summary>(`/bank/statements/${statementId}/summary`),
       ]);
       setDetail(d);
@@ -94,7 +98,21 @@ export function ReconcileStatement({
     }
   }, [statementId, loadTypes]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    // This component stays mounted while the user moves between statements. Every filter and selection is
+    // statement-local; carrying one statement's "Ignored" view into the next can make a valid import look empty.
+    setLoading(true);
+    setFilter('REVIEW');
+    setSearch('');
+    setSelected(new Set());
+    setDirection('ALL');
+    setTypeFilter('');
+    setDateFrom('');
+    setDateTo('');
+    setExpanded(null);
+    setView('SIMPLE');
+    void load();
+  }, [load]);
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     try { await fn(); showToast(ok, 'success'); await load(); } catch (err) { showToast(errorMessage(err), 'error'); }
@@ -161,16 +179,35 @@ export function ReconcileStatement({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <button type="button" id="bankBackToStatements" onClick={onBack} className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:underline cursor-pointer mb-0.5 inline-block">← All statements</button>
+      <button type="button" id="bankBackToStatements" onClick={onBack} className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:underline cursor-pointer inline-block">← All statements</button>
+      <div className="grid items-stretch gap-6 border-b border-gray-200 dark:border-gray-700 pb-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        <div className="flex min-w-0 flex-col justify-between gap-5 break-words">
+          <div>
           <h3 className="text-base font-bold text-gray-900 dark:text-white">
             {account.name}: {statement.periodStart} → {statement.periodEnd}{' '}
             <Badge tone={statement.status === 'RECONCILED' ? 'good' : 'info'}>{statement.status === 'RECONCILED' ? 'Reconciled' : 'In progress'}</Badge>
           </h3>
           <p className="text-xs text-gray-500">{statement.originalFilename} · {statement.lineCount} lines · closing {statement.closingBalance ? inr(statement.closingBalance) : 'unknown'}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button id="bankViewSimple" type="button" aria-pressed={view === 'SIMPLE'} onClick={() => setView('SIMPLE')} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view === 'SIMPLE' ? 'bg-purple-600 text-white' : 'border border-gray-300 dark:border-gray-600'}`}>{t('Review one by one')}</button>
+            <button id="bankViewAdvanced" type="button" aria-pressed={view !== 'SIMPLE'} onClick={() => setView('TABLE')} className={`rounded-lg px-4 py-2 text-sm font-semibold ${view !== 'SIMPLE' ? 'bg-purple-600 text-white' : 'border border-gray-300 dark:border-gray-600'}`}>{t('All entries & tools')}</button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <dl aria-label={t('Statement totals')} className="grid min-w-0 w-full grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="min-w-0 rounded-xl border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-950/20 p-5 xl:p-6">
+            <dt className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{t('Money in total')}</dt>
+            <dd className="mt-3 break-words font-display text-xl xl:text-2xl font-bold tabular-nums text-emerald-800 dark:text-emerald-300">{inr(lines.reduce((sum, row) => sum + Number(row.credit || 0), 0))}</dd>
+          </div>
+          <div className="min-w-0 rounded-xl border border-rose-200 dark:border-rose-800/40 bg-rose-50 dark:bg-rose-950/20 p-5 xl:p-6">
+            <dt className="text-sm font-medium text-rose-800 dark:text-rose-300">{t('Money out total')}</dt>
+            <dd className="mt-3 break-words font-display text-xl xl:text-2xl font-bold tabular-nums text-rose-800 dark:text-rose-300">{inr(lines.reduce((sum, row) => sum + Number(row.debit || 0), 0))}</dd>
+          </div>
+        </dl>
+        {view !== 'SIMPLE' && <div className="flex w-full flex-wrap items-center gap-2 lg:col-span-2">
+          <details className="w-full border-b border-gray-200 dark:border-gray-700 pb-2">
+          <summary className="text-sm font-semibold text-gray-600 dark:text-gray-300">{t('Statement tools')}</summary>
+          <div className="flex flex-wrap gap-2">
           <button type="button" id="bankAddType" className="px-3 py-2 text-xs rounded-lg border border-purple-300 text-purple-700 dark:text-purple-300 font-semibold hover:bg-purple-50 dark:hover:bg-purple-950/30 cursor-pointer"
             onClick={() => setAddingType(true)}>+ Add transaction type</button>
           <button type="button" id="bankRematch"
@@ -178,6 +215,8 @@ export function ReconcileStatement({
             className="px-3 py-2 text-xs rounded-lg border dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             title={statement.status === 'RECONCILED' ? 'Statement is already reconciled' : ''}
             onClick={() => void act(() => api.post(`/bank/statements/${statementId}/match`), 'Matching re-run')}>Re-run matching</button>
+          </div>
+          </details>
           <button type="button" id="bankAcceptAll"
             disabled={statement.status === 'RECONCILED' || (counts.SUGGESTED ?? 0) === 0}
             className="px-3 py-2 text-xs rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
@@ -185,7 +224,7 @@ export function ReconcileStatement({
             onClick={() => void act(async () => {
               const r = await api.post<{ accepted: number; skipped: number }>(`/bank/statements/${statementId}/accept-suggestions`, {});
               showToast(`${r.accepted} accepted, ${r.skipped} left for you to review`, 'success');
-            }, 'Done')}>Accept all high-confidence matches</button>
+            }, 'Done')}>{t('Accept suggested matches')}</button>
           {ignoreSuggested > 0 && (
             <button type="button" id="bankApplyIgnores"
               disabled={statement.status === 'RECONCILED'}
@@ -203,7 +242,7 @@ export function ReconcileStatement({
               const diff = summary?.summary.difference;
               if (diff !== undefined && diff !== null && !isZero(diff)) setConfirmDifference(diff);
               else void submitFinalize();
-            }}>{statement.status === 'RECONCILED' ? 'Statement Submitted' : 'Submit Statement'}</button>
+            }}>{statement.status === 'RECONCILED' ? 'Statement Submitted' : t('Finish checking')}</button>
           <button
             type="button"
             id="bankCloseStatement"
@@ -213,10 +252,26 @@ export function ReconcileStatement({
           >
             Close
           </button>
-        </div>
+        </div>}
       </div>
 
-      {summary && <SummaryBar statement={statement} lines={lines} s={summary} open={open} />}
+      {view === 'SIMPLE' && <SimpleReview lines={lines} remaining={open} onMatch={setMatchFor} onRecord={setPostFor} onIgnore={(line) => setIgnoreTargets([line])} onReload={() => void load()} />}
+
+      {view !== 'SIMPLE' && statement.status !== 'RECONCILED' && (
+        <p className="rounded-lg bg-gray-50 dark:bg-gray-800 p-4 text-sm text-gray-700 dark:text-gray-200">
+          {open > 0 ? t('Review the bank entries below. Match an existing entry, record a missing payment, or mark a non-shop transaction.') : t('All entries have a decision. Check the balances, then finish checking.')}
+        </p>
+      )}
+
+      {summary && <details open={open === 0} className="border-y border-gray-200 dark:border-gray-700"><summary className="text-sm font-semibold">{t('Balances & checks')}</summary><SummaryBar statement={statement} lines={lines} s={summary} open={open} /></details>}
+
+      {view === 'SIMPLE' && open === 0 && statement.status !== 'RECONCILED' && (
+        <button id="bankSimpleFinish" type="button" className="rounded-lg bg-purple-600 text-white font-semibold px-5 py-3" onClick={() => {
+          const diff = summary?.summary.difference;
+          if (diff !== undefined && diff !== null && !isZero(diff)) setConfirmDifference(diff);
+          else void submitFinalize();
+        }}>{t('Finish checking')}</button>
+      )}
 
       {confirmDifference !== null && (
         <Modal title="Submit statement with a difference?" onClose={() => setConfirmDifference(null)}>
@@ -243,6 +298,7 @@ export function ReconcileStatement({
             className={`px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer ${filter === f ? 'bg-purple-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>{label}</button>
         ))}
       </div>}
+      {view !== 'SIMPLE' && <>
       <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-600 p-0.5 text-xs font-semibold" role="tablist" aria-label="View">
         <button type="button" id="bankViewTable" role="tab" aria-selected={view === 'TABLE'} onClick={() => setView('TABLE')} className={`px-3 py-1.5 rounded-md cursor-pointer ${view === 'TABLE' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Table</button>
         <button type="button" id="bankViewBook" role="tab" aria-selected={view === 'BOOK'} onClick={() => setView('BOOK')} className={`px-3 py-1.5 rounded-md cursor-pointer ${view === 'BOOK' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Side by side</button>
@@ -276,6 +332,7 @@ export function ReconcileStatement({
           return true;
         }} />}
 
+      </>}
       {view === 'TABLE' && selectedLines.length > 0 && (
         <div id="bankBulkBar" className="flex flex-wrap items-center gap-3 px-4 py-2 rounded-lg bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-sm">
           <b>{selectedLines.length} selected</b>
@@ -577,6 +634,7 @@ function SummaryCard({ s }: { s: Summary }) {
 }
 
 function PostModal({ line, account, types, onAddType, onClose, onDone }: { line: Line; account: Account; types: TxnType[]; onAddType: () => void; onClose: () => void; onDone: () => void }) {
+  const { t } = useT();
   const isIn = !isZero(line.credit);
   const options = isIn ? IN_CATEGORIES : OUT_CATEGORIES;
   const hinted = line.suggestion?.kind === 'POST' ? line.suggestion.category : null;
@@ -584,7 +642,7 @@ function PostModal({ line, account, types, onAddType, onClose, onDone }: { line:
   const mine = types.filter((t) => t.isActive && (t.direction === 'EITHER' || t.direction === (isIn ? 'IN' : 'OUT')));
   const hintedType = line.suggestion?.kind === 'POST' ? line.suggestion.customTypeId : undefined;
   // `choice` is a built-in category id, or `type:<id>` for one of the customer's own types
-  const [choice, setChoice] = useState<string>(hintedType && mine.some((t) => t.id === hintedType) ? `type:${hintedType}` : hinted && options.some((o) => o.id === hinted) ? hinted : options[0].id);
+  const [choice, setChoice] = useState<string>(hintedType && mine.some((t) => t.id === hintedType) ? `type:${hintedType}` : hinted && options.some((o) => o.id === hinted) ? hinted : '');
   // The customer's types may finish loading after the dialog opens: pick the suggested one then, unless they already chose
   const [picked, setPicked] = useState(false);
   useEffect(() => {
@@ -608,6 +666,7 @@ function PostModal({ line, account, types, onAddType, onClose, onDone }: { line:
   }, [needsLedger, ledgers.length, account.branchId]);
 
   const submit = async () => {
+    if (!choice || busy || (needsLedger && !ledgerId)) return;
     setBusy(true);
     try {
       await api.post(`/bank/lines/${line.id}/post`, { ...(customId ? { typeId: customId } : { category }), ...(needsLedger ? { ledgerId } : {}), ...(narration.trim() ? { narration: narration.trim() } : {}) });
@@ -619,15 +678,19 @@ function PostModal({ line, account, types, onAddType, onClose, onDone }: { line:
   return (
     <Modal title={`Post ${inr(amount)} to your books`} onClose={onClose}>
       <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">“{line.narration}” is on the bank statement but not in your books yet. Choose what it is; a voucher is created and matched to this line.{hintReason && <span className="block text-xs text-gray-500 mt-1">{hintReason}</span>}</p>
+      <div className={`mb-3 rounded-lg px-3 py-2 text-sm font-semibold ${isIn ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-200'}`}>{isIn ? '+ Money received' : '− Money paid'} · {inr(amount)}</div>
       <div className="space-y-3">
-        <Field label="What is it?">
+        <Field label={t(isIn ? 'What was this money received for?' : 'What was this money paid for?')}>
           <select id="bankPostCategory" value={choice} onChange={(e) => { setPicked(true); setChoice(e.target.value); }} className="w-full p-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-            {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            <option value="">{t('Choose a transaction type')}</option>
+            {options.map((o) => <option key={o.id} value={o.id}>{t(o.label)}</option>)}
             {mine.length > 0 && <optgroup label="Your own types">{mine.map((t) => <option key={t.id} value={`type:${t.id}`}>{t.name}</option>)}</optgroup>}
           </select>
           <button type="button" id="bankPostAddType" onClick={onAddType} className="mt-1 text-xs text-purple-700 font-semibold hover:underline cursor-pointer">+ Add your own type</button>
         </Field>
-        <p className="text-xs text-gray-500">{customId ? `Posts to “${types.find((t) => t.id === customId)?.ledgerName ?? ''}” and matches this line.` : options.find((o) => o.id === category)?.effect}</p>
+        {choice && <p className="text-sm text-gray-600 dark:text-gray-300">{category === 'CASH_DEPOSIT'
+          ? t('Use Cash deposit only for physical cash taken from the till and deposited into the bank. It reduces the Cash Book balance.')
+          : customId ? `Posts to “${types.find((t) => t.id === customId)?.ledgerName ?? ''}” and matches this line.` : options.find((o) => o.id === category)?.effect}</p>}
         {needsLedger && (
           <Field label="Account">
             <select id="bankPostLedger" value={ledgerId} onChange={(e) => setLedgerId(e.target.value)} className="w-full p-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
@@ -639,10 +702,11 @@ function PostModal({ line, account, types, onAddType, onClose, onDone }: { line:
         <Field label="Note (optional)">
           <input value={narration} onChange={(e) => setNarration(e.target.value)} maxLength={200} className="w-full p-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
         </Field>
+        <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-900 dark:text-gray-200">{t('Posting updates the books immediately, even while the statement is still being checked.')}</p>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border dark:border-gray-600 cursor-pointer">Cancel</button>
-          <button type="button" id="bankPostConfirm" disabled={busy || (needsLedger && !ledgerId)} onClick={() => void submit()}
-            className="px-4 py-2 text-sm rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-700 disabled:opacity-50 cursor-pointer">Post to books</button>
+          <button type="button" id="bankPostConfirm" disabled={busy || !choice || (needsLedger && !ledgerId)} onClick={() => void submit()}
+            className="px-4 py-2 text-sm rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-700 disabled:opacity-50 cursor-pointer">{t('Post to books')}</button>
         </div>
       </div>
     </Modal>
@@ -750,6 +814,7 @@ function AddTypeModal({ account, types, onClose, onDone }: { account: Account; t
 }
 
 function MatchModal({ line, onClose, onDone }: { line: Line; onClose: () => void; onDone: () => void }) {
+  const { t } = useT();
   const isIn = !isZero(line.credit);
   const amount = Number(isIn ? line.credit : line.debit);
   const [cands, setCands] = useState<Candidate[] | null>(null);
@@ -779,26 +844,25 @@ function MatchModal({ line, onClose, onDone }: { line: Line; onClose: () => void
 
   return (
     <Modal title={`Match ${inr(amount)} to book entries`} onClose={onClose} wide>
-      <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">Pick the entries in your books that this {isIn ? 'credit' : 'debit'} pays for. A settlement can cover many sales.</p>
-      {cands === null ? <div className="text-sm text-gray-500">Loading…</div> : cands.length === 0 ? <div className="text-sm text-gray-500">No unmatched entries near this date.</div> : (
+      <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">{t('Select the book entries covered by this bank transaction. Select more than one for a settlement.')}</p>
+      {cands === null ? <div className="text-sm text-gray-500">{t('Loading…')}</div> : cands.length === 0 ? <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm"><strong className="block">{t('No matching book entries found')}</strong><span className="block mt-1">{t('Go back and choose Missing from our books to record this transaction, or check All entries & tools.')}</span></div> : (
         <div className="max-h-72 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
-          <table className="min-w-full text-xs">
-            <tbody>
-              {cands.map((c) => (
-                <tr key={c.id} className="border-b border-gray-100 dark:border-gray-700">
-                  <td className="px-2 py-1.5"><input type="checkbox" data-entry={c.id} checked={picked.has(c.id)} onChange={() => toggle(c.id)} /></td>
-                  <td className="px-2 py-1.5 whitespace-nowrap">{c.date}</td>
-                  <td className="px-2 py-1.5">{c.narration}</td>
-                  <td className="px-2 py-1.5 text-right font-mono">{inr(Number(c.debit) > 0 ? c.debit : c.credit)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            {cands.map((c) => (
+              <label key={c.id} className="flex items-start gap-3 p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900">
+                <input type="checkbox" className="mt-1 size-5 shrink-0" data-entry={c.id} checked={picked.has(c.id)} onChange={() => toggle(c.id)} />
+                <span className="min-w-0 flex-1 text-sm">
+                  <span className="flex flex-wrap justify-between gap-2"><span>{c.date}</span><strong className="tabular-nums">{inr(Number(c.debit) > 0 ? c.debit : c.credit)}</strong></span>
+                  <span className="block mt-1 break-words">{c.narration}</span>
+                </span>
+              </label>
+            ))}
+          </div>
         </div>
       )}
-      <div className="mt-3 text-sm space-y-1">
-        <div className="flex justify-between"><span>Selected entries</span><span className="font-mono">{inr(total)}</span></div>
-        <div className="flex justify-between"><span>Bank statement line</span><span className="font-mono">{inr(amount)}</span></div>
+      <div className="mt-3 rounded-lg bg-gray-50 dark:bg-gray-800 p-3 text-sm space-y-1">
+        <div className="flex justify-between gap-2"><span>{t('Selected book entries')}</span><span className="font-mono">{inr(total)}</span></div>
+        <div className="flex justify-between gap-2"><span>{t('Bank transaction')}</span><span className="font-mono">{inr(amount)}</span></div>
         {picked.size > 0 && Math.abs(fee) > 0.005 && (
           fee > 0
             ? <label className="flex items-center gap-2 text-amber-700 dark:text-amber-300"><input id="bankPostDiff" type="checkbox" checked={postDiff} onChange={(e) => setPostDiff(e.target.checked)} />The bank kept {inr(fee)}. Post it as a bank charge.</label>

@@ -209,6 +209,11 @@ export async function createBill(
   const priceOf = (p: { id: string; mrp: string }) => resolveUnitPrice(saleType, p.mrp, typePriceMap.get(p.id), branchPrices.get(p.id));
   const unpriced = productRows.filter((p) => priceOf(p) === null);
   if (unpriced.length > 0) {
+    if (!saleType.isDefault) {
+      throw new BusinessRuleError(
+        `No ${saleType.name} price is set for: ${unpriced.map((p) => p.name).join(', ')}. Set the price before billing under this sale type.`,
+      );
+    }
     throw new BusinessRuleError(
       `The following product(s) have no selling price set (MRP ₹0.00). Set the price on the Products page (Pricing) before billing: ${unpriced.map((p) => p.name).join(', ')}`,
     );

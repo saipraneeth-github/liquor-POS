@@ -1,0 +1,14 @@
+.accounting-workspace { max-width: 92rem; margin-inline: auto; }
+.accounting-workspace button, .accounting-workspace input, .accounting-workspace select { min-height: 44px; }
+.accounting-workspace input, .accounting-workspace select { max-width: 100%; }
+.accounting-workspace button:focus-visible, .accounting-workspace a:focus-visible { outline: 2px solid var(--color-purple-600); outline-offset: 3px; }
+.accounting-workspace td { overflow-wrap: anywhere; }
+.accounting-workspace .font-mono { font-variant-numeric: tabular-nums; }
+@media (max-width: 639px) {
+  .accounting-stack-table, .accounting-stack-table tbody, .accounting-stack-table tfoot { display: block; }
+  .accounting-stack-table thead { display: none; }
+  .accounting-stack-table tr { display: block; padding: 12px; }
+  .accounting-stack-table td { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 6px 0; text-align: left; white-space: normal; }
+  .accounting-stack-table td[data-label]::before { content: attr(data-label); font-family: var(--font-sans); font-weight: 500; color: var(--color-gray-500); }
+  .accounting-workspace .flex.justify-between { flex-wrap: wrap; gap: 8px; }
+}

@@ -47,7 +47,7 @@ test('POS: scan, keyboard, undo, tender with change, park and resume, recent ite
   await expect(page.locator('#cartCount')).toContainText('1 item');
 
   // Keys act on the last touched line: + adds one, - takes one away
-  await lines.first().locator('.line-clamp-2').click();
+  await lines.first().click();
   await page.keyboard.press('+');
   await expect(lines.first()).toContainText('×2');
   await page.keyboard.press('-');
@@ -126,9 +126,9 @@ test('POS: on a phone the order is a bar at the bottom that opens as a sheet', a
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto('/pos');
   await expect(page.locator('.pos-product').first()).toBeVisible({ timeout: 20000 });
-  await expect(page.locator('#cartBar')).toContainText('Cart is empty');
+  await expect(page.locator('#cartBar')).toContainText('Open bill');
   await page.locator('.pos-product:not([disabled])').first().click();
-  await expect(page.locator('#cartBar')).toContainText('1 item');
+  await expect(page.locator('#cartBar')).toContainText('(1)');
   await page.click('#cartBar');
   await expect(page.locator('#cartPanel')).toBeInViewport();
   await expect(page.locator('.cart-line')).toHaveCount(1);

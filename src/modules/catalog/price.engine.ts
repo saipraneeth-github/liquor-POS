@@ -8,7 +8,7 @@
  *
  * Order of preference for one product at one branch:
  *   default type:      branch default override  →  tenant mrp
- *   other sale type:   branch override for that type  →  tenant price for that type  →  the default-type price above
+ *   other sale type:   branch override for that type  →  tenant price for that type
  * A price of 0 / empty never counts. null = the product has no usable price (it cannot be sold).
  */
 import { Decimal } from 'decimal.js';
@@ -48,9 +48,8 @@ export function resolveUnitPrice(
   typePrice: string | null | undefined,
   branch?: BranchPriceEntry,
 ): string | null {
-  const base = defaultPrice(tenantMrp, branch);
-  if (type.isDefault) return base;
-  return positivePrice(type.id ? branch?.byType?.[type.id] : null) ?? positivePrice(typePrice) ?? base;
+  if (type.isDefault) return defaultPrice(tenantMrp, branch);
+  return positivePrice(type.id ? branch?.byType?.[type.id] : null) ?? positivePrice(typePrice);
 }
 
 /** True when the tenant's own price is missing, i.e. the product still "needs a price" for every branch without an override. */

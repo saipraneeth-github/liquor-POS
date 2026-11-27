@@ -313,12 +313,12 @@ export function Admin() {
   return (
     <section className="page active" id="page-admin" aria-labelledby="adminTitle">
       <div className="mb-5">
-        <h2 className="text-2xl font-bold" id="adminTitle">Administration</h2>
+        <h2 className="text-2xl font-bold" id="adminTitle">Staff &amp; Billing Counters</h2>
         <p className="text-sm text-gray-500 mt-0.5">Who can sign in at this branch, what each person can open, and which counters are set up.</p>
       </div>
 
       <div className="card pad stack p-6 bg-white rounded shadow mb-6 flex flex-col gap-4">
-        <div className="h2 text-lg font-bold border-b pb-2">Users</div>
+        <div className="h2 text-lg font-bold border-b pb-2">Staff members</div>
         <div id="userList" className="table-wrap overflow-x-auto text-sm">
           {loading ? (
             <BeerBottleLoader inline size="sm" title="Loading Staff & Users…" subtitle="Fetching branch user accounts and roles…" />

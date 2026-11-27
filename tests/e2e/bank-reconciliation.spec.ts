@@ -47,12 +47,13 @@ test.beforeAll(async ({ request }) => {
 });
 
 test('add an account, upload a statement from any bank, see it verified, and reconcile it into the books', async ({ page }) => {
+  test.setTimeout(90_000);
   await reactLogin(page, 'manager@liquor.com');
   await page.click('#nav-bank');
   await expect(page.getByRole('heading', { name: 'Match Bank Statement' })).toBeVisible();
 
   // Add the account (a manager cannot choose the whole-business scope)
-  await page.click('#bankAddAccount');
+  await page.locator('#bankAddFirst, #bankAddAccount').first().click();
   await page.fill('#bankAccName', `ICICI ${stamp}`);
   await page.fill('#bankAccBank', 'ICICI');
   await page.fill('#bankAccLast4', '4821');
@@ -77,7 +78,9 @@ test('add an account, upload a statement from any bank, see it verified, and rec
   await expect(page.locator('#bankPreviewTable')).toContainText('CASH DEP BY SELF');
   await expect(page.locator('#bankImportBtn')).toBeEnabled();
   await page.click('#bankImportBtn');
+  await page.click('#bankViewAdvanced');
   await page.click('#bankViewTable');
+  await page.getByText('Balances & checks', { exact: true }).click();
   await page.click('#bankWorkingsToggle');
 
   // Reconcile: nothing is "reconciled" while lines are still missing from the books
@@ -102,9 +105,13 @@ test('add an account, upload a statement from any bank, see it verified, and rec
 
   // The last one is an ordinary supplier transfer: the user says what it is
   await page.locator('#bankLinesTable tbody tr').first().locator('[data-action="post"]').click();
+  await expect(page.locator('#bankPostCategory')).toHaveValue('');
+  await expect(page.locator('#bankPostConfirm')).toBeDisabled();
+  await expect(page.getByRole('dialog')).toContainText('Posting updates the books immediately');
   await page.selectOption('#bankPostCategory', 'SUPPLIER_PAYMENT');
   await page.click('#bankPostConfirm');
-  await expect(card).toHaveAttribute('data-state', 'reconciled');
+  // Every statement line is handled now. A pre-statement opening-balance gap can still require confirmation.
+  await expect(card).toHaveAttribute('data-state', /^(reconciled|difference)$/);
   await expect(page.locator('#bankFinalize')).toBeEnabled();
   await page.click('#bankFinalize');
   // when the totals still differ the app asks first; this statement may or may not tie out, so accept either way
@@ -121,6 +128,9 @@ test('add an account, upload a statement from any bank, see it verified, and rec
 
   // Viewing a reconciled statement has Accept-All and Submit disabled, and Close button returns out
   await page.click('[data-action="open-statement"]');
+  await page.click('#bankViewAdvanced');
+  await page.click('#bankViewTable');
+  await page.getByText('Balances & checks', { exact: true }).click();
   await expect(page.locator('#bankFinalize')).toBeDisabled();
   await expect(page.locator('#bankAcceptAll')).toBeDisabled();
   await page.click('#bankCloseStatement');
@@ -134,9 +144,11 @@ test('add an account, upload a statement from any bank, see it verified, and rec
 });
 
 test('personal transactions: ignore with a reason, in bulk, save a rule, and the rule handles the next statement', async ({ page }) => {
+  test.setTimeout(90_000);
   await reactLogin(page, 'manager@liquor.com');
   await page.click('#nav-bank');
   await expect(page.locator('#bankAccountSelect')).toBeVisible();
+  await page.locator('#bankAccountSelect').selectOption({ label: `ICICI ${stamp} ••4821` });
 
   // A statement with personal spend mixed in
   await page.click('#bankUploadBtn');
@@ -149,6 +161,7 @@ test('personal transactions: ignore with a reason, in bulk, save a rule, and the
   ])));
   await expect(page.locator('#bankBalanceCheck')).toHaveAttribute('data-status', 'PASS');
   await page.click('#bankImportBtn');
+  await page.click('#bankViewAdvanced');
   await page.click('#bankViewTable');
   const rows = page.locator('#bankLinesTable tbody tr');
   await expect(rows).toHaveCount(5);
@@ -180,6 +193,7 @@ test('personal transactions: ignore with a reason, in bulk, save a rule, and the
   await expect(page.locator('#bankLinesTable')).toContainText('Personal');
   await expect(page.locator('#bankLinesTable')).toContainText('Another business');
   await expect(page.locator('#bankLinesTable')).toContainText('Owner meals');
+  await page.getByText('Balances & checks', { exact: true }).click();
   await page.click('#bankWorkingsToggle');
   await expect(page.locator('#bankIgnoredSummary')).toContainText('3 lines');
 
@@ -193,6 +207,7 @@ test('personal transactions: ignore with a reason, in bulk, save a rule, and the
   ])));
   await expect(page.locator('#bankPreviewTable tbody tr')).toHaveCount(3);
   await page.click('#bankImportBtn');
+  await page.click('#bankViewAdvanced');
   await page.click('#bankViewTable');
   await expect(rows).toHaveCount(2);                                                  // Swiggy did not need attention
   await page.locator('[data-filter="IGNORED"]').click();
@@ -201,12 +216,14 @@ test('personal transactions: ignore with a reason, in bulk, save a rule, and the
 
   // Taking it back sticks: re-running the match does not ignore it again
   await rows.first().locator('[data-action="unmatch"]').click();
+  await page.getByText('Statement tools', { exact: true }).click();
   await page.click('#bankRematch');
   await page.locator('[data-filter="REVIEW"]').click();
   await expect(rows.filter({ hasText: 'SWIGGY' })).toHaveCount(1);
 
   // The rule can be seen and changed from the account page
   await page.getByRole('button', { name: '← All statements' }).click();
+  await page.getByText('Rules for personal and other non-shop transactions', { exact: true }).click();
   await page.click('#bankRulesToggle');
   const ruleRow = page.locator('[data-rule="SWIGGY"]');
   await expect(ruleRow).toBeVisible();

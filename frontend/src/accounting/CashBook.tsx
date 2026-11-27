@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { useT } from '../i18n';
 import { businessDate } from '../lib/business-day';
-import { errorMessage, showToast } from '../lib/print';
 
 type Entry = { voucherId: string; voucherNumber: string; voucherType: string; narration: string; debit: string; credit: string; balance: string };
 type Day = { date: string; opening: string; receipts: string; payments: string; closing: string; entries: Entry[] };
@@ -12,6 +12,8 @@ const dayLabel = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en
 
 /** The classic cash book (or bank book): each day opens with a balance, takes receipts, pays out, and closes. */
 export function CashBook({ branchId }: { branchId: string }) {
+  const { t } = useT();
+  const [error, setError] = useState(false);
   const [ledger, setLedger] = useState<'CASH' | 'BANK'>('CASH');
   const [from, setFrom] = useState(businessDate(-30));
   const [to, setTo] = useState(businessDate());
@@ -21,10 +23,12 @@ export function CashBook({ branchId }: { branchId: string }) {
   const load = useCallback(async () => {
     if (!branchId) return;
     setLoading(true);
+    setError(false);
     try {
       setBook(await api.get<Book>(`/accounting/cash-book/${branchId}?ledger=${ledger}&from=${from}&to=${to}`));
-    } catch (err) {
-      showToast(errorMessage(err), 'error');
+    } catch {
+      setError(true);
+      setBook(null);
     } finally {
       setLoading(false);
     }
@@ -49,15 +53,16 @@ export function CashBook({ branchId }: { branchId: string }) {
         </label>
       </div>
 
-      {loading && <div className="text-sm text-gray-500">Loading…</div>}
+      {loading && <div role="status" className="text-sm text-gray-500">{t('Loading report…')}</div>}
+      {error && <div role="alert" className="rounded-lg border p-4"><p>{t('Could not load this report. Try again.')}</p><button type="button" onClick={() => void load()} className="underline">{t('Try again')}</button></div>}
 
       {book && !loading && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            {[['Opening', book.opening], ['Receipts', book.totalReceipts], ['Payments', book.totalPayments], ['Closing', book.closing]].map(([label, v]) => (
-              <div key={label} className="p-3 rounded-lg border dark:border-gray-700 bg-white dark:bg-gray-800">
-                <div className="text-xs text-gray-500">{label}</div>
-                <div className="font-mono font-bold text-lg">{money(v)}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 text-sm">
+            {[['Opening balance', book.opening], ['Money received', book.totalReceipts], ['Money paid', book.totalPayments], ['Closing balance', book.closing]].map(([label, v]) => (
+              <div key={label} className={`p-5 rounded-xl border dark:border-gray-700 ${label === 'Closing balance' ? 'bg-purple-50 dark:bg-purple-950/30 border-purple-200' : 'bg-white dark:bg-gray-800'}`}>
+                <div className="text-sm text-gray-500">{t(label)}</div>
+                <div className="mt-3 font-display font-bold text-xl tabular-nums break-words">{money(v)}</div>
               </div>
             ))}
           </div>
@@ -71,7 +76,7 @@ export function CashBook({ branchId }: { branchId: string }) {
                 <span className="font-mono">Opening {money(d.opening)} · In {money(d.receipts)} · Out {money(d.payments)} · <b>Closing {money(d.closing)}</b></span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="accounting-stack-table w-full text-sm">
                   <thead>
                     <tr className="text-left text-gray-500">
                       <th className="px-3 py-1.5">Voucher</th><th className="px-3 py-1.5">Particulars</th>
@@ -81,11 +86,11 @@ export function CashBook({ branchId }: { branchId: string }) {
                   <tbody>
                     {d.entries.map((e) => (
                       <tr key={e.voucherId + e.debit + e.credit} className="border-t dark:border-gray-700">
-                        <td className="px-3 py-1.5 font-mono whitespace-nowrap">{e.voucherNumber}</td>
-                        <td className="px-3 py-1.5">{e.narration}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{Number(e.debit) ? money(e.debit) : ''}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{Number(e.credit) ? money(e.credit) : ''}</td>
-                        <td className="px-3 py-1.5 text-right font-mono">{money(e.balance)}</td>
+                        <td data-label={t('Voucher')} className="px-3 py-3 font-mono whitespace-nowrap">{e.voucherNumber}</td>
+                        <td data-label={t('Description')} className="px-3 py-3">{e.narration}</td>
+                        <td data-label={t('Money received')} className="px-3 py-3 text-right font-mono">{Number(e.debit) ? money(e.debit) : '—'}</td>
+                        <td data-label={t('Money paid')} className="px-3 py-3 text-right font-mono">{Number(e.credit) ? money(e.credit) : '—'}</td>
+                        <td data-label={t('Balance')} className="px-3 py-3 text-right font-mono">{money(e.balance)}</td>
                       </tr>
                     ))}
                   </tbody>

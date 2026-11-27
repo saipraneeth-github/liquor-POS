@@ -228,7 +228,7 @@ export function Inventory() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-1 text-sm font-medium">
+        <div className="inline-flex flex-col sm:flex-row rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-1 text-sm font-medium">
           <button
             type="button"
             className={`px-4 py-2 rounded-md transition-all flex items-center gap-2 cursor-pointer ${

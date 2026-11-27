@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { useT } from '../i18n';
 
 export const inr = (v: string | number) =>
   `₹${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -17,6 +18,7 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
 }
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  const { t } = useT();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
@@ -39,15 +41,16 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className={`bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl shadow-2xl w-full ${wide ? 'max-w-2xl' : 'max-w-xl'} p-6 border border-gray-200 dark:border-gray-700`}>
-        <div className="flex items-start justify-between mb-4">
-          <h2 id={titleId} className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <h2 id={titleId} className="min-w-0 break-words text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
           <button
             type="button"
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-            aria-label="Close"
+            className="min-h-11 inline-flex shrink-0 items-center gap-2 px-3 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            aria-label={t('Close')}
             onClick={onClose}
           >
-            <X size={20} />
+            <X size={20} aria-hidden="true" />
+            <span>{t('Close')}</span>
           </button>
         </div>
         {children}

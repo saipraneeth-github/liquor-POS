@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, api } from '../api/client';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, userCan } from '../auth/AuthProvider';
+import { ExpenseModal } from '../accounting/ExpenseModal';
+import { useT } from '../i18n';
 import { CashierView } from './CashierView';
 import { ManagerView } from './ManagerView';
 import { OwnerView } from './OwnerView';
@@ -24,11 +26,15 @@ function Skeleton() {
 }
 
 export function Dashboard() {
+  const { t } = useT();
+  const [expenseBranch, setExpenseBranch] = useState<string | null>(null);
+  const [expenseSaved, setExpenseSaved] = useState(false);
   const { user, activeBranchId, branches, setActiveBranch } = useAuth();
   const navigate = useNavigate();
   const branchId = activeBranchId ?? user?.branchId ?? '';
   const isSteward = user?.role === 'steward';
   const canSeeAllOutlets = user?.role === 'owner' && !!user?.syndicateId;
+  const canRecordExpense = user?.role === 'cashier' || (!!user && ['manager', 'office_admin', 'owner'].includes(user.role) && userCan(user, 'accounting.post') && !!(user.branchId || user.syndicateId));
 
   const [scope, setScope] = useState<Scope>(canSeeAllOutlets ? 'all' : 'branch');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -66,13 +72,13 @@ export function Dashboard() {
   }, [load]);
 
   useEffect(() => {
-    if (isSteward) return;
+    if (isSteward || expenseBranch !== null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'F2' && !e.repeat) { e.preventDefault(); navigate('/pos'); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isSteward, navigate]);
+  }, [isSteward, expenseBranch, navigate]);
 
   const go = (route: string) => navigate(route);
   const goAttention = (a: AttentionItem) => {
@@ -123,6 +129,7 @@ export function Dashboard() {
             <p id="dashSub">{subtitle}{updatedAt && <span className="lc-updated"> · updated {updatedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }).toUpperCase()}</span>}</p>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            {canRecordExpense && <button id="dashRecordExpense" type="button" className="lc-btn lc-btn-ghost lc-btn-big" onClick={() => { setExpenseSaved(false); setExpenseBranch(scope === 'all' ? '' : branchId); }}>{Icon.plus} {t('Record expense')}</button>}
             {canSeeAllOutlets && (
               <div role="group" aria-label="View" style={{ display: 'inline-flex', border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden', background: 'var(--surface)' }}>
                 {([['all', 'All outlets'], ['branch', 'This outlet']] as const).map(([s, label]) => (
@@ -141,6 +148,8 @@ export function Dashboard() {
           </div>
         </div>
 
+        {expenseSaved && <p role="status" className="lc-card">{t('Expense recorded')}</p>}
+        {expenseBranch !== null && <ExpenseModal initialBranchId={expenseBranch} onClose={() => setExpenseBranch(null)} onSaved={() => { setExpenseBranch(null); setExpenseSaved(true); void load(); }} />}
         {error && (
           <div className="lc-error" id="dashError" role="alert">
             <span>{error}{loaded ? ' Showing the last figures we had.' : ''}</span>

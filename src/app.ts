@@ -147,7 +147,7 @@ export function buildApp() {
       root: spaDistDir,
       prefix: '/',
       index: false,
-      wildcard: false, // SPA fallback is handled by setNotFoundHandler below
+      wildcard: true, // Serve built assets at /assets/*; unknown paths still reach the SPA fallback.
     });
   }
 

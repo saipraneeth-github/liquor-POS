@@ -28,6 +28,9 @@ test('owner picks a branch (persisted across reload) and closes the day for it',
 
   // Close the day for the selected branch
   await page.click('#nav-closing');
+  await expect(page.locator('#closingUpiSales')).toHaveAccessibleName('UPI sales amount');
+  await expect(page.locator('#closingCardSales')).toHaveAccessibleName('Card sales amount');
+  await expect(page.locator('#closingCreditSales')).toHaveAccessibleName('Khata / customer credit sales amount');
   await page.fill('#closingOpeningCash', '2000.00');
   await page.fill('#closingActualCash', '2000.00');
   await page.fill('#closingWithdrawals', '0');

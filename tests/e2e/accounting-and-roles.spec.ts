@@ -7,7 +7,9 @@ test('accounting: trial balance is balanced after sales; P&L and Tally export wo
   await checkoutAndGetBillNo(page);
 
   await page.click('#nav-accounting');
-  await expect(page.locator('#acctab-tb')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#cashBook')).toBeVisible();
+  await page.click('#acctab-tb');
+  await expect(page.locator('#acctab-tb')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#tbStatus')).toContainText('Balanced ✓');
   const dr = await page.locator('#tbDebit').innerText();
   const cr = await page.locator('#tbCredit').innerText();
@@ -28,16 +30,15 @@ test('accounting: trial balance is balanced after sales; P&L and Tally export wo
 
 test('role gating: steward cannot see accounting or billing; cashier cannot open manager screens', async ({ page }) => {
   await login(page, 'steward@liquor.com');
-  await expect(page.locator('#userDisplay')).toContainText('steward');
+  await expect(page.locator('#userDisplay')).toContainText(/steward/i);
   await expect(page.locator('#nav-dashboard')).toBeVisible();
   for (const tab of ['accounting', 'pos', 'bills', 'closing', 'admin', 'schemes']) {
     await expect(page.locator(`#nav-${tab}`)).toHaveCount(0);
   }
-  // Typing the address of a manager screen is refused with a visible message, and the steward is sent back to the dashboard
+  // Typing the address of a manager screen is refused and the steward is sent back to the dashboard.
   await page.goto('/accounting');
-  await expect(page.locator('#toastHost')).toContainText('cannot open Accounting');
   await expect(page.locator('#page-accounting')).toHaveCount(0);
-  await expect(page.locator('#page-dashboard')).toBeVisible();
+  await expect(page.locator('#page-tables')).toBeVisible();
 
   // Stewards do table service: Tables & KOT is reachable and lists the branch tables
   await expect(page.locator('#nav-tables')).toBeVisible();

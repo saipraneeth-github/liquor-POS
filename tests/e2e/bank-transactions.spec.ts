@@ -92,6 +92,8 @@ test('Upload an OFX file: the preview shows what was read, then it imports like 
   await expect(page.locator('#bankPreviewTable tbody tr')).toHaveCount(2);
   await expect(page.locator('#bankPreviewTable')).toContainText(`NEFT HOTEL RENT ${stamp}`);
   await page.click('#bankImportBtn');
+  await page.click('#bankViewAdvanced');
+  await page.click('#bankViewBook');
   await expect(page.locator('#bankVsBook')).toBeVisible();
   await expect(page.locator('#bvbBankList')).toContainText(`UPI CUSTOMER ${stamp}`);
 });
@@ -113,6 +115,8 @@ test('Filters work in the side-by-side view and the table, and the page uses the
   await page.click('#nav-bank');
   await page.selectOption('#bankAccountSelect', acct.id);
   await page.getByRole('button', { name: 'Reconcile', exact: true }).first().click();
+  await page.click('#bankViewAdvanced');
+  await page.click('#bankViewBook');
   await expect(page.locator('#bankVsBook')).toBeVisible();
   const bank = page.locator('#bvbBankList [data-bvb-line]');
   await expect(bank).toHaveCount(3);

@@ -71,21 +71,24 @@ test('a supplier bill typed in by hand can be confirmed into stock', async ({ pa
   await page.locator('#invEditSupplier').fill(`Depot ${stamp}`);
   await page.locator('#invEditNumber').fill(invNo);
 
-  // The first line starts as a placeholder: describe it and set 6 bottles at 400.00 (MRP 600.00)
+  // The first line starts as a placeholder: describe it and set 6 bottles at 400.00.
+  // Selling prices belong to Products → Pricing, never to a supplier bill.
   const row = page.locator('#invEditLines .inv-edit-row').first();
   await row.getByTitle('Edit row fields').click();
   await row.locator('.ie-desc').fill(product);
   await row.locator('.ie-qty').fill('6');
   await row.locator('.ie-cost').fill('400.00');
-  await row.locator('.ie-mrp').fill('600.00');
   await row.getByTitle('Save and make read-only').click();
 
   // A new brand has to be added to the catalogue before stock can be inwarded against it
   await row.getByRole('button', { name: 'Save to Mapping' }).click();
+  await expect(row.getByRole('button', { name: 'Save to Mapping' })).toHaveCount(0, { timeout: 15000 });
   await expect(row).toHaveAttribute('data-match-status', /^(MATCHED|MANUAL)$/, { timeout: 15000 });
 
   await page.click('#invReviewBtn');
-  await page.getByRole('button', { name: /Submit Invoice/ }).click();
+  await expect(page.getByText('Reviewed & Verified')).toBeVisible({ timeout: 20000 });
+  await page.getByRole('button', { name: /Check before adding stock/ }).click();
+  await expect(page.locator('#invConfirmStep')).toContainText('Manual Brandy 750ml');
 
   // the dialog states what will be posted, worked out from the lines (6 bottles at the line's cost)
   await page.click('#invApproveBtn');
@@ -95,5 +98,6 @@ test('a supplier bill typed in by hand can be confirmed into stock', async ({ pa
 
   await expect(page.locator('#invHistoryBox tr', { hasText: invNo })).toContainText('Added to Stock', { timeout: 20000 });
   await page.goto('/inventory');
+  await page.getByPlaceholder('Search product or brand…').fill(product);
   await expect(page.locator('#stockTable tbody tr', { hasText: product })).toContainText('6', { timeout: 15000 });
 });

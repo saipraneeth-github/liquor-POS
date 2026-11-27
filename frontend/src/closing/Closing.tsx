@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { businessDate } from '../lib/business-day';
+import { useT } from '../i18n';
 
 interface ClosingRow {
   id: string;
@@ -72,6 +73,7 @@ interface ClosingResponse {
 }
 
 export function Closing() {
+  const { t } = useT();
   const { user, saasRole } = useAuth();
   const branchId = user?.branchId;
   const isAdmin = user?.role === 'owner' || saasRole === 'admin' || saasRole === 'super_admin';
@@ -593,6 +595,7 @@ export function Closing() {
               </p>
               <input
                 id="closingUpiSales"
+                aria-label={t('UPI sales amount')}
                 type="number"
                 step="any"
                 min="0"
@@ -633,6 +636,7 @@ export function Closing() {
               </p>
               <input
                 id="closingCardSales"
+                aria-label={t('Card sales amount')}
                 type="number"
                 step="any"
                 min="0"
@@ -676,6 +680,7 @@ export function Closing() {
                 </p>
                 <input
                   id="closingCreditSales"
+                  aria-label={t('Khata / customer credit sales amount')}
                   type="number"
                   step="any"
                   min="0"

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getCategoryInfo } from '../components/category-icons';
 import { X, Trash2, AlertTriangle, FileText, Camera, PackageOpen, Loader2, Pencil, Check, Eye } from 'lucide-react';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
-import { ProtectedButton, Modal } from '../components/ui';
+import { ProtectedButton, Modal, inr } from '../components/ui';
 import { api, authFetch } from '../api/client';
 import { useAuth, isManagerLike, userCan } from '../auth/AuthProvider';
 import { showToast } from '../lib/toast';
@@ -684,7 +684,6 @@ export function InvoiceUpload() {
   };
 
   const startManualDraft = () => {
-    const first = products[0];
     const today = businessDate();
     setActiveInvoice({
       invoice: {
@@ -700,13 +699,15 @@ export function InvoiceUpload() {
       items: [
         {
           lineNumber: 1,
-          productId: first?.id || null,
-          productName: first?.name,
-          rawDescription: first?.name || 'Item 1',
+          // A typed bill must start blank. Defaulting to products[0] made the outcome depend on whether the
+          // catalog request had finished and could inward a newly typed item against an unrelated product.
+          productId: null,
+          productName: undefined,
+          rawDescription: 'Item 1',
           quantity: 1,
-          costPrice: first?.costPrice || '0.00',
-          lineCostTotal: first?.costPrice || '0.00',
-          matchStatus: first ? 'MANUAL' : 'UNMATCHED',
+          costPrice: '0.00',
+          lineCostTotal: '0.00',
+          matchStatus: 'UNMATCHED',
           flags: [],
         },
       ],
@@ -1330,7 +1331,7 @@ export function InvoiceUpload() {
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-medium">{inv.lineCount}</td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-gray-900 dark:text-slate-100">
-                        ₹{parseFloat(inv.totalAmount).toFixed(2)}
+                        {inr(inv.totalAmount)}
                       </td>
                       <td className="py-3 px-3">
                         <span
@@ -2525,7 +2526,7 @@ export function InvoiceUpload() {
 
           {/* ── STEP 3: Confirmation & Inward Screen ──────────────────────────── */}
           {wizardStep === 3 && activeInvoice && (
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800 p-6 max-w-3xl mx-auto space-y-6">
+            <div id="invConfirmStep" className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800 p-6 max-w-3xl mx-auto space-y-6">
               <div className="text-center space-y-1">
                 <PackageOpen size={36} className="mx-auto text-gray-400" aria-hidden="true" />
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Confirm Stock Inward</h2>

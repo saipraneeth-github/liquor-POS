@@ -1,102 +1,17 @@
-import { PAGE_PERMISSION, pageDisabled } from '../lib/features';
+import { navItems, visibleNavigation, canOpenPage, defaultPage } from '../auth/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useDesktopViewport } from '../lib/useDesktopViewport';
 import { useOverlayFocus } from '../lib/useOverlayFocus';
 import { Outlet, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth, userCan, type SaasRole } from '../auth/AuthProvider';
+import { useAuth, type SaasRole } from '../auth/AuthProvider';
 import { useTheme } from '../context/ThemeContext';
 import { api } from '../api/client';
 import { errorMessage, showToast } from '../lib/print';
 import { Field, Modal } from './ui';
 import { ErrorBoundary } from './ErrorBoundary';
 import { LanguageSwitcher, useT } from '../i18n';
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  Clock,
-  Receipt,
-  Users,
-  Coffee,
-  Wine,
-  Package,
-  FileUp,
-  UtensilsCrossed,
-  GlassWater,
-  ClipboardList,
-  Droplets,
-  Target,
-  ShieldCheck,
-  BookOpen,
-  Landmark,
-  Lock,
-  Settings,
-  Building2,
-  Globe,
-  LogOut,
-  Sun,
-  Moon,
-  Menu,
-  X,
-  PanelLeftClose,
-  UserCog,
-  ScrollText,
-  Bug,
-  CreditCard,
-  GitBranch,
-  KeyRound,
-  Database,
-} from 'lucide-react';
+import { Wine, LogOut, Sun, Moon, Menu, X, PanelLeftClose } from 'lucide-react';
 
-type NavItem = {
-  path: string;
-  label: string;
-  icon: typeof Wine;
-  id: string;
-  min: 'steward' | 'cashier' | 'office_admin' | 'manager' | 'owner';
-  group: string;
-  pageKey: string;
-  /** Restrict an item to one SaaS role (e.g. the Platform console is Super Admin only). */
-  only?: SaasRole;
-};
-
-const navItems: NavItem[] = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard, id: 'nav-dashboard', min: 'steward', group: 'Overview', pageKey: 'dashboard' },
-
-  { path: '/pos', label: 'Billing (POS)', icon: ShoppingCart, id: 'nav-pos', min: 'cashier', group: 'Sell', pageKey: 'pos' },
-  { path: '/shift', label: 'Cashier Shift', icon: Clock, id: 'nav-shift', min: 'cashier', group: 'Sell', pageKey: 'shift' },
-  { path: '/bills', label: 'Bills', icon: Receipt, id: 'nav-bills', min: 'cashier', group: 'Sell', pageKey: 'bills' },
-  { path: '/tables', label: 'Tables & Orders (KOT)', icon: Coffee, id: 'nav-tables', min: 'steward', group: 'Sell', pageKey: 'tables' },
-  { path: '/customers', label: 'Customers & Khata', icon: Users, id: 'nav-customers', min: 'cashier', group: 'Sell', pageKey: 'customers' },
-
-  { path: '/menu/kitchen', label: 'Kitchen Menu', icon: UtensilsCrossed, id: 'nav-menu-kitchen', min: 'steward', group: 'Menu & Stock', pageKey: 'menu/kitchen' },
-  { path: '/menu/bar', label: 'Bar Menu', icon: GlassWater, id: 'nav-menu-bar', min: 'steward', group: 'Menu & Stock', pageKey: 'menu/bar' },
-  { path: '/products', label: 'Products', icon: Wine, id: 'nav-products', min: 'cashier', group: 'Menu & Stock', pageKey: 'products' },
-  { path: '/invoices', label: 'Supplier Invoices', icon: FileUp, id: 'nav-invoices', min: 'cashier', group: 'Menu & Stock', pageKey: 'inventory' },
-  { path: '/inventory', label: 'Inventory', icon: Package, id: 'nav-inventory', min: 'cashier', group: 'Menu & Stock', pageKey: 'inventory' },
-  { path: '/counter', label: 'Counter Stock Sheet', icon: ClipboardList, id: 'nav-counter', min: 'cashier', group: 'Menu & Stock', pageKey: 'counter' },
-  { path: '/pour', label: 'Peg Control', icon: Droplets, id: 'nav-pour', min: 'manager', group: 'Menu & Stock', pageKey: 'pour' },
-
-  { path: '/schemes', label: 'Supplier Schemes', icon: Target, id: 'nav-schemes', min: 'manager', group: 'Money & Compliance', pageKey: 'schemes' },
-  { path: '/compliance', label: 'Excise & Breakage', icon: ShieldCheck, id: 'nav-compliance', min: 'manager', group: 'Money & Compliance', pageKey: 'compliance' },
-  { path: '/accounting', label: 'Accounting', icon: BookOpen, id: 'nav-accounting', min: 'manager', group: 'Money & Compliance', pageKey: 'accounting' },
-  { path: '/bank', label: 'Match Bank Statement', icon: Landmark, id: 'nav-bank', min: 'manager', group: 'Money & Compliance', pageKey: 'bank' },
-  { path: '/closing', label: 'Day Closing', icon: Lock, id: 'nav-closing', min: 'manager', group: 'Money & Compliance', pageKey: 'closing' },
-
-  { path: '/admin', label: 'Staff & Billing Counters', icon: Settings, id: 'nav-admin', min: 'manager', group: 'Business', pageKey: 'admin' },
-  { path: '/settings', label: 'Business Settings', icon: Building2, id: 'nav-settings', min: 'owner', group: 'Business', pageKey: 'settings' },
-
-  { path: '/platform', label: 'Platform Console', icon: Globe, id: 'nav-platform', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
-  { path: '/platform/roles', label: 'Roles & Permissions', icon: KeyRound, id: 'nav-platform-roles', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
-  { path: '/platform/branches', label: 'Branches', icon: GitBranch, id: 'nav-platform-branches', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
-  { path: '/platform/plans', label: 'Plans & Billing', icon: CreditCard, id: 'nav-platform-plans', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
-  { path: '/platform/users', label: 'Users', icon: UserCog, id: 'nav-platform-users', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
-  { path: '/platform/master', label: 'Master Catalog', icon: Database, id: 'nav-platform-master', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
-  { path: '/platform/audit', label: 'Audit Log', icon: ScrollText, id: 'nav-platform-audit', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
-  { path: '/platform/errors', label: 'Errors', icon: Bug, id: 'nav-platform-errors', min: 'owner', group: 'Platform', only: 'super_admin', pageKey: 'platform' },
-];
-
-// Office Admin runs the business for the owner: above a manager, below the owner (platform / business settings stay owner-only)
-const roleRank = { steward: 1, cashier: 2, manager: 3, office_admin: 3.5, owner: 4 };
 
 const ROLE_LABEL: Record<SaasRole, string> = {
   super_admin: 'Super Admin',
@@ -219,7 +134,6 @@ export function Layout() {
 
   if (!user) return null;
 
-  const userRank = roleRank[user.role as keyof typeof roleRank] || 0;
   const sub = (user as any)?.sub ?? user?.id ?? '';
   const activeBranch = branches.find((b) => b.id === activeBranchId);
 
@@ -247,51 +161,12 @@ export function Layout() {
     navigate('/login');
   };
 
-  const isItemVisible = (item: NavItem): boolean => {
-    // The Super Admin runs the software for other businesses: only the Platform menus, never a shop's billing, stock or books
-    if (saasRole === 'super_admin') return item.only === 'super_admin';
-
-    // A feature switched off for this branch takes its page out of the menu
-    if (pageDisabled(item.path, disabledFeatures)) return false;
-
-    // Tenant Admin / Owner has access to all business menus (except Platform Console)
-    if (user.role === 'owner') {
-      return item.only !== 'super_admin';
-    }
-
-    // Non-owner users cannot see owner-only or platform-only menus
-    if (item.min === 'owner' || item.only === 'super_admin' || item.only === 'admin') {
-      return false;
-    }
-
-    // Some pages are opened by a named permission, not by rank
-    const needs = PAGE_PERMISSION[item.path];
-    if (needs && !userCan(user, needs)) return false;
-
-    // Check custom menu permissions configured by Super Admin / Admin
-    if (user.pages && user.pages.length > 0) {
-      const key = item.pageKey || item.path.replace(/^\//, '');
-      const alias = key === 'inventory' ? 'stock' : key === 'compliance' ? 'reports' : '';
-      const perm = user.pages.find(
-        (p) => p.routePath === key || p.routePath === item.path.replace(/^\//, '') || (alias && p.routePath === alias)
-      );
-      if (perm !== undefined) {
-        return perm.canAccess;
-      }
-    }
-
-    // Role-based rank fallback if no explicit menu permissions row exists (a page tied to a permission needs only that)
-    return needs ? true : userRank >= roleRank[item.min];
-  };
-
-  const items = navItems.filter(isItemVisible);
-
-  // A page that is not in the user's menu does not open by typing its address either
-  // (the API still enforces role and permission on every call; this just stops the empty screens)
-  const currentItem = navItems.find((i) => i.path === location.pathname);
-  // A page that is hidden for this person sends them to the first page they CAN see (the Dashboard may be hidden too: a role can leave it out)
-  const landing = items.find((i) => i.path !== location.pathname)?.path ?? '/';
-  if (currentItem && !isItemVisible(currentItem)) return <Navigate to={landing} replace />;
+  const items = visibleNavigation(user, disabledFeatures);
+  if (!canOpenPage(user, location.pathname, disabledFeatures)) {
+    const landing = defaultPage(user, disabledFeatures);
+    if (landing) return <Navigate to={landing} replace />;
+    return <div className="p-6"><p>{t('No pages are available. Ask your manager to check your access.')}</p><button className="min-h-11 underline" onClick={doLogout}>{t('Sign out')}</button></div>;
+  }
   const groups = [...new Set(items.map((i) => i.group))];
   const pageTitle = t(navItems.find((i) => i.path === location.pathname)?.label || '');
 
@@ -362,14 +237,14 @@ export function Layout() {
                       to={item.path}
                       id={item.id}
                       aria-current={isActive ? 'page' : undefined}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                      className={`flex min-h-11 items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                         isActive
                           ? 'bg-white/12 text-white font-semibold shadow-[inset_3px_0_0_#dda64a]'
                           : 'text-[#c4d6cd] hover:bg-white/6 hover:text-white'
                       }`}
                     >
-                      <Icon size={18} />
-                      {t(item.label)}
+                      <Icon size={18} className="shrink-0" aria-hidden="true" />
+                      <span className="min-w-0 break-words">{t(item.label)}</span>
                     </Link>
                   );
                 })}
@@ -413,7 +288,7 @@ export function Layout() {
             <button type="button" id="supportExit" onClick={exitSupport} className="font-semibold underline cursor-pointer">Exit support session</button>
           </div>
         )}
-        <header className="h-14 shrink-0 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between gap-2 px-4 transition-colors">
+        <header className="min-h-14 shrink-0 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex flex-wrap items-center justify-between gap-2 px-4 py-2 transition-colors">
           <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
@@ -426,7 +301,8 @@ export function Layout() {
               className="p-2 -ml-2 rounded-lg cursor-pointer text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-purple-600 dark:hover:text-purple-400 transition-colors flex items-center justify-center"
               onClick={toggleSidebar}
             >
-              <Menu size={20} />
+              <Menu size={20} aria-hidden="true" />
+              <span className="ml-2 text-sm">{t('Menu')}</span>
             </button>
             <div className="font-display font-bold text-lg tracking-tight truncate" id="pageTitle">{pageTitle}</div>
           </div>

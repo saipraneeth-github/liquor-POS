@@ -25,8 +25,7 @@ test.describe('End-to-End Operational Lifecycle Tests', () => {
     await tile.click();
     await expect(tile.locator('span').first()).toHaveText('OCCUPIED', { timeout: 5000 });
 
-    // 5. Clicking an occupied tile never closes it: it opens the actions dialog instead
-    await tile.click();
+    // 5. Opening a free table immediately shows its occupied-table actions.
     await expect(page.locator('#modal')).toBeVisible();
     await expect(page.locator('#tblActKot')).toBeVisible();
     await expect(page.locator('#tblActBill')).toBeVisible();

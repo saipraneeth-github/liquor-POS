@@ -149,8 +149,7 @@ describe('new permissions: accounting, bank, day closing', () => {
     expect((await inject('GET', `/accounting/trial-balance/${b()}`, viewer.auth)).statusCode).toBe(200);
     expect((await inject('GET', `/expenses/${b()}`, viewer.auth)).statusCode).toBe(200);
     const post = await inject('POST', `/expenses/${b()}`, viewer.auth, { category: 'Rent', amount: '100.00', paymentMode: 'CASH', expenseDate: '2026-11-01' });
-    expect(post.statusCode).toBe(403);
-    expect(post.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'accounting.post' });
+    expect(post.statusCode, post.body).toBe(201); // cashiers have the narrow dashboard-expense creation exception
     expect((await inject('GET', `/bank/accounts?branchId=${b()}`, viewer.auth)).statusCode).toBe(403);   // only the one area
 
     const poster = await newUser('cashier', (await newRole('cashier', ['accounting.view', 'accounting.post'])).id);

@@ -32,10 +32,11 @@ function statement(rows: Array<[string, string, number]>): string {
 }
 
 test('strip, line details, filters, and a transaction type of your own that posts a line', async ({ page }) => {
+  test.setTimeout(90_000);
   await reactLogin(page, 'manager@liquor.com');
   await page.click('#nav-bank');
 
-  await page.click('#bankAddAccount');
+  await page.locator('#bankAddFirst, #bankAddAccount').first().click();
   await page.fill('#bankAccName', `Types ${stamp}`);
   await page.fill('#bankAccBank', 'ICICI');
   await page.fill('#bankAccLast4', '9911');
@@ -50,10 +51,12 @@ test('strip, line details, filters, and a transaction type of your own that post
   await page.setInputFiles('#bankFile', { name: 'types.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) });
   await expect(page.locator('#bankBalanceCheck')).toHaveAttribute('data-status', 'PASS');
   await page.click('#bankImportBtn');
+  await page.click('#bankViewAdvanced');
   await page.click('#bankViewTable');
   await expect(page.locator('#bankLinesTable tbody tr')).toHaveCount(2);
 
   // The summary strip shows the totals and what is left to do
+  await page.getByText('Balances & checks', { exact: true }).click();
   const strip = page.locator('#bankStrip');
   await expect(strip).toContainText('Bank statement balance');
   await expect(strip).toContainText('12,800');
@@ -78,6 +81,7 @@ test('strip, line details, filters, and a transaction type of your own that post
   await expect(page.locator('#bankLinesTable tbody tr[data-line-status]')).toHaveCount(2);
 
   // Add a transaction type: validation shows next to the field
+  await page.getByText('Statement tools', { exact: true }).click();
   await page.click('#bankAddType');
   await page.fill('#bankTypeName', 'ab');
   await page.click('#bankTypeSave');

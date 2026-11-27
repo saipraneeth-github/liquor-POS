@@ -30,7 +30,7 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
 
     // 4. Check user info display
     const userDisplay = page.locator('#userDisplay');
-    await expect(userDisplay).toContainText('cashier');
+    await expect(userDisplay).toContainText(/cashier/i);
   });
 
   test('Journey 2: Catalog Loading & Real Database Products', async ({ page }) => {
@@ -96,7 +96,7 @@ test.describe('End-to-End Liquor Counter Application Journeys', () => {
     // [menu item, id of the page it opens]
     const navTabs: Array<[string, string]> = [
       ['dashboard', 'dashboard'], ['pos', 'pos'], ['shift', 'shift'], ['bills', 'bills'], ['customers', 'customers'],
-      ['tables', 'tables'], ['products', 'products'], ['inventory', 'stock'], ['counter', 'counter'],
+      ['tables', 'tables'], ['products', 'products'], ['inventory', 'inventory'], ['counter', 'counter'],
     ];
     for (const [nav, pageId] of navTabs) {
       await page.click(`#nav-${nav}`);

@@ -39,11 +39,11 @@ describe('resolveUnitPrice', () => {
     expect(resolveUnitPrice(walkIn, '500.00', null)).toBe('500.00');
     expect(resolveUnitPrice(walkIn, '500.00', '400.00', { base: '520.00' })).toBe('520.00');   // a typed price is irrelevant to the default type
   });
-  it('other type: branch override for that type, then the tenant type price, then the default-type price', () => {
+  it('other type: branch override for that type, then the tenant type price; never the default-type price', () => {
     expect(resolveUnitPrice(janata, '500.00', '450.00', { byType: { j: '440.00' } })).toBe('440.00');
     expect(resolveUnitPrice(janata, '500.00', '450.00', { base: '520.00' })).toBe('450.00');
-    expect(resolveUnitPrice(janata, '500.00', null, { base: '520.00' })).toBe('520.00');   // no type price: the branch's default price
-    expect(resolveUnitPrice(janata, '500.00', null)).toBe('500.00');
+    expect(resolveUnitPrice(janata, '500.00', null, { base: '520.00' })).toBeNull();
+    expect(resolveUnitPrice(janata, '500.00', null)).toBeNull();
   });
   it("another type's override does not apply", () => {
     expect(resolveUnitPrice(janata, '500.00', '450.00', { byType: { other: '1.00' } })).toBe('450.00');

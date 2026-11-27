@@ -7,6 +7,7 @@ import {
 } from '../../db/schema.js';
 import type { Tx } from '../../lib/domain-events.js';
 import { branchCostMap, branchPriceMap } from '../catalog/catalog.service.js';
+import { resolveUnitPrice } from '../catalog/price.engine.js';
 import { BusinessRuleError, ConflictError, NotFoundError, isUniqueViolation } from '../../lib/errors.js';
 import type { JwtPayload } from '../auth/auth.service.js';
 import {
@@ -265,6 +266,16 @@ async function moveInTx(
   tx: Tx, user: JwtPayload, branchId: string, productId: string,
   from: BranchSaleType, to: BranchSaleType, quantity: number,
 ) {
+  if (!to.isDefault) {
+    const [tenantPrices, branchPrices] = await Promise.all([
+      typePrices(tx, to.id, [productId]),
+      branchPriceMap(tx, branchId, [productId]),
+    ]);
+    if (resolveUnitPrice(to, null, tenantPrices.get(productId), branchPrices.get(productId)) === null) {
+      throw new BusinessRuleError(`Set a ${to.name} price for this product before moving bottles into that counter`);
+    }
+  }
+
   const [row] = await tx.select().from(stock)
     .where(and(eq(stock.branchId, branchId), eq(stock.productId, productId))).for('update');
   if (!row) throw new BusinessRuleError('There is no stock of this product in this shop');

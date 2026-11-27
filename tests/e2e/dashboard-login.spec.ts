@@ -10,7 +10,7 @@ async function login(page: Page, email: string, password = PASSWORD): Promise<vo
 
 test('login: shows server status, reveals the password, and says how many tries are left', async ({ page }) => {
   await page.goto('/login');
-  await expect(page.locator('#loginServerStatus')).toContainText(/reachable/i, { timeout: 15000 });
+  await expect(page.locator('#loginServerStatus')).toHaveAttribute('data-server', 'up', { timeout: 15000 });
   await page.fill('#loginPass', 'secret-value');
   await expect(page.locator('#loginPass')).toHaveAttribute('type', 'password');
   await page.click('#loginShowPw');
@@ -35,7 +35,8 @@ test('owner dashboard: all-outlets view and switch to a single outlet', async ({
   const toggle = page.locator('#dashScope-all');
   // A syndicate owner may first be asked to pick a branch; the toggle appears once on the dashboard.
   await expect(toggle).toBeVisible({ timeout: 15000 });
-  await expect(page.locator('#dashTitle')).toContainText('All outlets');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#dashSub')).toContainText('All Outlets');
   await page.click('#dashScope-branch');
   await expect(page.locator('#dashNewBill')).toBeVisible();
 });

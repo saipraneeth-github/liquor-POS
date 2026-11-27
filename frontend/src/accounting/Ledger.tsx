@@ -1,6 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { ACCOUNTING_HELP, ACCOUNTING_SECTIONS, AccountingNavigation, type AccountingTab } from './AccountingNavigation';
+import { Link } from 'react-router-dom';
+import { Plus, Landmark } from 'lucide-react';
+import { ExpenseModal } from './ExpenseModal';
+import { canOpenPage } from '../auth/navigation';
+import { useT } from '../i18n';
+import './accounting.css';
+import { useState, useEffect } from 'react';
 import { api, authFetch } from '../api/client';
-import { useAuth } from '../auth/AuthProvider';
+import { useAuth, userCan } from '../auth/AuthProvider';
 import { BeerBottleLoader } from '../components/BeerBottleLoader';
 import { BankTransactions } from '../bank/BankTransactions';
 import { CashBook } from './CashBook';
@@ -49,8 +56,13 @@ function fmtMoney(amount: string | number | undefined): string {
 }
 
 export function Ledger() {
-  const { user, activeBranchId } = useAuth();
-  const [tab, setTab] = useState<'tb' | 'pl' | 'bs' | 'cashbook' | 'expenses' | 'suppliers' | 'margin' | 'bank' | 'tally'>('tb');
+  const { user, activeBranchId, branches, disabledFeatures } = useAuth();
+  const { t } = useT();
+  const [tab, setTab] = useState<AccountingTab>('cashbook');
+  const [expenseBranch, setExpenseBranch] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [saved, setSaved] = useState(false);
+  const [reportError, setReportError] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [tbData, setTbData] = useState<TrialBalanceResponse | null>(null);
@@ -61,50 +73,23 @@ export function Ledger() {
 
   const branchId = activeBranchId ?? (user as any)?.branchId ?? '';
 
-  const loadTb = useCallback(async () => {
-    if (!branchId) return;
-    setLoading(true);
-    try {
-      const res = await api.get<TrialBalanceResponse>(`/accounting/trial-balance/${branchId}`);
-      setTbData(res);
-    } catch {
-      setTbData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [branchId]);
-
-  const loadPl = useCallback(async () => {
-    if (!branchId) return;
-    setLoading(true);
-    try {
-      const res = await api.get<ProfitLossResponse>(`/accounting/profit-loss/${branchId}`);
-      setPlData(res);
-    } catch {
-      setPlData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [branchId]);
-
-  const loadBs = useCallback(async () => {
-    if (!branchId) return;
-    setLoading(true);
-    try {
-      const res = await api.get<BalanceSheetResponse>(`/accounting/balance-sheet/${branchId}`);
-      setBsData(res);
-    } catch {
-      setBsData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [branchId]);
-
   useEffect(() => {
-    if (tab === 'tb') loadTb();
-    else if (tab === 'pl') loadPl();
-    else if (tab === 'bs') loadBs();
-  }, [tab, loadTb, loadPl, loadBs]);
+    let live = true;
+    setReportError(false);
+    setTbData(null); setPlData(null); setBsData(null);
+    if (!branchId || !['tb', 'pl', 'bs'].includes(tab)) { setLoading(false); return; }
+    setLoading(true);
+    const endpoint = tab === 'tb' ? 'trial-balance' : tab === 'pl' ? 'profit-loss' : 'balance-sheet';
+    api.get<TrialBalanceResponse | ProfitLossResponse | BalanceSheetResponse>(`/accounting/${endpoint}/${branchId}`)
+      .then((data) => {
+        if (!live) return;
+        if (tab === 'tb') setTbData(data as TrialBalanceResponse);
+        else if (tab === 'pl') setPlData(data as ProfitLossResponse);
+        else setBsData(data as BalanceSheetResponse);
+      }).catch(() => { if (live) setReportError(true); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [branchId, tab, revision]);
 
   const handleDownloadTally = async () => {
     if (!branchId) return;
@@ -135,130 +120,26 @@ export function Ledger() {
   };
 
   return (
-    <div id="page-accounting" className="space-y-4">
-      <div className="flex flex-wrap gap-x-4 gap-y-2 border-b dark:border-gray-700 pb-2">
-        <button
-          id="acctab-tb"
-          type="button"
-          aria-selected={tab === 'tb'}
-          onClick={() => setTab('tb')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'tb'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Trial Balance
-        </button>
-        <button
-          id="acctab-pl"
-          type="button"
-          aria-selected={tab === 'pl'}
-          onClick={() => setTab('pl')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'pl'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Profit &amp; Loss
-        </button>
-        <button
-          id="acctab-bs"
-          type="button"
-          aria-selected={tab === 'bs'}
-          onClick={() => setTab('bs')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'bs'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Balance Sheet
-        </button>
-        <button
-          id="acctab-bank"
-          type="button"
-          aria-selected={tab === 'bank'}
-          onClick={() => setTab('bank')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'bank'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Bank Transactions
-        </button>
-        <button
-          id="acctab-cashbook"
-          type="button"
-          aria-selected={tab === 'cashbook'}
-          onClick={() => setTab('cashbook')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'cashbook'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Cash Book
-        </button>
-        <button
-          id="acctab-expenses"
-          type="button"
-          aria-selected={tab === 'expenses'}
-          onClick={() => setTab('expenses')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'expenses'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Expenses
-        </button>
-        <button
-          id="acctab-suppliers"
-          type="button"
-          aria-selected={tab === 'suppliers'}
-          onClick={() => setTab('suppliers')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'suppliers'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Suppliers
-        </button>
-        <button
-          id="acctab-margin"
-          type="button"
-          aria-selected={tab === 'margin'}
-          onClick={() => setTab('margin')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'margin'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Margin
-        </button>
-        <button
-          id="acctab-tally"
-          type="button"
-          aria-selected={tab === 'tally'}
-          onClick={() => setTab('tally')}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition ${
-            tab === 'tally'
-              ? 'border-purple-600 text-purple-600 dark:text-purple-400 font-bold'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          Tally Export
-        </button>
-      </div>
+    <div id="page-accounting" className="accounting-workspace space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 dark:border-gray-700 pb-6">
+        <div><h1 className="font-display text-3xl font-bold">{t('Accounting')}</h1><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{branches.find((b) => b.id === branchId)?.name ?? t('Your shop')} · {t('Check daily money, supplier payments and financial reports.')}</p></div>
+        <div className="flex flex-wrap gap-3">
+          {user && canOpenPage(user, '/bank', disabledFeatures) && <Link to="/bank" className="inline-flex items-center gap-2 min-h-12 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-3 text-sm font-semibold"><Landmark size={18} aria-hidden="true" />{t('Match Bank Statement')}</Link>}
+          {userCan(user, 'accounting.post') && <button id="accountingRecordExpense" disabled={!branchId} type="button" onClick={() => { setSaved(false); setExpenseBranch(branchId); }} className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-3 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"><Plus size={18} aria-hidden="true" />{t('Record expense')}</button>}
+        </div>
+      </header>
+      {saved && <p role="status" className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 p-3 text-emerald-800 dark:text-emerald-200">{t('Expense recorded')}</p>}
+      {expenseBranch !== null && <ExpenseModal initialBranchId={expenseBranch} onClose={() => setExpenseBranch(null)} onSaved={() => { setExpenseBranch(null); setSaved(true); setRevision((r) => r + 1); }} />}
+      <div className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
+      <AccountingNavigation tab={tab} onChange={(next) => { setReportError(false); setTab(next); }} />
+      <section className="min-w-0 space-y-5" aria-labelledby="accountingSectionTitle" key={branchId + revision}>
+      <div><h2 id="accountingSectionTitle" className="font-display text-xl font-bold">{t(ACCOUNTING_SECTIONS.flatMap((s) => [...s.items]).find((i) => i.id === tab)?.label ?? '')}</h2><p className="mt-1 text-sm text-gray-500">{t(ACCOUNTING_HELP[tab])}</p></div>
+      {!branchId && <p role="status">{t('Choose a shop')}</p>}
+      {reportError && ['tb', 'pl', 'bs'].includes(tab) && !loading && <div role="alert" className="rounded-lg border border-red-200 p-4 text-sm"><p>{t('Could not load this report. Try again.')}</p><button type="button" onClick={() => setRevision((r) => r + 1)} className="mt-2 underline">{t('Try again')}</button></div>}
 
       {loading && (
         <div className="card pad p-8 bg-white dark:bg-gray-800 rounded shadow">
-          <BeerBottleLoader inline size="sm" title="Compiling Financial Ledgers…" subtitle="Calculating debit/credit balances across accounts…" />
+          <p role="status" className="text-sm">{t('Loading report…')}</p>
         </div>
       )}
 
@@ -277,7 +158,7 @@ export function Ledger() {
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border dark:border-gray-700 overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="accounting-stack-table w-full text-left text-sm">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700">
                 <tr>
                   <th className="p-3">Ledger</th>
@@ -289,18 +170,18 @@ export function Ledger() {
               <tbody className="divide-y dark:divide-gray-700">
                 {(tbData.rows || []).map((row, idx) => (
                   <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                    <td className="p-3 font-medium">{row.name} <span className="text-xs text-gray-400 font-mono">({row.code})</span></td>
-                    <td className="p-3 text-gray-500">{row.group}</td>
-                    <td className="p-3 text-right font-mono">{parseFloat(row.debit) > 0 ? fmtMoney(row.debit) : '—'}</td>
-                    <td className="p-3 text-right font-mono">{parseFloat(row.credit) > 0 ? fmtMoney(row.credit) : '—'}</td>
+                    <td data-label={t('Ledger')} className="p-3 font-medium">{row.name} <span className="text-xs text-gray-400 font-mono">({row.code})</span></td>
+                    <td data-label={t('Group')} className="p-3 text-gray-500">{row.group}</td>
+                    <td data-label={t('Debit')} className="p-3 text-right font-mono">{parseFloat(row.debit) > 0 ? fmtMoney(row.debit) : '—'}</td>
+                    <td data-label={t('Credit')} className="p-3 text-right font-mono">{parseFloat(row.credit) > 0 ? fmtMoney(row.credit) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="border-t font-bold bg-gray-50 dark:bg-gray-700/50 dark:border-gray-700">
                 <tr>
                   <td colSpan={2} className="p-3">Total</td>
-                  <td className="p-3 text-right font-mono" id="tbDebit">{fmtMoney(tbData.totalDebit)}</td>
-                  <td className="p-3 text-right font-mono" id="tbCredit">{fmtMoney(tbData.totalCredit)}</td>
+                  <td className="p-3 text-right font-mono" data-label={t('Debit')} id="tbDebit">{fmtMoney(tbData.totalDebit)}</td>
+                  <td className="p-3 text-right font-mono" data-label={t('Credit')} id="tbCredit">{fmtMoney(tbData.totalCredit)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -455,6 +336,8 @@ export function Ledger() {
         subtitle="Generating ledger XML entries & financial vouchers for Tally import…"
         stage="saving"
       />
+      </section>
+      </div>
     </div>
   );
 }

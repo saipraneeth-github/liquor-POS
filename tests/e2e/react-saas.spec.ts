@@ -70,8 +70,7 @@ test('Kitchen Menu: add a dish, change its rate, see history, switch availabilit
   await row.getByText('Rate history').click();
   await expect(page.locator('[role=dialog]')).toContainText('₹195.00');
   await expect(page.locator('[role=dialog]')).toContainText('₹180.00');
-  await page.keyboard.press('Escape').catch(() => {});
-  await page.locator('[role=dialog] button[aria-label=Close]').click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   // out of stock (for this branch)
   await row.getByRole('button', { name: 'In stock' }).click();
@@ -435,7 +434,7 @@ test('Forgot password: request a link, open it, choose a new password, sign in',
   await page.click('#forgotLink');
   await page.fill('#forgotEmail', email);
   await page.click('#forgotSubmit');
-  await expect(page.locator('#forgotSent')).toContainText('reset link is on its way');
+  await expect(page.locator('#forgotSent')).toContainText('check your inbox');
 
   // no mail server in the test setup: the message is in the outbox the Super Admin can read
   const root = await apiToken(request, 'superadmin@liquor.com');

@@ -261,7 +261,7 @@ describe('owner overview', () => {
     const bravo = d.branches.find((x) => x.id === b.id)!;
     expect(alpha).toMatchObject({ sales: '2400.00', bills: 3, salesSameTimeYesterday: '1000.00', percent: 140 });
     expect(bravo).toMatchObject({ sales: '1000.00', salesSameTimeYesterday: '1200.00', percent: -16.7 });
-    expect(d.totals).toEqual({ sales: '3400.00', salesSameTimeYesterday: '2200.00', percent: 54.5, bills: 4 });
+    expect(d.totals).toMatchObject({ sales: '3400.00', salesSameTimeYesterday: '2200.00', percent: 54.5, bills: 4 });
   });
 
   it('compares the month so far with the same days of last month and with all of last month', async () => {

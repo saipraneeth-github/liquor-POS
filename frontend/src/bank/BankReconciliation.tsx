@@ -9,10 +9,13 @@ import { ReconcileStatement } from './ReconcileStatement';
 import { TransactionSearch } from './TransactionSearch';
 import { UploadStatement } from './UploadStatement';
 import type { Account, Scope, StatementRow } from './types';
+import { useT } from '../i18n';
+import './bank.css';
 
 type View = { name: 'home' } | { name: 'upload' } | { name: 'reconcile'; statementId: string };
 
 export function BankReconciliation() {
+  const { t } = useT();
   const { user, activeBranchId } = useAuth();
   const branchId = activeBranchId ?? user?.branchId ?? '';
   const isOwner = user?.role === 'owner';
@@ -56,25 +59,36 @@ export function BankReconciliation() {
   if (loading) return <div className="text-sm text-gray-500">Loading…</div>;
 
   return (
-    <div className="space-y-5 w-full">
+    <div className="bank-workspace space-y-6 w-full">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Match Bank Statement</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Upload your bank statement and tick it off against your books, entry by entry. Works with any bank.</p>
+          <h1 className="font-display text-2xl font-bold text-gray-900 dark:text-white">{t('Match Bank Statement')}</h1>
+          <p className="mt-1 max-w-xl text-sm text-gray-600 dark:text-gray-300">{t('Check bank payments against your accounts. Review each difference before finishing.')}</p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex w-full sm:w-auto flex-wrap items-end gap-2 min-w-0">
           {accounts.length > 0 && (
-            <label className="block text-xs">
+            <label className="block text-sm min-w-0 flex-1">
               <span className="font-semibold text-gray-700 dark:text-gray-300">Bank account</span>
               <select id="bankAccountSelect" value={accountId} onChange={(e) => { setAccountId(e.target.value); setView({ name: 'home' }); }}
-                className="mt-1 p-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                className="mt-1 w-full sm:max-w-80 p-2 border rounded-lg text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                 {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.accountLast4 ? ` ••${a.accountLast4}` : ''}{a.scope === 'SYNDICATE' ? ' (all outlets)' : ''}</option>)}
               </select>
             </label>
           )}
-          <button type="button" id="bankAddAccount" onClick={() => setAdding(true)} className="px-3 py-2 text-sm rounded-lg border dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">+ Add account</button>
+          {accounts.length > 0 && <button type="button" id="bankAddAccount" onClick={() => setAdding(true)} className="px-3 py-2 text-sm rounded-lg border dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">+ Add account</button>}
         </div>
       </div>
+
+      {account && (view.name !== 'home' || homeTab === 'statements') && (
+        <ol aria-label={t('Statement steps')} className="grid grid-cols-1 sm:grid-cols-3 gap-2 border-y border-gray-200 dark:border-gray-700 py-4">
+          {['Upload statement', 'Review entries', 'Finish checking'].map((label, index) => (
+            <li key={label} aria-current={(view.name === 'reconcile' ? index === 1 : index === 0) ? 'step' : undefined}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${((view.name === 'reconcile' ? 1 : 0) === index) ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-800 dark:text-purple-200 font-semibold' : 'text-gray-600 dark:text-gray-300'}`}>
+              <span className="font-mono" aria-hidden="true">{index + 1}.</span>{t(label)}
+            </li>
+          ))}
+        </ol>
+      )}
 
       {accounts.length === 0 && (
         <div className="p-8 text-center bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-600">
@@ -86,7 +100,7 @@ export function BankReconciliation() {
       )}
 
       {account && view.name === 'home' && (
-        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-600 p-0.5 text-xs font-semibold" role="tablist" aria-label="Bank reconciliation sections">
+        <div className="flex flex-wrap gap-2 text-sm font-semibold" role="tablist" aria-label="Bank reconciliation sections">
           <button type="button" id="bankTabStatements" role="tab" aria-selected={homeTab === 'statements'} onClick={() => setHomeTab('statements')} className={`px-3 py-1.5 rounded-md cursor-pointer ${homeTab === 'statements' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Statements</button>
           <button type="button" id="bankTabTransactions" role="tab" aria-selected={homeTab === 'transactions'} onClick={() => setHomeTab('transactions')} className={`px-3 py-1.5 rounded-md cursor-pointer ${homeTab === 'transactions' ? 'bg-purple-600 text-white' : 'text-gray-600 dark:text-gray-300'}`}>Transactions &amp; search</button>
         </div>
@@ -96,7 +110,7 @@ export function BankReconciliation() {
 
       {account && view.name === 'home' && homeTab === 'statements' && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap gap-3 items-center justify-between">
             <h3 className="font-bold text-gray-900 dark:text-white">Statements</h3>
             <button type="button" id="bankUploadBtn" onClick={() => setView({ name: 'upload' })} className="px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 cursor-pointer">Upload statement</button>
           </div>
@@ -138,7 +152,12 @@ export function BankReconciliation() {
         </div>
       )}
 
-      {account && view.name === 'home' && homeTab === 'statements' && <IgnoreRules key={account.id} account={account} />}
+      {account && view.name === 'home' && homeTab === 'statements' && (
+        <details className="border-t border-gray-200 dark:border-gray-700 pt-2">
+          <summary className="text-sm font-semibold text-gray-700 dark:text-gray-200">{t('Rules for personal and other non-shop transactions')}</summary>
+          <IgnoreRules key={account.id} account={account} />
+        </details>
+      )}
 
       {account && view.name === 'upload' && (
         <UploadStatement account={account} onCancel={() => setView({ name: 'home' })}

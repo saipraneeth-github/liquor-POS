@@ -119,11 +119,12 @@ export function UploadStatement({ account, onImported, onCancel }: { account: Ac
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {!file && <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-bold text-gray-900 dark:text-white">Upload a statement for {account.name}</h3>
         <button type="button" onClick={onCancel} className="text-sm text-gray-500 hover:underline cursor-pointer">Cancel</button>
-      </div>
+      </div>}
 
+      {!file ? <>
       <div
         className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 text-center bg-white dark:bg-gray-800"
         onDragOver={(e) => e.preventDefault()}
@@ -140,6 +141,7 @@ export function UploadStatement({ account, onImported, onCancel }: { account: Ac
         <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">CSV, Excel (.xlsx), OFX / QFX, QIF or a PDF downloaded from net banking. Any bank — columns are detected automatically. Max 10 MB.</p>
         {file && <p className="mt-2 text-xs font-mono text-gray-600 dark:text-gray-300">{file.name}</p>}
       </div>
+      </> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3"><span className="min-w-0 break-all text-sm font-medium">{file.name}</span><button type="button" onClick={() => choose(null)} className="min-h-11 px-3 text-sm underline">Choose another file</button></div>}
 
       {error && <div id="bankUploadError" role="alert" className="p-3 rounded-lg bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200 text-sm border border-red-200 dark:border-red-800">{error}</div>}
       {busy && <div className="text-sm text-gray-500">Reading the statement…</div>}

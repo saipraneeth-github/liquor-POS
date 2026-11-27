@@ -10,12 +10,15 @@ import { eq } from 'drizzle-orm';
 
 const BranchParamsSchema = z.object({ branchId: z.string().uuid() });
 
-// ─── EXPENSE ROUTES (manager+, branch-scoped) ────────────────────────────────
+// Recording is also available to cashiers; viewing and reversing keep their permission guards.
 
 export async function expenseRoutes(fastify: FastifyInstance) {
   // POST /expenses/:branchId — record an expense (posts a PAYMENT voucher)
   fastify.post('/expenses/:branchId', {
-    preHandler: [requireRole('steward'), requirePermission('accounting.post')],
+    preHandler: [requireRole('steward'), async (request, reply) => {
+      if (getUser(request).role === 'cashier') return;
+      await requirePermission('accounting.post')(request, reply);
+    }],
   }, async (request, reply) => {
     const params = BranchParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Validation failed', details: params.error.flatten() });

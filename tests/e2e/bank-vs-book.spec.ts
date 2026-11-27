@@ -55,7 +55,7 @@ test('Bank vs Book: a settlement matches many entries; a drag matches one; match
   await seedBook(page, d1, [[`BVB settle A ${stamp}`, 4000, 0], [`BVB settle B ${stamp}`, 1000, 0], [`BVB supplier ${stamp}`, 0, 800]]);
 
   await page.click('#nav-bank');
-  await page.click('#bankAddAccount');
+  await page.locator('#bankAddFirst, #bankAddAccount').first().click();
   await page.fill('#bankAccName', `BVB ${stamp}`);
   await page.fill('#bankAccBank', 'ICICI');
   await page.fill('#bankAccLast4', '7788');
@@ -69,9 +69,8 @@ test('Bank vs Book: a settlement matches many entries; a drag matches one; match
   });
   await expect(page.locator('#bankBalanceCheck')).toHaveAttribute('data-status', 'PASS');
   await page.click('#bankImportBtn');
-  await expect(page.locator('#bankVsBook')).toBeVisible();
-
-  // Switch to the two-sided view: the statement on the left, the books on the right
+  await page.click('#bankViewAdvanced');
+  // Switch to the two-sided view: the statement on the left, the books on the right.
   await page.click('#bankViewBook');
   await expect(page.locator('#bankVsBook')).toBeVisible();
   await expect(page.locator('#bankLinesTable')).toHaveCount(0);

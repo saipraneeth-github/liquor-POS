@@ -19,12 +19,12 @@ test('supplier invoice upload: CSV extract -> review & map unmatched line -> app
     await expect(page.locator('#stockTable table')).toBeVisible();
     return page.locator('#stockTable tbody tr', { hasText: 'Royal Challenge Premium Whisky 750ml' });
   };
-  const qtyOf = async (row: ReturnType<typeof page.locator>) => Number((await row.locator('td').nth(1).innerText()).match(/\d+/)?.[0] ?? 'NaN');
+  const qtyOf = async (row: ReturnType<typeof page.locator>) => Number((await row.locator('td').nth(2).innerText()).match(/\d+/)?.[0] ?? 'NaN');
   const beforeRc = await qtyOf(await openStock());
 
   // Upload the CSV invoice from the All Invoices page
   await page.click('#nav-invoices');
-  await page.getByRole('button', { name: 'Add Supplier Bill', exact: true }).click();
+  await page.getByRole('button', { name: /Add Supplier Bill/ }).click();
   await page.locator('#invUploadFile').setInputFiles({
     name: 'united-spirits.csv',
     mimeType: 'text/csv',

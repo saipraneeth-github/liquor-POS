@@ -230,9 +230,22 @@ describe('expenses', () => {
   it('validates input and enforces role / branch access', async () => {
     expect((await post(`/expenses/${ctx.branchId}`, { category: 'Rent', amount: '0', paymentMode: 'CASH' })).statusCode).toBe(400);
     expect((await post(`/expenses/${ctx.branchId}`, { category: 'Rent', amount: '10', paymentMode: 'CREDIT' })).statusCode).toBe(400);
-    expect((await post(`/expenses/${ctx.branchId}`, { category: 'Rent', amount: '10', paymentMode: 'CASH' }, ctx.auth('cashier'))).statusCode).toBe(403);
+    expect((await post(`/expenses/${ctx.branchId}`, { category: 'Rent', amount: '10', paymentMode: 'CASH' }, ctx.auth('steward'))).statusCode).toBe(403);
     expect((await post(`/expenses/${ctx.branchId}`, { category: 'Rent', amount: '10', paymentMode: 'CASH' }, otherManager())).statusCode).toBe(403);
     expect((await get(`/expenses/${ctx.branchId}`, otherManager())).statusCode).toBe(403);
+  });
+
+  it('lets cashiers record their shop expense with a balanced voucher, without report or reversal access', async () => {
+    const res = await post(`/expenses/${ctx.branchId}`, { category: 'Tea', amount: '125.50', paymentMode: 'CASH' }, ctx.auth('cashier'));
+    expect(res.statusCode).toBe(201);
+    expect(res.json().recordedById).toBe(ctx.users.cashier.id);
+    const voucher = await voucherFor('EXPENSE', res.json().id);
+    expect(voucher!.lines.EXPENSE_TEA).toEqual({ debit: '125.50', credit: '0.00' });
+    expect(voucher!.lines.CASH).toEqual({ debit: '0.00', credit: '125.50' });
+    expect((await get(`/expenses/${ctx.branchId}`, ctx.auth('cashier'))).statusCode).toBe(403);
+    expect((await post(`/expenses/${ctx.branchId}/${res.json().id}/void`, { reason: 'Entered by mistake' }, ctx.auth('cashier'))).statusCode).toBe(403);
+    expect((await post(`/expenses/${ctx.otherBranchId}`, { category: 'Tea', amount: '10', paymentMode: 'CASH' }, ctx.auth('cashier'))).statusCode).toBe(403);
+    expect((await post(`/expenses/${ctx.branchId}`, { category: 'Tea', amount: '0', paymentMode: 'CASH' }, ctx.auth('cashier'))).statusCode).toBe(400);
   });
 });
 

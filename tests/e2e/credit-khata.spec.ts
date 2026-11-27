@@ -20,8 +20,9 @@ test('CREDIT sale to khata customer Ravi Kumar, then a repayment', async ({ page
   await login(page, 'cashier@liquor.com');
   const before = await openRaviStatement(page);
 
-  // Credit sale of one Kingfisher (₹180)
+  // Credit sale of one Kingfisher at the current database price.
   await addProduct(page, 'Kingfisher');
+  const saleAmount = paise(await page.locator('#totalAmount').innerText());
   await page.click('#pay-CREDIT');
   await page.fill('#creditSearch', 'Ravi');
   await page.locator('#creditResults .list-btn', { hasText: 'Ravi Kumar' }).click();
@@ -36,13 +37,13 @@ test('CREDIT sale to khata customer Ravi Kumar, then a repayment', async ({ page
   await expect(page.locator('#checkoutSummary')).toContainText('Ravi Kumar');
   await page.click('#newBillBtn');
 
-  // Khata now owes ₹180 more
+  // Khata now owes exactly the amount billed from the database price.
   const afterSale = await openRaviStatement(page);
-  expect(afterSale - before).toBe(18000);
+  expect(afterSale - before).toBe(saleAmount);
   await expect(page.locator('#custEntries')).toContainText('PURCHASE');
 
-  // Repay ₹180 in cash → back to the original balance
-  await page.fill('#repayAmount', '180');
+  // Repay the same amount in cash → back to the original balance.
+  await page.fill('#repayAmount', (saleAmount / 100).toFixed(2));
   await page.locator('#repayMode').selectOption('CASH');
   await page.click('#repayBtn');
   await expect(page.locator('#custEntries')).toContainText('REPAYMENT');

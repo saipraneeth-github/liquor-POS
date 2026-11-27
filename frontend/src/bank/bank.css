@@ -1,0 +1,12 @@
+.bank-workspace { max-width: 88rem; margin-inline: auto; }
+.bank-workspace button, .bank-workspace select, .bank-workspace summary { min-height: 44px; }
+.bank-workspace button { white-space: normal; }
+.bank-workspace select { max-width: 100%; }
+.bank-workspace details > summary { display: list-item; cursor: pointer; padding-block: 12px; }
+.bank-workspace [data-statement] { border-radius: 8px; }
+.bank-workspace [data-bvb-line], .bank-workspace [data-bvb-entry] { font-size: 14px; line-height: 1.5; padding: 14px; }
+@media (max-width: 639px) {
+  .bank-workspace [data-statement] > div { width: 100%; min-width: 0; overflow-wrap: anywhere; }
+  .bank-workspace [data-statement] > div:last-child > button { flex: 1; }
+  .bank-workspace #bankVsBook > div:first-child { display: flex; flex-wrap: wrap; }
+}
