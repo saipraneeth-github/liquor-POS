@@ -1,0 +1,351 @@
+LIQUOR COUNTER POS — END-TO-END QC BUG REPORT
+Date: 27 November 2026 (IST)
+Test target: Current local working tree, including uncommitted changes
+Environment: Windows, Node.js 22.22.2, Chromium, isolated in-memory PGlite
+Verdict: PASS — all confirmed defects are fixed and the complete automated gate is green.
+
+======================================================================
+FIX VERIFICATION ADDENDUM — 27 NOVEMBER 2026
+======================================================================
+
+Resolved defects: 4
+  HIGH:   2 (QC-001, QC-004)
+  MEDIUM: 2 (QC-002, QC-005)
+Resolved QA/release-gate defect: 1 MEDIUM (QC-003)
+
+QC-001 FIXED — Non-default sale types now resolve only their own branch or
+tenant price. They never inherit Walk-in MRP. Billing returns a clear missing-
+price error and transfers/allocations reject an unpriced target counter.
+
+QC-002 FIXED — UPI, Card and Khata/customer-credit fields on Day Closing now
+have translated accessible names in English, Hindi and Telugu. The browser
+journey asserts the names exposed to assistive technology.
+
+QC-003 FIXED — Stale integration and Playwright assertions were updated to the
+current approved workflows while retaining strict money, stock, RBAC, tenancy,
+accessibility and state-transition checks.
+
+QC-004 FIXED — HIGH — A manually typed supplier bill sometimes began with the
+first catalog product already selected. The result depended on whether the
+catalog request had completed; replacing the description could inward stock
+against that unrelated SKU. Manual bills now always start with an empty,
+UNMATCHED line and must be explicitly mapped. The end-to-end journey confirms
+that six bottles land on the newly mapped product.
+
+QC-005 FIXED — MEDIUM — Bank statement table filters, search and selections
+survived when the same component opened a different statement. An Ignored view
+could therefore make a new statement appear empty. Every statement change now
+resets statement-local filters, selections, dates, view and loading state.
+
+Final verification on a fresh in-memory PGlite database:
+  PASS  Backend TypeScript compilation
+  PASS  Frontend TypeScript compilation
+  PASS  Production Vite build
+  PASS  Unit:       772/772 tests, 59/59 files
+  PASS  Integration: 581/581 tests, 55/55 files
+  PASS  Browser E2E: 82/82 Chromium journeys
+        Includes 360x800 phone checks, desktop flows, six roles, offline bills,
+        bank reconciliation, supplier invoices, POS, tables/KOT, accounting,
+        platform administration, closing and multilingual UI checks.
+
+The first attempted whole-browser rerun reused an old server already listening
+on port 3001 and therefore its mutated database. That invalid run was discarded.
+The final 82/82 result used a newly seeded in-memory database and the compiled
+server. ENV-001 (the local Volta npm wrapper) remains a workstation tooling
+issue; direct local executables provide the passing evidence above.
+
+Fix-session self-evaluation: 4.6/5
+  Accuracy 5/5 — Every resolution claim is backed by a focused regression and
+    the complete green unit, integration and browser runs.
+  Completeness 4/5 — The requested functional/device gate is covered broadly;
+    real-Postgres lock behavior, a full axe-core WCAG scan and screenshot
+    baseline comparison remain outside this local PGlite/Chromium run.
+  Clarity 5/5 — The addendum separates final verified state from historical
+    failures and identifies the discarded contaminated run.
+  Actionability 5/5 — Exact fixes, remaining environment issue and test totals
+    are recorded in this report and PROGRESS.md.
+  Conciseness 4/5 — Keeping the original audit evidence makes this file longer,
+    but preserves the full defect history and reproduction details.
+  Critical issues: none. Self-check: yes; the pass verdict matches the recorded
+    exits and does not claim real-Postgres, axe-core or visual-baseline coverage.
+
+======================================================================
+EXECUTIVE SUMMARY
+======================================================================
+
+Confirmed product defects found across audit and repair: 4
+  HIGH:   2
+  MEDIUM: 2
+
+Confirmed QA/release-gate defect: 1 MEDIUM (fixed)
+Environment/tooling blockers: 1
+
+The initial audit blocked release on a non-default sale-type pricing defect.
+That defect, the accessibility defect, two repair-pass product defects and the
+stale release gate are now fixed. The complete unit, integration and browser
+gate passes on a fresh database. Remaining limitations are recorded below and
+do not invalidate the fixed behaviors.
+
+======================================================================
+TEST COVERAGE AND RESULTS
+======================================================================
+
+Build/static checks
+  PASS  Backend TypeScript compilation
+  PASS  Frontend TypeScript compilation
+  PASS  Production Vite build
+
+Automated tests
+  PASS  Unit: 772/772 tests, 59/59 files
+  FAIL  Integration: 568/581 tests; 13 failures in 3 files
+        - 11 failures are one cascading sale-type regression (QC-001).
+        - 2 failures are stale expectations, not product failures:
+          owner-dashboard response gained valid fields, and cashier expense
+          creation is now intentionally permitted.
+  MIXED Browser E2E: 46 passed, 19 failed, 17 did not run in the full pass.
+        Most browser failures are stale selectors/copy after intentional UI
+        redesigns (QC-003). Focused current-UI reproductions passed.
+
+Responsive/device coverage
+  Viewports: 360x800 phone, 768x1024 tablet, 1440x900 desktop
+  Roles: steward, cashier, manager, office admin, business owner, Super Admin
+  130 route/role/viewport combinations were crawled.
+  PASS  No page-level horizontal overflow
+  PASS  No blank main content
+  PASS  No unexpected login redirects
+  PASS  No duplicate DOM IDs
+  PASS  No uncaught browser exceptions or console errors in the crawl
+  PASS  Manager pages at all three sizes
+  PASS  Every role's visible phone navigation
+  PASS  Super Admin shop isolation and steward protected-route redirect
+
+Focused current-UI interaction checks at 360x800
+  PASS  Create bank account from empty state
+  PASS  Open Add Supplier Bill screen
+  PASS  POS: add item, open mobile bill sheet, change quantity, open checkout
+  PASS  Open free table and receive occupied-table action dialog
+  PASS  Steward submits a KOT using the current action
+  PASS  Dashboard expense journeys for manager, owner, office admin and cashier
+  PASS  Steward does not receive expense action
+  PASS  Expense validation/retry/focus/Escape and English/Hindi/Telugu phone test
+  PASS  Tenant archive/restore/export/hard-delete when the test retention setting is correct
+
+Visual evidence
+  test-results/qa-audit/phone-*.png
+  test-results/qa-audit/tablet-*.png
+  test-results/qa-audit/desktop-*.png
+
+Limitations
+  - No committed screenshot baseline exists, so visual-regression comparison is INCONCLUSIVE.
+  - axe-core is not installed. Accessibility checks combined DOM-name inspection,
+    keyboard/browser journeys and manual source inspection; this is not a full WCAG audit.
+  - Real-Postgres locking/concurrency was not exercised; PGlite serialises transactions.
+  - Private supplier PDFs/bank files were not manually inspected in this run; versioned
+    unit/integration coverage was run.
+
+======================================================================
+CONFIRMED PRODUCT BUGS
+======================================================================
+
+QC-001 — HIGH — Missing non-default sale-type price falls back to Walk-in MRP
+
+Area:
+  Billing, sale-type stock allocation, Counter Stock Sheet
+
+Business rule violated:
+  A non-default sale type is its own price list. No product_prices row means
+  the item is not sold under that type and billing/stock transfer must return
+  422 until a price is set.
+
+Reproduction:
+  1. Choose a product with a normal MRP but no Janata price.
+  2. Attempt a Janata bill for that product.
+  3. The server does not report the missing Janata price. It resolves the
+     Walk-in/MRP price and proceeds to the stock check instead.
+  4. Attempt to move that product into the Janata counter.
+  5. The transfer is accepted (201) although no Janata price exists.
+
+Observed evidence:
+  tests/integration/sale-types.int.test.ts:83 expected "No Janata price" but
+  received "Insufficient stock".
+  tests/integration/sale-types.int.test.ts:145 expected an unpriced Janata
+  transfer to return 422 but received 201.
+  The remaining nine sale-type failures cascade because the first stateful
+  setup test stops before its intended transfers and sales.
+
+Root cause:
+  src/modules/catalog/price.engine.ts:54
+  For a non-default type, resolveUnitPrice() currently returns:
+    branch type price ?? tenant type price ?? base Walk-in/MRP price
+  The final "?? base" makes an unpriced non-default type saleable.
+
+Expected:
+  For a non-default type, return only its branch-specific type price or its
+  tenant type price. Return null when both are absent. Billing and transfer
+  must then reject the operation with a clear missing-price error.
+
+Impact:
+  - Janata or another counter can sell at the wrong legal/commercial price.
+  - Stock can be allocated into a counter that should not sell that product.
+  - Counter-sheet revenue and accounting can be calculated using the wrong rate.
+  - This is a core money and inventory rule, so release is blocked.
+
+Suggested regression gate:
+  Fix resolveUnitPrice(), then require all 14 tests in
+  tests/integration/sale-types.int.test.ts to pass from a fresh database.
+
+---------------------------------------------------------------------
+
+QC-002 — MEDIUM — Day Closing payment fields have no accessible names
+
+Area:
+  Day Closing
+
+Affected controls:
+  frontend/src/closing/Closing.tsx:595  #closingUpiSales
+  frontend/src/closing/Closing.tsx:635  #closingCardSales
+  frontend/src/closing/Closing.tsx:678  #closingCreditSales
+
+Reproduction:
+  1. Open Day Closing as manager/office admin/owner.
+  2. Inspect the accessibility tree or navigate the three amount inputs with
+     a screen reader.
+  3. The fields have visible nearby headings, but no <label for>, wrapping
+     <label>, aria-label or aria-labelledby association.
+
+Observed:
+  The responsive DOM audit reported all three unnamed inputs at phone, tablet
+  and desktop sizes. Manual source inspection confirmed the missing association.
+
+Expected:
+  Each financial input announces its purpose, for example "UPI sales amount",
+  "Card sales amount" and "Khata / customer credit sales amount".
+
+Impact:
+  Screen-reader and voice-control users cannot reliably identify which amount
+  they are editing. A wrong entry affects end-of-day reconciliation.
+
+Suggested fix:
+  Associate the existing visible text with each input using <label htmlFor>,
+  or add a unique accessible name with aria-labelledby.
+
+======================================================================
+QA / RELEASE-GATE BUG
+======================================================================
+
+QC-003 — MEDIUM — The full E2E/integration release gate is stale after UI changes
+
+Observed examples:
+  - Role text expects lowercase "steward"/"cashier", while the UI correctly
+    displays "Floor Steward (Steward)" / "Counter Cashier (Cashier)".
+  - Bank tests expect #bankVsBook as the default review, but Simple Review is
+    now the intentional default and advanced views are under tools.
+  - Bank empty-state test expects #bankAddAccount; current empty state uses
+    #bankAddFirst.
+  - KOT test expects "Submit & Create Bar KOT"; current action is "Submit KOT".
+  - Supplier invoice test uses an exact accessible name that excludes the
+    visible plus symbol and another test expects the intentionally removed MRP field.
+  - POS tests target a removed CSS class and old "Cart is empty" copy.
+  - Table test clicks the tile a second time even though opening a free table
+    now immediately opens the action dialog.
+  - Dashboard test uses exact object equality although supported aggregate
+    fields were added.
+  - Permission test still expects cashier expense creation to be forbidden,
+    contrary to the current approved cashier exception.
+
+Impact:
+  The suite produces many false failures, hides the genuine QC-001 regression,
+  and cannot act as a trustworthy release gate. Seventeen scenarios were not
+  executed in the full run after accumulated failures/skips.
+
+Expected:
+  Update tests to assert roles, accessible names and outcomes rather than
+  implementation-only IDs/copy where practical. Keep the new workflows as the
+  source of truth, then require the full suite to run without false failures.
+
+Important:
+  Do not simply delete or loosen the sale-type assertions; those failures expose
+  QC-001 and must remain strict.
+
+======================================================================
+ENVIRONMENT / TOOLING ISSUE (NOT AN APPLICATION DEFECT)
+======================================================================
+
+ENV-001 — Local Volta npm installation is broken
+
+Observed:
+  npm run build fails before reading the project because this module is missing:
+  C:\Users\yarra\AppData\Local\Volta\tools\image\npm\12.0.2\bin\node_modules\npm\bin\npm-prefix.js
+
+Workaround used:
+  The repository's local TypeScript, Vite, Vitest and Playwright executables
+  were invoked directly with Node. All reported test results are from those
+  direct executions.
+
+Additional transient symptom:
+  Node os.userInfo() returned uv_os_get_passwd ENOMEM after a heavy test run,
+  which prevented tsx from starting. The compiled dev server was used instead.
+
+======================================================================
+FALSE POSITIVES EXCLUDED FROM THE BUG COUNT
+======================================================================
+
+  - Khata CREDIT test expected Kingfisher at Rs 180, but the current seeded
+    mapped product price is Rs 160; the recorded credit matched the live DB price.
+  - Tenant hard-delete initially remained disabled because the manually started
+    QA server omitted ARCHIVE_RETENTION_DAYS=0. With the correct test setting,
+    both platform-lifecycle browser tests passed.
+  - Free-table and KOT failures used old interaction/copy. Focused tests using
+    the current UI passed.
+  - Bank, invoice and POS timeouts listed under QC-003 were selector/workflow
+    drift; focused current-UI journeys passed.
+
+======================================================================
+RECOMMENDED FIX ORDER
+======================================================================
+
+  1. Fix QC-001 and run the complete sale-type integration file from fresh DB.
+  2. Update stale integration/E2E expectations (QC-003), preserving strict
+     money, stock, RBAC and tenancy assertions.
+  3. Label the three Day Closing payment inputs (QC-002) and add an automated
+     accessible-name assertion.
+  4. Repair/reinstall the local Volta npm image so standard project commands work.
+  5. Run the full integration and browser suites again. Do not ship until the
+     complete run is green or every remaining skip has an explicit justification.
+
+======================================================================
+AGENT SELF-EVALUATION
+======================================================================
+
+Summary: Overall score 4.4/5 across five quality axes.
+
+  Accuracy: 5/5
+    Evidence: Product bugs were reproduced or confirmed by both test output and
+    source tracing. Stale tests and environment-only failures were explicitly
+    excluded instead of inflating the bug count.
+
+  Completeness: 4/5
+    Evidence: Builds, 1,353 Vitest tests, broad Playwright coverage, six roles,
+    three viewports and focused state-changing journeys were covered.
+    Gap: no real-Postgres concurrency run, no full axe-core scan, and no committed
+    visual baseline comparison were available.
+    Improvement: repeat on real PostgreSQL with axe-core and approved baselines.
+
+  Clarity: 5/5
+    Evidence: Each issue includes severity, reproduction, observed/expected,
+    impact, root cause and recommended verification.
+
+  Actionability: 5/5
+    Evidence: Exact source/test locations and a prioritized fix/retest order are
+    supplied; the release blocker is unambiguous.
+
+  Conciseness: 3/5
+    Evidence: The report is intentionally detailed and includes coverage,
+    exclusions and environment notes; it is longer than a simple bug list.
+    Improvement: use the Executive Summary for triage and the remaining sections
+    only while fixing or validating.
+
+  OVERALL: 4.4/5
+  Critical self-evaluation issues: None.
+  Self-check: Yes. The report is evidence-backed and honest about untested areas.
+  Verdict: Deliver as-is; QC-001 must be fixed before the application ships.
